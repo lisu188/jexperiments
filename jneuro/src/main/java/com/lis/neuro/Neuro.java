@@ -13,6 +13,7 @@ public class Neuro {
     private final double eta;
     private final List<Teacher> teachers = new ArrayList<>();
     private final List<Teacher> test = new ArrayList<>();
+
     public Neuro(int[] tab, double alfa, double beta, double eta) {
         this.alfa = alfa;
         this.beta = beta;
