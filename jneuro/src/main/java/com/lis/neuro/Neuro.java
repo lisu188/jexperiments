@@ -4,16 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Neuro {
-    private class Teacher {
-        private final double[] In;
-        private final double[] Out;
-
-        private Teacher(double[] X, double[] Y) {
-            In = X;
-            Out = Y;
-        }
-    }
-
     private final int[] struct;
     private final int NW;
     private final double[][][] neuro;
@@ -23,7 +13,6 @@ public class Neuro {
     private final double eta;
     private final List<Teacher> teachers = new ArrayList<>();
     private final List<Teacher> test = new ArrayList<>();
-
     public Neuro(int[] tab, double alfa, double beta, double eta) {
         this.alfa = alfa;
         this.beta = beta;
@@ -232,5 +221,15 @@ public class Neuro {
             ERMS += Math.sqrt(tmp / struct[NW - 1]);
         }
         return ERMS / (double) size;
+    }
+
+    private class Teacher {
+        private final double[] In;
+        private final double[] Out;
+
+        private Teacher(double[] X, double[] Y) {
+            In = X;
+            Out = Y;
+        }
     }
 }

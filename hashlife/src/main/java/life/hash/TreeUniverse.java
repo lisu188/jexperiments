@@ -6,6 +6,17 @@ import java.text.NumberFormat;
  * This Universe uses a quadtree datastructure to hold our cells.
  */
 public class TreeUniverse implements UniverseInterface {
+    final NumberFormat nf = NumberFormat.getIntegerInstance();
+    /*
+     *   The data we use.
+     */
+    double generationCount = 0;
+    TreeNode root = TreeNode.create();
+
+    {
+        nf.setMaximumFractionDigits(0);
+    }
+
     /**
      * Set a single bit; can only do this before running, and once
      * we've started running cannot change.
@@ -53,16 +64,5 @@ public class TreeUniverse implements UniverseInterface {
     public String stats() {
         return "Generation " + nf.format(generationCount) +
                 " population " + nf.format(root.population);
-    }
-
-    /*
-     *   The data we use.
-     */
-    double generationCount = 0;
-    TreeNode root = TreeNode.create();
-    final NumberFormat nf = NumberFormat.getIntegerInstance();
-
-    {
-        nf.setMaximumFractionDigits(0);
     }
 }

@@ -2,9 +2,7 @@ package com.company;
 
 import org.apache.bcel.Constants;
 import org.apache.bcel.classfile.JavaClass;
-import org.apache.bcel.classfile.Method;
 import org.apache.bcel.generic.*;
-import org.apache.bcel.Constants.*;
 
 import java.io.IOException;
 
@@ -19,9 +17,9 @@ public class Main {
 
         MethodGen mg = new MethodGen(Constants.ACC_STATIC | Constants.ACC_PUBLIC, // access flags
                 Type.VOID,               // return type
-                new Type[] {             // argument types
-                        new ArrayType(Type.STRING, 1) },
-                new String[] { "argv" }, // arg names
+                new Type[]{             // argument types
+                        new ArrayType(Type.STRING, 1)},
+                new String[]{"argv"}, // arg names
                 "main", "HelloWorld",    // method, class
                 il, cp);
         InstructionFactory factory = new InstructionFactory(cg);
@@ -36,10 +34,10 @@ public class Main {
         il.append(factory.createFieldAccess("java.lang.System", "in", i_stream,
                 Constants.GETSTATIC));
         il.append(factory.createInvoke("java.io.InputStreamReader", "<init>",
-                Type.VOID, new Type[] { i_stream },
+                Type.VOID, new Type[]{i_stream},
                 Constants.INVOKESPECIAL));
         il.append(factory.createInvoke("java.io.BufferedReader", "<init>", Type.VOID,
-                new Type[] {new ObjectType("java.io.Reader")},
+                new Type[]{new ObjectType("java.io.Reader")},
                 Constants.INVOKESPECIAL));
 
         LocalVariableGen lg = mg.addLocalVariable("in",
@@ -58,7 +56,7 @@ public class Main {
 
         il.append(new PUSH(cp, "Please enter your name> "));
         il.append(factory.createInvoke("java.io.PrintStream", "print", Type.VOID,
-                new Type[] { Type.STRING },
+                new Type[]{Type.STRING},
                 Constants.INVOKEVIRTUAL));
         il.append(new ALOAD(in));
         il.append(factory.createInvoke("java.io.BufferedReader", "readLine",
@@ -81,18 +79,18 @@ public class Main {
         il.append(InstructionConstants.DUP);
         il.append(new PUSH(cp, "Hello, "));
         il.append(factory.createInvoke("java.lang.StringBuffer", "<init>",
-                Type.VOID, new Type[] { Type.STRING },
+                Type.VOID, new Type[]{Type.STRING},
                 Constants.INVOKESPECIAL));
         il.append(new ALOAD(name));
         il.append(factory.createInvoke("java.lang.StringBuffer", "append",
-                Type.STRINGBUFFER, new Type[] { Type.STRING },
+                Type.STRINGBUFFER, new Type[]{Type.STRING},
                 Constants.INVOKEVIRTUAL));
         il.append(factory.createInvoke("java.lang.StringBuffer", "toString",
                 Type.STRING, Type.NO_ARGS,
                 Constants.INVOKEVIRTUAL));
 
         il.append(factory.createInvoke("java.io.PrintStream", "println",
-                Type.VOID, new Type[] { Type.STRING },
+                Type.VOID, new Type[]{Type.STRING},
                 Constants.INVOKEVIRTUAL));
         il.append(InstructionConstants.RETURN);
 
@@ -107,4 +105,4 @@ public class Main {
 
 
     }
-    }
+}

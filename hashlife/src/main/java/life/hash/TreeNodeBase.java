@@ -4,6 +4,14 @@ package life.hash;
  * This class contains the tree maintenance functions for quadtrees.
  */
 class TreeNodeBase {
+    /*
+     *   Our data; the class is immutable so all of these are final.
+     */
+    final TreeNode nw, ne, sw, se; // our children
+    final int level;           // distance to root
+    final boolean alive;       // if leaf node, are we alive or dead?
+    final double population;   // we cache the population here
+
     /**
      * Construct a leaf cell.
      */
@@ -28,6 +36,10 @@ class TreeNodeBase {
         alive = population > 0;
     }
 
+    static TreeNode create() {
+        return new TreeNode(false).emptyTree(3);
+    }
+
     /**
      * Factory methods to allow us to "override" the constructors.
      * These two calls are the only places that the constructors
@@ -42,10 +54,6 @@ class TreeNodeBase {
 
     TreeNode create(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
         return new TreeNode(nw, ne, sw, se);
-    }
-
-    static TreeNode create() {
-        return new TreeNode(false).emptyTree(3);
     }
 
     /**
@@ -114,12 +122,4 @@ class TreeNodeBase {
                 create(border, sw, border, border),
                 create(se, border, border, border));
     }
-
-    /*
-     *   Our data; the class is immutable so all of these are final.
-     */
-    final TreeNode nw, ne, sw, se; // our children
-    final int level;           // distance to root
-    final boolean alive;       // if leaf node, are we alive or dead?
-    final double population;   // we cache the population here
 }

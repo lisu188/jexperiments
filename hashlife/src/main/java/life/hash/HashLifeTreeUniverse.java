@@ -7,6 +7,10 @@ package life.hash;
  * well as how we construct the root object.
  */
 public class HashLifeTreeUniverse extends TreeUniverse {
+    {
+        root = HashLifeTreeNode.create();
+    }
+
     public void runStep() {
         while (root.level < 3 ||
                 root.nw.population != root.nw.se.se.population ||
@@ -18,9 +22,5 @@ public class HashLifeTreeUniverse extends TreeUniverse {
         System.out.println("Taking a step of " + nf.format(stepSize));
         root = root.nextGeneration();
         generationCount += stepSize;
-    }
-
-    {
-        root = HashLifeTreeNode.create();
     }
 }

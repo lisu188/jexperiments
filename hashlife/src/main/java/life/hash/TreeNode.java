@@ -8,6 +8,20 @@ package life.hash;
  */
 class TreeNode extends TreeNodeBase {
     /**
+     * We need to pass construction down to the base class.
+     */
+    TreeNode(boolean living) {
+        super(living);
+    }
+
+    /**
+     * Construct a node given four children.
+     */
+    TreeNode(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
+        super(nw, ne, sw, se);
+    }
+
+    /**
      * Given an integer with a bitmask indicating which bits are
      * set in the neighborhood, calculate whether this cell is
      * alive or dead in the next generation.  The bottom three
@@ -106,19 +120,5 @@ class TreeNode extends TreeNodeBase {
                 create(n01, n02, n11, n12).nextGeneration(),
                 create(n10, n11, n20, n21).nextGeneration(),
                 create(n11, n12, n21, n22).nextGeneration());
-    }
-
-    /**
-     * We need to pass construction down to the base class.
-     */
-    TreeNode(boolean living) {
-        super(living);
-    }
-
-    /**
-     * Construct a node given four children.
-     */
-    TreeNode(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
-        super(nw, ne, sw, se);
     }
 }

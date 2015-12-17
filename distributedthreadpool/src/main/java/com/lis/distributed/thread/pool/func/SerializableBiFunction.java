@@ -4,5 +4,5 @@ import java.io.Serializable;
 
 @FunctionalInterface
 public interface SerializableBiFunction<T, U, R> extends Serializable {
-	R apply(T t, U u) throws Exception;
+    R apply(T t, U u) throws Exception;
 }

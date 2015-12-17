@@ -14,6 +14,8 @@ import java.io.InputStreamReader;
  * a control-C.
  */
 class Driver {
+    private static UniverseInterface univ;
+
     /**
      * If something is wrong with the command line we complain here.
      */
@@ -87,6 +89,4 @@ class Driver {
             univ.runStep();
         }
     }
-
-    private static UniverseInterface univ;
 }

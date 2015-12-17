@@ -7,6 +7,21 @@ package life.hash;
  */
 class HashLifeTreeNode extends MemoizedTreeNode {
     /**
+     * Provide constructors to support the factory interface.
+     */
+    private HashLifeTreeNode(boolean alive) {
+        super(alive);
+    }
+
+    private HashLifeTreeNode(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
+        super(nw, ne, sw, se);
+    }
+
+    static TreeNode create() {
+        return new HashLifeTreeNode(false).emptyTree(3);
+    }
+
+    /**
      * HorizontalForward() takes two horizontally adjacent nodes,
      * builds a new node from the east half of the west node and
      * the west half of the east node, and computes the next
@@ -68,17 +83,6 @@ class HashLifeTreeNode extends MemoizedTreeNode {
     }
 
     /**
-     * Provide constructors to support the factory interface.
-     */
-    private HashLifeTreeNode(boolean alive) {
-        super(alive);
-    }
-
-    private HashLifeTreeNode(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
-        super(nw, ne, sw, se);
-    }
-
-    /**
      * We override the three create functions.
      */
     TreeNode create(boolean living) {
@@ -87,9 +91,5 @@ class HashLifeTreeNode extends MemoizedTreeNode {
 
     TreeNode create(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
         return new HashLifeTreeNode(nw, ne, sw, se).intern();
-    }
-
-    static TreeNode create() {
-        return new HashLifeTreeNode(false).emptyTree(3);
     }
 }

@@ -8,6 +8,29 @@ import java.util.HashMap;
  */
 class CanonicalTreeNode extends TreeNode {
     /**
+     * Our canonicalization hashset.
+     */
+    private static final HashMap<CanonicalTreeNode, CanonicalTreeNode> hashMap = new HashMap<>();
+
+    /**
+     * Provide constructors.  The rest of the code manages the factory
+     * interface mechanism used by TreeNode.  We use intern() in all
+     * three create() functions to guarantee that all new nodes are
+     * canonicalized.
+     */
+    CanonicalTreeNode(boolean alive) {
+        super(alive);
+    }
+
+    CanonicalTreeNode(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
+        super(nw, ne, sw, se);
+    }
+
+    static TreeNode create() {
+        return new CanonicalTreeNode(false).emptyTree(3);
+    }
+
+    /**
      * We need to provide a hashCode() and an equals() method to be
      * able to hash these objects.
      */
@@ -43,25 +66,6 @@ class CanonicalTreeNode extends TreeNode {
     }
 
     /**
-     * Our canonicalization hashset.
-     */
-    private static final HashMap<CanonicalTreeNode, CanonicalTreeNode> hashMap = new HashMap<>();
-
-    /**
-     * Provide constructors.  The rest of the code manages the factory
-     * interface mechanism used by TreeNode.  We use intern() in all
-     * three create() functions to guarantee that all new nodes are
-     * canonicalized.
-     */
-    CanonicalTreeNode(boolean alive) {
-        super(alive);
-    }
-
-    CanonicalTreeNode(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
-        super(nw, ne, sw, se);
-    }
-
-    /**
      * We override the three create functions.
      */
     TreeNode create(boolean living) {
@@ -70,9 +74,5 @@ class CanonicalTreeNode extends TreeNode {
 
     TreeNode create(TreeNode nw, TreeNode ne, TreeNode sw, TreeNode se) {
         return new CanonicalTreeNode(nw, ne, sw, se).intern();
-    }
-
-    static TreeNode create() {
-        return new CanonicalTreeNode(false).emptyTree(3);
     }
 }

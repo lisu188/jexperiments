@@ -4,5 +4,5 @@ import java.io.Serializable;
 
 @FunctionalInterface
 public interface SerializableSupplier<T> extends Serializable {
-	T get() throws Exception;
+    T get() throws Exception;
 }
