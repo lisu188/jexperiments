@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="DEBUG">
+	<Appenders>
+		<File name="File" fileName="output.log" />
+	</Appenders>
+	<Loggers>
+		<Root level="debug">
+			<AppenderRef ref="File" />
+		</Root>
+	</Loggers>
+</Configuration>
