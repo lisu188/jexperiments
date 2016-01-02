@@ -1,6 +1,7 @@
 package com.lis.neuro;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Neuro {
@@ -8,6 +9,7 @@ public class Neuro {
     private final int NW;
     private final double[][][] neuro;
     private final double[][][] prev;
+    private final double[][][] diff;
     private final double alfa;
     private final double beta;
     private final double eta;
@@ -22,14 +24,17 @@ public class Neuro {
         NW = struct.length;
         neuro = new double[NW - 1][][];
         prev = new double[NW - 1][][];
+        diff = new double[NW - 1][][];
         for (int i = 0; i < NW - 1; i++) {
             neuro[i] = new double[struct[i + 1]][];
             prev[i] = new double[struct[i + 1]][];
+            diff[i] = new double[struct[i + 1]][];
             for (int j = 0; j < struct[i + 1]; j++) {
                 neuro[i][j] = new double[struct[i]];
                 prev[i][j] = new double[struct[i]];
+                diff[i][j] = new double[struct[i]];
                 for (int k = 0; k < struct[i]; k++) {
-                    neuro[i][j][k] = prev[i][j][k] = Math.random() - 0.5;
+                    diff[i][j][k]=neuro[i][j][k] = prev[i][j][k] = Math.random() - 0.5;
                 }
             }
         }
@@ -148,11 +153,8 @@ public class Neuro {
             double[][] E;
             double[][] O;
             while (ite-- > 0) {
-                double[][][] diff = new double[NW - 1][][];
                 for (int i = 0; i < NW - 1; i++) {
-                    diff[i] = new double[struct[i + 1]][];
                     for (int j = 0; j < struct[i + 1]; j++) {
-                        diff[i][j] = new double[struct[i]];
                         for (int k = 0; k < struct[i]; k++) {
                             diff[i][j][k] = neuro[i][j][k] - prev[i][j][k];
                             prev[i][j][k] = neuro[i][j][k];
@@ -172,6 +174,7 @@ public class Neuro {
                         }
                     }
                 }
+
                 for (int i = 0; i < NW - 1; i++) {
                     for (int j = 0; j < struct[i + 1]; j++) {
                         for (int k = 0; k < struct[i]; k++) {
@@ -232,5 +235,17 @@ public class Neuro {
             In = X;
             Out = Y;
         }
+    }
+
+    public static void main(String[] args) throws Exception {
+        Neuro neuro = new Neuro(new int[]{2, 1000, 2}, 0.2, 1, 0.8);
+        neuro.addTeacher(new double[]{1,0},new double[]{0,1});
+        neuro.addTeacher(new double[]{0,1},new double[]{1,0});
+        neuro.addTeacher(new double[]{0,0},new double[]{1,1});
+        neuro.addTeacher(new double[]{1,1},new double[]{0,0});
+        neuro.teach(100000);
+        System.out.println(neuro.ERMS());
+        System.out.println(Arrays.toString(neuro.use(new double[]{0,0})));
+        System.out.println(Arrays.toString(neuro.use(new double[]{1,1})));
     }
 }
