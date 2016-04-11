@@ -22,5 +22,6 @@
         <module>soapserver</module>
         <module>webaspect</module>
         <module>orderedthreadpool</module>
+        <module>evolution</module>
     </modules>
 </project>
