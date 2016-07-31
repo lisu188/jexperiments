@@ -1,184 +1,166 @@
 package com.lis.neuro;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
-public class Neuro {
-    private final int[] struct;
-    private final int NW;
-    private final double[][][] neuro;
-    private final double[][][] prev;
-    private final double[][][] diff;
-    private final double alfa;
-    private final double beta;
-    private final double eta;
-    private final List<Teacher> teachers = new ArrayList<>();
-    private final List<Teacher> test = new ArrayList<>();
+class Neuro {
+    private final int[] _str;
 
-    public Neuro(int[] tab, double alfa, double beta, double eta) {
-        this.alfa = alfa;
-        this.beta = beta;
-        this.eta = eta;
-        struct = tab;
-        NW = struct.length;
-        neuro = new double[NW - 1][][];
-        prev = new double[NW - 1][][];
-        diff = new double[NW - 1][][];
-        for (int i = 0; i < NW - 1; i++) {
-            neuro[i] = new double[struct[i + 1]][];
-            prev[i] = new double[struct[i + 1]][];
-            diff[i] = new double[struct[i + 1]][];
-            for (int j = 0; j < struct[i + 1]; j++) {
-                neuro[i][j] = new double[struct[i]];
-                prev[i][j] = new double[struct[i]];
-                diff[i][j] = new double[struct[i]];
-                for (int k = 0; k < struct[i]; k++) {
-                    diff[i][j][k]=neuro[i][j][k] = prev[i][j][k] = Math.random() - 0.5;
+    private final double _alfa;
+    private final double _beta;
+    private final double _eta;
+    private final int _nw;
+    private final List<Pair<double[], double[]>> teachers = new ArrayList<>();
+    private final List<Pair<double[], double[]>> tests = new ArrayList<>();
+    private final double[][][] _neuro;
+    private final double[][][] _prev;
+    private final double[][][] _diff;
+    private final double[][] _o;
+    private final double[][] _e;
+
+    private Neuro(int[] str,
+                  double alfa,
+                  double beta,
+                  double eta
+    ) {
+        this._str = str;
+        this._alfa = alfa;
+        this._beta = beta;
+        this._eta = eta;
+        this._nw = str.length;
+        _neuro = new double[_nw - 1][][];
+        _prev = new double[_nw - 1][][];
+        _diff = new double[_nw - 1][][];
+        for (int i = 0; i < _nw - 1; i++) {
+            _neuro[i] = new double[_str[i + 1]][];
+            _prev[i] = new double[_str[i + 1]][];
+            _diff[i] = new double[_str[i + 1]][];
+            for (int j = 0; j < _str[i + 1]; j++) {
+                _neuro[i][j] = new double[_str[i]];
+                _prev[i][j] = new double[_str[i]];
+                _diff[i][j] = new double[_str[i]];
+                for (int k = 0; k < _str[i]; k++) {
+                    _diff[i][j][k] = _neuro[i][j][k] = _prev[i][j][k] = Math.random() - 0.5;
                 }
             }
         }
-    }
 
-    public Neuro(int[] tab) {
-        this(tab, 0.2, 1.0, 0.8);
-    }
-
-    private double fcn(double x) {
-        return 1 / (1 + Math.exp(-beta * x));
-    }
-
-    private double[] dfcn(double x[]) {
-        double[] y = new double[x.length];
-        for (int i = 0; i < x.length; i++) {
-            y[i] = (1 - x[i]) * x[i];
+        _e = new double[_nw - 1][];
+        for (int i = 0; i < _nw - 1; i++) {
+            _e[i] = new double[_str[i + 1]];
         }
-        return y;
+
+        _o = new double[_nw][];
+        for (int i = 0; i < _nw; i++) {
+            _o[i] = new double[_str[i]];
+        }
     }
 
-    private double[] useCut(double In[], int cut) {
-        double Prev[] = In;
-        double Out[] = In;
-        for (int i = 0; i < struct.length - cut - 1; i++) {
-            Out = new double[struct[i + 1]];
-            for (int j = 0; j < struct[i + 1]; j++) {
-                Out[j] = 0;
-                for (int k = 0; k < struct[i]; k++) {
-                    Out[j] += Prev[k] * neuro[i][j][k];
+    public static void main(String... args) {
+        Neuro neuro = new Neuro(new int[]{2, 5, 25, 5, 1}, 0.2, 1, 0.8);
+        neuro.add_teacher(new double[]{1, 1}, new double[]{1});
+        neuro.add_teacher(new double[]{1, 0}, new double[]{1});
+        neuro.add_teacher(new double[]{0, 1}, new double[]{1});
+        neuro.add_teacher(new double[]{0, 0}, new double[]{0});
+        System.out.println(neuro.teach(0.001));
+
+    }
+
+    private double fcn(double x, double beta) {
+        return 1.0 / (1.0 + Math.exp(-beta * x));
+    }
+
+    private double dfcn(double x) {
+        return (1.0 - x) * x;
+    }
+
+    private void o(double[] t) {
+        System.arraycopy(t, 0, _o[0], 0, _str[0]);
+        for (int i = 1; i < _nw; i++) {
+            for (int j = 0; j < _str[i]; j++) {
+                _o[i][j] = 0;
+                for (int k = 0; k < _str[i - 1]; k++) {
+                    _o[i][j] += _o[i - 1][k] * _neuro[i - 1][j][k];
                 }
-                Out[j] = fcn(Out[j]);
+                _o[i][j] = fcn(_o[i][j], _beta);
             }
-            Prev = Out;
         }
-        return Out;
     }
 
-    private double[][] O(int i) {
-        double[][] O = new double[NW][];
-        for (int j = NW - 1; j >= 0; j--) {
-            O[NW - 1 - j] = useCut(teachers.get(i).In, j);
+    private void e(double[] in, double[] out) {
+        o(in);
+        for (int i = 0; i < _str[_nw - 1]; i++) {
+            _e[_nw - 2][i] = dfcn(out[i] - _o[_nw - 1][i]);
         }
-        return O;
-    }
 
-    private double[][] E(int i) {
-        double E[][];
-        double O[][] = O(i);
-        E = new double[NW - 1][];
-        E[NW - 2] = new double[struct[NW - 1]];
-        for (int j = 0; j < struct[NW - 1]; j++) {
-            E[NW - 2][j] = teachers.get(i).Out[j] - O[NW - 1][j];
-        }
-        E[NW - 2] = dfcn(E[NW - 2]);
-
-        for (int j = 3; NW - j >= 0; j++) {
-            E[NW - j] = new double[struct[NW - j + 1]];
-            for (int k = 0; k < struct[NW - j + 1]; k++) {
-                E[NW - j][k] = 0;
+        for (int j = 3; _nw - j >= 0; j++) {
+            for (int k = 0; k < _str[_nw - j + 1]; k++) {
+                _e[_nw - j][k] = 0;
             }
-            for (int k = 0; k < struct[NW - j + 1]; k++) {
-                for (int l = 0; l < struct[NW - j + 2]; l++) {
-                    E[NW - j][k] += E[NW - j + 1][l] * neuro[NW - j + 1][l][k];
+            for (int k = 0; k < _str[_nw - j + 1]; k++) {
+                for (int l = 0; l < _str[_nw - j + 2]; l++) {
+                    _e[_nw - j][k] += _e[_nw - j + 1][l] * _neuro[_nw - j + 1][l][k];
                 }
             }
-            for (int k = 0; k < struct[NW - j + 1]; k++) {
-                E[NW - j][k] *= dfcn(O[NW - j + 1])[k];
+            for (int k = 0; k < _str[_nw - j + 1]; k++) {
+                _e[_nw - j][k] *= dfcn(_o[_nw - j + 1][k]);
             }
         }
-        return E;
     }
 
-    public void addTeacher(double In[], double Out[]) {
-        if (struct[0] != In.length) {
-            throw new RuntimeException("Wrong input array size");
-        }
-        if (struct[NW - 1] != Out.length) {
-            throw new RuntimeException("Wrong output array size");
-        }
-        teachers.add(new Teacher(In, Out));
+    private void add_teacher(double[] in, double[] out) {
+        teachers.add(new Pair<>(in, out));
     }
 
-    public void addTest(double In[], double Out[]) throws Exception {
-        if (struct[0] != In.length) {
-            throw new RuntimeException("Wrong input array size");
-        }
-        if (struct[NW - 1] != Out.length) {
-            throw new RuntimeException("Wrong output array size");
-        }
-        test.add(new Teacher(In, Out));
+    void add_test(double[] in, double[] out) {
+        tests.add(new Pair<>(in, out));
     }
 
-    public double[] use(double In[]) throws Exception {
-        if (struct[0] != In.length) {
-            throw new RuntimeException("Wrong input array size");
+    private int teach(double erms, int step) {
+        int i = 0;
+        while (this.erms() > erms) {
+            teach(step);
+            i += step;
         }
-        double Prev[] = In;
-        double Out[] = null;
-        for (int i = 0; i < struct.length - 1; i++) {
-            Out = new double[struct[i + 1]];
-            for (int j = 0; j < struct[i + 1]; j++) {
-                Out[j] = 0;
-                for (int k = 0; k < struct[i]; k++) {
-                    Out[j] += Prev[k] * neuro[i][j][k];
-                }
-                Out[j] = fcn(Out[j]);
-            }
-            Prev = Out;
-        }
-        return Out;
+        return i;
     }
 
-    public void teach(int ite) throws Exception {
+    private int teach(double erms) {
+        return teach(erms, 1);
+    }
+
+    private void teach(int ite) {
         if (teachers.size() != 0) {
-            double[][] E;
-            double[][] O;
             while (ite-- > 0) {
-                for (int i = 0; i < NW - 1; i++) {
-                    for (int j = 0; j < struct[i + 1]; j++) {
-                        for (int k = 0; k < struct[i]; k++) {
-                            diff[i][j][k] = neuro[i][j][k] - prev[i][j][k];
-                            prev[i][j][k] = neuro[i][j][k];
+                for (int i = 0; i < _nw - 1; i++) {
+                    for (int j = 0; j < _str[i + 1]; j++) {
+                        for (int k = 0; k < _str[i]; k++) {
+                            _diff[i][j][k] = _neuro[i][j][k] - _prev[i][j][k];
+                            _prev[i][j][k] = _neuro[i][j][k];
                         }
                     }
                 }
 
-                for (int i = 0; i < teachers.size(); i++) {
-                    O = O(i);
-                    E = E(i);
+                Collections.shuffle(teachers);
 
-                    for (int j = 0; j < NW - 1; j++) {
-                        for (int k = 0; k < struct[j + 1]; k++) {
-                            for (int l = 0; l < struct[j]; l++) {
-                                neuro[j][k][l] += eta * E[j][k] * O[j][l];
+                for (Pair<double[], double[]> t : teachers) {
+                    o(t.first);
+                    e(t.first, t.second);
+
+                    for (int j = 0; j < _nw - 1; j++) {
+                        for (int k = 0; k < _str[j + 1]; k++) {
+                            for (int l = 0; l < _str[j]; l++) {
+                                _neuro[j][k][l] += (_eta * _e[j][k] * _o[j][l]) / teachers.size();
                             }
                         }
                     }
                 }
 
-                for (int i = 0; i < NW - 1; i++) {
-                    for (int j = 0; j < struct[i + 1]; j++) {
-                        for (int k = 0; k < struct[i]; k++) {
-                            neuro[i][j][k] += alfa * diff[i][j][k];
+                for (int i = 0; i < _nw - 1; i++) {
+                    for (int j = 0; j < _str[i + 1]; j++) {
+                        for (int k = 0; k < _str[i]; k++) {
+                            _neuro[i][j][k] += _alfa * _diff[i][j][k];
                         }
                     }
                 }
@@ -186,66 +168,45 @@ public class Neuro {
         }
     }
 
-    public void teach(double ERMS) throws Exception {
-        while (ERMS() > ERMS) {
-            teach(1);
-        }
-    }
-
-    public double ERMS() {
-        double ERMS = 0;
+    private double erms() {
+        double erms = 0;
         double tmp;
-        double[] OutT, OutN;
-        int size = teachers.size();
-        for (Teacher teacher : teachers) {
+        double[] out_t;
+        for (Pair<double[], double[]> teacher : teachers) {
             tmp = 0;
-            OutT = teacher.Out;
-            OutN = useCut(teacher.In, 0);
-            for (int k = 0; k < struct[NW - 1]; k++) {
-                tmp += Math.pow(OutT[k] - OutN[k], 2);
+            out_t = teacher.second;
+            o(teacher.first);
+            for (int k = 0; k < _str[_nw - 1]; k++) {
+                tmp += Math.pow(out_t[k] - _o[_nw - 1][k], 2);
             }
-            ERMS += Math.sqrt(tmp / struct[NW - 1]);
+            erms += Math.sqrt(tmp / _str[_nw - 1]);
         }
-        ERMS = ERMS / size;
-        return ERMS;
+        return erms / teachers.size();
     }
 
-    public double TEST() {
-        double ERMS = 0;
+    double test() {
+        double erms = 0;
         double tmp;
-        double[] OutT, OutN;
-        int size = test.size();
-        for (Teacher aTest : test) {
+        double[] out_t;
+        for (Pair<double[], double[]> teacher : tests) {
             tmp = 0;
-            OutT = aTest.Out;
-            OutN = useCut(aTest.In, 0);
-            for (int k = 0; k < struct[NW - 1]; k++) {
-                tmp += Math.pow(OutT[k] - OutN[k], 2);
+            out_t = teacher.second;
+            o(teacher.first);
+            for (int k = 0; k < _str[_nw - 1]; k++) {
+                tmp += Math.pow(out_t[k] - _o[_nw - 1][k], 2);
             }
-            ERMS += Math.sqrt(tmp / struct[NW - 1]);
+            erms += Math.sqrt(tmp / _str[_nw - 1]);
         }
-        return ERMS / (double) size;
+        return erms / teachers.size();
     }
 
-    private class Teacher {
-        private final double[] In;
-        private final double[] Out;
+    private static final class Pair<T, U> {
+        final T first;
+        final U second;
 
-        private Teacher(double[] X, double[] Y) {
-            In = X;
-            Out = Y;
+        private Pair(T first, U second) {
+            this.first = first;
+            this.second = second;
         }
-    }
-
-    public static void main(String[] args) throws Exception {
-        Neuro neuro = new Neuro(new int[]{2, 1000, 2}, 0.2, 1, 0.8);
-        neuro.addTeacher(new double[]{1,0},new double[]{0,1});
-        neuro.addTeacher(new double[]{0,1},new double[]{1,0});
-        neuro.addTeacher(new double[]{0,0},new double[]{1,1});
-        neuro.addTeacher(new double[]{1,1},new double[]{0,0});
-        neuro.teach(100000);
-        System.out.println(neuro.ERMS());
-        System.out.println(Arrays.toString(neuro.use(new double[]{0,0})));
-        System.out.println(Arrays.toString(neuro.use(new double[]{1,1})));
     }
 }
