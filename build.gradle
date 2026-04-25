@@ -12,6 +12,7 @@ def moduleArchives = [
     completeablefuture  : 'CompleteAbleFuture',
     distributedthreadpool: 'DistributedThreadPool',
     evolution            : 'Evolution',
+    flowpublisher        : 'FlowPublisher',
     hashlife             : 'HashLife',
     jneuro               : 'JNeuro',
     lambdabytecode       : 'LambdaBytecode',
