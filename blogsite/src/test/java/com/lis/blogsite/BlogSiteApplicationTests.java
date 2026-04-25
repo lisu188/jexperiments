@@ -54,6 +54,16 @@ class BlogSiteApplicationTests {
     }
 
     @Test
+    void postRouteRendersFencedCodeBlocks() throws Exception {
+        HttpResponse<String> response = get("/posts/bcel");
+
+        assertThat(response.statusCode()).isEqualTo(HttpStatus.OK.value());
+        assertThat(response.body())
+                .contains("<pre><code class=\"language-java\">")
+                .contains("ClassGen cg = new ClassGen");
+    }
+
+    @Test
     void missingPostReturnsNotFound() throws Exception {
         HttpResponse<String> response = get("/posts/not-a-module");
 
