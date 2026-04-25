@@ -1,5 +1,6 @@
 plugins {
     id 'base'
+    id 'org.springframework.boot' version '4.0.6' apply false
 }
 
 allprojects {
@@ -7,7 +8,7 @@ allprojects {
     version = '1.0-SNAPSHOT'
 }
 
-def moduleArchives = [
+ext.moduleArchives = [
     bcel                 : 'BCEL',
     completeablefuture  : 'CompleteAbleFuture',
     distributedthreadpool: 'DistributedThreadPool',
@@ -23,6 +24,7 @@ def moduleArchives = [
     webaspect            : 'WebAspect'
 ]
 
+def moduleArchives = ext.moduleArchives
 def javaModules = moduleArchives.keySet().collect { project(":$it") }
 
 configure(javaModules) {
@@ -87,5 +89,67 @@ project(':soapserver') {
 project(':webaspect') {
     dependencies {
         implementation 'org.apache.tomcat.embed:tomcat-embed-core:8.0.23'
+    }
+}
+
+project(':blogsite') {
+    apply plugin: 'java'
+    apply plugin: 'org.springframework.boot'
+
+    base {
+        archivesName = 'ExperimentBlogSite'
+    }
+
+    java {
+        sourceCompatibility = JavaVersion.toVersion(17)
+        targetCompatibility = JavaVersion.toVersion(17)
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
+
+    dependencies {
+        implementation platform('org.springframework.boot:spring-boot-dependencies:4.0.6')
+        implementation 'org.springframework.boot:spring-boot-starter-web'
+        implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+        implementation 'org.commonmark:commonmark:0.28.0'
+
+        testImplementation platform('org.springframework.boot:spring-boot-dependencies:4.0.6')
+        testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    }
+
+    def blogContentDir = layout.buildDirectory.dir('generated/blog-content')
+    def blogFiles = moduleArchives.keySet().collect { rootProject.file("${it}/BLOG.md") }
+
+    tasks.register('generateBlogContent') {
+        inputs.files(blogFiles)
+        outputs.dir(blogContentDir)
+
+        doLast {
+            def contentRoot = blogContentDir.get().asFile
+            def postsDir = new File(contentRoot, 'blog-posts')
+            project.delete(contentRoot)
+            postsDir.mkdirs()
+
+            def manifest = new File(postsDir, 'manifest.tsv')
+            manifest.withWriter('UTF-8') { writer ->
+                moduleArchives.each { moduleName, archiveName ->
+                    def source = rootProject.file("${moduleName}/BLOG.md")
+                    def target = new File(postsDir, "${moduleName}.md")
+                    target.text = source.getText('UTF-8')
+                    writer.write("${moduleName}\t${archiveName}\tblog-posts/${moduleName}.md\n")
+                }
+            }
+        }
+    }
+
+    tasks.named('processResources') {
+        dependsOn tasks.named('generateBlogContent')
+        from(blogContentDir)
     }
 }
