@@ -1,0 +1,28 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'experiments'
+
+include 'bcel'
+include 'completeablefuture'
+include 'distributedthreadpool'
+include 'evolution'
+include 'hashlife'
+include 'jneuro'
+include 'lambdabytecode'
+include 'orderedthreadpool'
+include 'picontroller'
+include 'slickproject'
+include 'soapserver'
+include 'webaspect'
