@@ -1,0 +1,90 @@
+plugins {
+    id 'base'
+}
+
+allprojects {
+    group = 'experiments'
+    version = '1.0-SNAPSHOT'
+}
+
+def moduleArchives = [
+    bcel                 : 'BCEL',
+    completeablefuture  : 'CompleteAbleFuture',
+    distributedthreadpool: 'DistributedThreadPool',
+    evolution            : 'Evolution',
+    hashlife             : 'HashLife',
+    jneuro               : 'JNeuro',
+    lambdabytecode       : 'LambdaBytecode',
+    orderedthreadpool    : 'OrderedThreadPool',
+    picontroller         : 'PiController',
+    slickproject         : 'SlickGame',
+    soapserver           : 'SoapServer',
+    webaspect            : 'WebAspect'
+]
+
+def javaModules = moduleArchives.keySet().collect { project(":$it") }
+
+configure(javaModules) {
+    apply plugin: 'java'
+
+    base {
+        archivesName = moduleArchives[project.name]
+    }
+
+    java {
+        sourceCompatibility = JavaVersion.toVersion(9)
+        targetCompatibility = JavaVersion.toVersion(9)
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
+    sourceSets {
+        main {
+            resources {
+                srcDir 'src/main/java'
+                exclude '**/*.java'
+            }
+        }
+    }
+}
+
+configure([project(':soapserver'), project(':webaspect')]) {
+    apply plugin: 'war'
+}
+
+project(':bcel') {
+    dependencies {
+        implementation 'org.apache.bcel:bcel:5.2'
+    }
+}
+
+project(':picontroller') {
+    dependencies {
+        implementation 'org.apache.tomcat.embed:tomcat-embed-core:8.0.23'
+        implementation 'org.apache.tomcat.embed:tomcat-embed-websocket:8.0.23'
+        implementation 'org.apache.logging.log4j:log4j-core:2.5'
+        implementation 'com.pi4j:pi4j-core:1.0'
+    }
+}
+
+project(':slickproject') {
+    dependencies {
+        implementation 'org.slick2d:slick2d-core:1.0.2'
+    }
+}
+
+project(':soapserver') {
+    dependencies {
+        implementation 'org.apache.tomcat.embed:tomcat-embed-core:8.0.23'
+        implementation 'javax.xml.soap:javax.xml.soap-api:1.4.0'
+        runtimeOnly 'com.sun.xml.messaging.saaj:saaj-impl:1.5.3'
+    }
+}
+
+project(':webaspect') {
+    dependencies {
+        implementation 'org.apache.tomcat.embed:tomcat-embed-core:8.0.23'
+    }
+}
