@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Java Experiments Journal</title>
+    <link rel="stylesheet" th:href="@{/assets/site.css}">
+</head>
+<body>
+<header class="masthead">
+    <img class="masthead__image" th:src="@{/assets/experiment-journal-masthead.png}" alt="">
+    <div class="masthead__content">
+        <p class="eyebrow">Java Experiments</p>
+        <h1>Technical journal</h1>
+        <p class="lede">Small experiments in bytecode, concurrency, servlets, graphics, neural networks, and runtime behavior.</p>
+    </div>
+</header>
+
+<main class="shell">
+    <section class="intro" aria-labelledby="posts-heading">
+        <div>
+            <h2 id="posts-heading">Experiments</h2>
+            <p th:text="${#lists.size(posts)} + ' posts'">13 posts</p>
+        </div>
+    </section>
+
+    <section class="post-list" aria-label="Experiment posts">
+        <article class="post-card" th:each="post : ${posts}">
+            <p class="post-card__meta" th:text="${post.archiveName()}">ArchiveName</p>
+            <h3>
+                <a th:href="@{/posts/{slug}(slug=${post.slug()})}" th:text="${post.title()}">Post title</a>
+            </h3>
+            <p th:text="${post.excerpt()}">Excerpt</p>
+        </article>
+    </section>
+</main>
+</body>
+</html>

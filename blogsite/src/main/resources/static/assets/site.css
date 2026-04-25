@@ -1,0 +1,250 @@
+:root {
+    color-scheme: light;
+    --page: #f7f7f2;
+    --surface: #ffffff;
+    --ink: #20231f;
+    --muted: #62685f;
+    --line: #d9ded2;
+    --accent: #2d6a4f;
+    --accent-strong: #17462f;
+    --warm: #b86f2a;
+    --code-bg: #eef1e9;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.6;
+}
+
+a {
+    color: var(--accent-strong);
+    text-decoration-color: rgba(45, 106, 79, 0.35);
+    text-underline-offset: 0.18em;
+}
+
+a:hover {
+    color: var(--warm);
+    text-decoration-color: rgba(184, 111, 42, 0.55);
+}
+
+.masthead {
+    position: relative;
+    min-height: 330px;
+    overflow: hidden;
+    background: #1f2a24;
+    color: #fff;
+    display: grid;
+    align-items: end;
+}
+
+.masthead::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(12, 20, 16, 0.82), rgba(12, 20, 16, 0.48) 52%, rgba(12, 20, 16, 0.14));
+}
+
+.masthead__image {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.masthead__content {
+    position: relative;
+    z-index: 1;
+    width: min(1120px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 64px 0 54px;
+}
+
+.eyebrow {
+    color: var(--warm);
+    font-size: 0.78rem;
+    font-weight: 760;
+    letter-spacing: 0.08em;
+    margin: 0 0 10px;
+    text-transform: uppercase;
+}
+
+.masthead .eyebrow {
+    color: #f1b26b;
+}
+
+h1,
+h2,
+h3 {
+    line-height: 1.12;
+    margin: 0;
+}
+
+.masthead h1 {
+    font-size: clamp(2.7rem, 6vw, 5.8rem);
+    max-width: 880px;
+}
+
+.lede {
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 1.12rem;
+    max-width: 720px;
+    margin: 18px 0 0;
+}
+
+.shell {
+    width: min(1120px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 36px 0 72px;
+}
+
+.intro {
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 24px;
+    padding-bottom: 18px;
+}
+
+.intro h2 {
+    font-size: 1.35rem;
+}
+
+.intro p {
+    color: var(--muted);
+    margin: 4px 0 0;
+}
+
+.post-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+}
+
+.post-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.post-card__meta {
+    color: var(--warm);
+    font-size: 0.78rem;
+    font-weight: 720;
+    margin: 0 0 8px;
+    text-transform: uppercase;
+}
+
+.post-card h3 {
+    font-size: 1.18rem;
+    margin-bottom: 10px;
+}
+
+.post-card p {
+    color: var(--muted);
+    margin: 0;
+}
+
+.article-header {
+    width: min(900px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 38px 0 26px;
+}
+
+.article-header nav {
+    margin-bottom: 42px;
+}
+
+.article-header h1 {
+    font-size: clamp(2rem, 5vw, 4rem);
+    max-width: 820px;
+}
+
+.article-shell {
+    width: min(900px, calc(100% - 40px));
+    margin: 0 auto;
+    padding: 0 0 80px;
+}
+
+.markdown-body {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: clamp(22px, 5vw, 56px);
+}
+
+.markdown-body h1 {
+    display: none;
+}
+
+.markdown-body h2 {
+    border-top: 1px solid var(--line);
+    font-size: 1.35rem;
+    margin-top: 34px;
+    padding-top: 26px;
+}
+
+.markdown-body h2:first-child {
+    border-top: 0;
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body pre {
+    margin: 16px 0 0;
+}
+
+.markdown-body code {
+    background: var(--code-bg);
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    font-size: 0.92em;
+    padding: 0.1em 0.3em;
+}
+
+.markdown-body pre {
+    background: #20231f;
+    border-radius: 8px;
+    color: #f4f4ec;
+    overflow-x: auto;
+    padding: 16px;
+}
+
+.markdown-body pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+}
+
+@media (max-width: 680px) {
+    .masthead {
+        min-height: 280px;
+    }
+
+    .masthead::after {
+        background: rgba(12, 20, 16, 0.68);
+    }
+
+    .masthead__content,
+    .shell,
+    .article-header,
+    .article-shell {
+        width: min(100% - 28px, 1120px);
+    }
+
+    .masthead__content {
+        padding: 52px 0 42px;
+    }
+
+    .post-list {
+        grid-template-columns: 1fr;
+    }
+}

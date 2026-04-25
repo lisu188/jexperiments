@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${post.title()} + ' | Java Experiments Journal'">Java Experiments Journal</title>
+    <link rel="stylesheet" th:href="@{/assets/site.css}">
+</head>
+<body>
+<header class="article-header">
+    <nav>
+        <a th:href="@{/}">Java Experiments</a>
+    </nav>
+    <p class="eyebrow" th:text="${post.archiveName()}">ArchiveName</p>
+    <h1 th:text="${post.title()}">Post title</h1>
+</header>
+
+<main class="article-shell">
+    <article class="markdown-body" th:utext="${post.html()}"></article>
+</main>
+</body>
+</html>
