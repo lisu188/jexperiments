@@ -432,9 +432,40 @@ h3 {
 
 .markdown-body pre code {
     background: transparent;
-    color: inherit;
+    color: #d8e0ea;
     padding: 0;
     white-space: pre;
+}
+
+.markdown-body pre code .tok-keyword {
+    color: #ff8f7a;
+    font-weight: 720;
+}
+
+.markdown-body pre code .tok-type {
+    color: #d9b3ff;
+}
+
+.markdown-body pre code .tok-function {
+    color: #8bdc97;
+}
+
+.markdown-body pre code .tok-string {
+    color: #ffd37a;
+}
+
+.markdown-body pre code .tok-comment {
+    color: #91a1b4;
+    font-style: italic;
+}
+
+.markdown-body pre code .tok-number {
+    color: #8cc7ff;
+}
+
+.markdown-body pre code .tok-annotation,
+.markdown-body pre code .tok-variable {
+    color: #ffb86b;
 }
 
 @media (max-width: 980px) {

@@ -60,7 +60,8 @@ class BlogSiteApplicationTests {
         assertThat(response.statusCode()).isEqualTo(HttpStatus.OK.value());
         assertThat(response.body())
                 .contains("<pre><code class=\"language-java\">")
-                .contains("ClassGen cg = new ClassGen");
+                .contains("<span class=\"tok tok-type\">ClassGen</span> cg = <span class=\"tok tok-keyword\">new</span>")
+                .contains("<span class=\"tok tok-comment\">// cg creates constant pool</span>");
     }
 
     @Test
