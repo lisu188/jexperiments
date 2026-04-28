@@ -61,7 +61,7 @@ jobs:
           project_id: ${{ env.PROJECT_ID }}
           version: ">= 416.0.0"
 
-      - name: Build image with Cloud Build
+      - name: Build and push image
         id: image
         run: |
           set -eu
@@ -70,7 +70,9 @@ jobs:
             tag="$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
           fi
           image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/blogsite:${tag}"
-          gcloud builds submit --project "$PROJECT_ID" --tag "$image" .
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build --tag "$image" .
+          docker push "$image"
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Deploy image to Cloud Run
