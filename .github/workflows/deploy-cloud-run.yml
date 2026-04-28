@@ -1,0 +1,88 @@
+name: Deploy blogsite to Cloud Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Container tag to deploy. Defaults to the first 12 characters of the commit SHA."
+        required: false
+        type: string
+      allow_unauthenticated:
+        description: "Allow public unauthenticated access to the Cloud Run service."
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      REPOSITORY: ${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}
+      SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        run: |
+          set -eu
+          test -n "$PROJECT_ID" || { echo "Missing repository variable GCP_PROJECT_ID"; exit 1; }
+          test -n "$REGION" || { echo "Missing repository variable GCP_REGION"; exit 1; }
+          test -n "$REPOSITORY" || { echo "Missing repository variable ARTIFACT_REGISTRY_REPOSITORY"; exit 1; }
+          test -n "$SERVICE" || { echo "Missing repository variable CLOUD_RUN_SERVICE"; exit 1; }
+          test -n "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" || { echo "Missing secret GCP_WORKLOAD_IDENTITY_PROVIDER"; exit 1; }
+          test -n "${{ secrets.GCP_SERVICE_ACCOUNT }}" || { echo "Missing secret GCP_SERVICE_ACCOUNT"; exit 1; }
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          version: ">= 416.0.0"
+
+      - name: Build image with Cloud Build
+        id: image
+        run: |
+          set -eu
+          tag="${{ inputs.image_tag }}"
+          if [ -z "$tag" ]; then
+            tag="$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          fi
+          image="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/blogsite:${tag}"
+          gcloud builds submit --project "$PROJECT_ID" --tag "$image" .
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy image to Cloud Run
+        run: |
+          set -eu
+          access_flag="--no-allow-unauthenticated"
+          if [ "${{ inputs.allow_unauthenticated }}" = "true" ]; then
+            access_flag="--allow-unauthenticated"
+          fi
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --platform managed \
+            --image "${{ steps.image.outputs.image }}" \
+            --port 8080 \
+            "$access_flag"
+
+      - name: Print service URL
+        run: |
+          gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --platform managed \
+            --format='value(status.url)'

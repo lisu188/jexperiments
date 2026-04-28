@@ -1,0 +1,8 @@
+.codex
+.git
+.github
+.gradle
+**/build
+**/.gradle
+*.class
+*.log
