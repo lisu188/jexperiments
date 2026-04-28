@@ -3,23 +3,29 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#101419">
+    <meta name="theme-color" content="#0b1020">
     <title th:text="${post.title()} + ' | Java Experiments Journal'">Java Experiments Journal</title>
-    <link rel="stylesheet" th:href="@{/assets/site.css(v='20260428-2')}">
+    <link rel="stylesheet" th:href="@{/assets/site.css(v='20260428-3')}">
 </head>
-<body>
-<header class="article-header">
-    <nav>
-        <a class="brand" th:href="@{/}">Java Experiments</a>
+<body class="post-page">
+<a class="skip-link" href="#article">Skip to article</a>
+<header class="article-hero">
+    <img class="article-hero__image" th:src="@{/assets/experiment-journal-masthead.png}" alt="">
+    <nav class="article-nav" aria-label="Article">
+        <a class="brand" th:href="@{/}">
+            <span class="brand__mark" aria-hidden="true">JX</span>
+            <span>Java Experiments</span>
+        </a>
+        <a class="article-nav__back" th:href="@{/}">All experiments</a>
     </nav>
-    <div class="article-header__body">
+    <div class="article-hero__body">
         <p class="eyebrow" th:text="${post.archiveName()}">ArchiveName</p>
         <h1 th:text="${post.title()}">Post title</h1>
-        <p th:text="${post.excerpt()}">Post excerpt</p>
+        <p class="article-hero__dek" th:text="${post.excerpt()}">Post excerpt</p>
     </div>
 </header>
 
-<main class="article-shell">
+<main id="article" class="article-shell">
     <article class="markdown-body" th:utext="${post.html()}"></article>
 </main>
 </body>
