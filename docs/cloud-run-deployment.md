@@ -5,7 +5,7 @@ This repository deploys the Spring Boot `blogsite` module to Cloud Run as a cont
 The deployment path has three modes:
 
 - Local/manual: use `gcloud` to build the image with Cloud Build and deploy it.
-- GitHub Actions autodeploy: merges or direct pushes to `main` run `.github/workflows/deploy-cloud-run.yml`, which runs the same `gcloud builds submit` and `gcloud run deploy` commands.
+- GitHub Actions autodeploy: merges or direct pushes to `main` run `.github/workflows/deploy-cloud-run.yml`, which builds the Docker image on the GitHub runner, pushes it to Artifact Registry, and deploys it with `gcloud run deploy`.
 - GitHub Actions manual deploy: use `gh workflow run deploy-cloud-run.yml --ref main` when you want to redeploy without a new `main` commit or override the image tag.
 
 ## Prerequisites
@@ -109,10 +109,6 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${SERVICE_ACCOUNT}" \
   --role="roles/iam.serviceAccountUser"
 
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${SERVICE_ACCOUNT}" \
-  --role="roles/cloudbuild.builds.editor"
-
 gcloud artifacts repositories add-iam-policy-binding "$REPOSITORY" \
   --project "$PROJECT_ID" \
   --location="$REGION" \
@@ -180,8 +176,8 @@ gh workflow run deploy-cloud-run.yml \
 
 ## Operational Notes
 
-The workflow builds the Dockerfile from the repository root. The Dockerfile copies the full source tree because `:blogsite:bootJar` generates blog content from every experiment module's `BLOG.md`.
+The workflow builds the Dockerfile from the repository root on the GitHub-hosted runner, authenticates Docker to Artifact Registry with `gcloud auth configure-docker`, pushes the image, and then deploys that image to Cloud Run. The Dockerfile copies the full source tree because `:blogsite:bootJar` generates blog content from every experiment module's `BLOG.md`.
 
-If Cloud Build reports an Artifact Registry permission error, grant `roles/artifactregistry.writer` on the repository to the Cloud Build service account named in the error. Google Cloud projects can differ in which default Cloud Build service account is used.
+The local/manual path still uses Cloud Build. If Cloud Build reports an Artifact Registry permission error during a local deployment, grant `roles/artifactregistry.writer` on the repository to the Cloud Build service account named in the error. Google Cloud projects can differ in which default Cloud Build service account is used.
 
 This deployment path does not change experiment behavior. The GitHub workflow deploys automatically on pushes to `main` and still supports manual `workflow_dispatch` deployments for redeploys or custom image tags.
