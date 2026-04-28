@@ -4,46 +4,69 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Deep technical experiments in Java, Kotlin, JVM bytecode, concurrency, servlets, graphics, and runtime behavior.">
-    <meta name="theme-color" content="#101419">
+    <meta name="theme-color" content="#0b1020">
     <title>Java Experiments Journal</title>
-    <link rel="stylesheet" th:href="@{/assets/site.css(v='20260428-2')}">
+    <link rel="stylesheet" th:href="@{/assets/site.css(v='20260428-3')}">
 </head>
-<body>
-<header class="masthead">
-    <img class="masthead__image" th:src="@{/assets/experiment-journal-masthead.png}" alt="">
+<body class="home-page">
+<a class="skip-link" href="#posts-heading">Skip to experiments</a>
+<header class="site-hero">
+    <img class="site-hero__image" th:src="@{/assets/experiment-journal-masthead.png}" alt="">
     <nav class="topbar" aria-label="Primary">
-        <a class="brand" th:href="@{/}">Java Experiments</a>
+        <a class="brand" th:href="@{/}">
+            <span class="brand__mark" aria-hidden="true">JX</span>
+            <span>Java Experiments</span>
+        </a>
         <span class="topbar__meta" th:text="${#lists.size(posts)} + ' field notes'">24 field notes</span>
     </nav>
-    <div class="masthead__content">
-        <p class="eyebrow">JVM field notes</p>
-        <h1>Java Experiments Journal</h1>
-        <p class="lede">Bytecode, concurrency, servlets, graphics, neural networks, and runtime behavior studied through compact runnable experiments.</p>
-        <div class="masthead__stats" aria-label="Journal coverage">
-            <span>Java</span>
-            <span>Kotlin</span>
-            <span>JVM internals</span>
+    <div class="site-hero__content">
+        <div class="site-hero__copy">
+            <p class="eyebrow">JVM field notes</p>
+            <h1>Java Experiments Journal</h1>
+            <p class="lede">Runnable experiments for reading bytecode, class files, runtime behavior, and the Java/Kotlin boundary with enough source to reproduce every claim.</p>
+            <div class="hero-links" aria-label="Featured routes">
+                <a href="#posts-heading">Browse experiments</a>
+                <a th:href="@{/posts/kotlindefaultargs}">Start with Kotlin bytecode</a>
+            </div>
+        </div>
+        <aside class="hero-terminal" aria-label="Bytecode inspection commands">
+            <div class="hero-terminal__bar" aria-hidden="true">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+            <pre><code><span>$ ./gradlew :lambdabytecode:classes</span>
+<span>$ javap -v -p -c build/classes/java/main/...</span>
+<span>$ ./gradlew :kotlindefaultargs:runExperiment</span></code></pre>
+        </aside>
+        <div class="hero-metrics" aria-label="Journal coverage">
+            <span><strong th:text="${#lists.size(posts)}">24</strong> deep dives</span>
+            <span><strong>Java</strong> bytecode</span>
+            <span><strong>Kotlin</strong> interop</span>
         </div>
     </div>
 </header>
 
-<main class="shell">
-    <section class="intro" aria-labelledby="posts-heading">
+<main class="site-main">
+    <section class="section-header" aria-labelledby="posts-heading">
         <div>
             <h2 id="posts-heading">Experiments</h2>
-            <p th:text="${#lists.size(posts)} + ' technical deep dives'">24 technical deep dives</p>
+            <p th:text="${#lists.size(posts)} + ' executable technical posts'">24 executable technical posts</p>
         </div>
-        <p class="intro__note">Each post includes source, runtime behavior, caveats, and bytecode inspection commands.</p>
+        <p class="section-header__note">Each article is tied to a compact module, deterministic console output, and concrete inspection commands.</p>
     </section>
 
-    <section class="post-list" aria-label="Experiment posts">
-        <article class="post-card" th:each="post : ${posts}">
+    <section class="post-grid" aria-label="Experiment posts">
+        <article class="post-card" th:each="post, iter : ${posts}" th:classappend="${iter.index == 0} ? ' post-card--feature' : ''">
             <p class="post-card__meta" th:text="${post.archiveName()}">ArchiveName</p>
             <h3>
                 <a th:href="@{/posts/{slug}(slug=${post.slug()})}" th:text="${post.title()}">Post title</a>
             </h3>
             <p th:text="${post.excerpt()}">Excerpt</p>
-            <span class="post-card__arrow" aria-hidden="true">Read</span>
+            <span class="post-card__footer" aria-hidden="true">
+                <span>Open article</span>
+                <span>-></span>
+            </span>
         </article>
     </section>
 </main>
