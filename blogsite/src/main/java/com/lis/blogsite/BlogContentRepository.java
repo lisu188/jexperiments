@@ -27,7 +27,8 @@ public class BlogContentRepository {
         HtmlRenderer renderer = HtmlRenderer.builder()
                 .escapeHtml(true)
                 .build();
-        this.postsBySlug = Collections.unmodifiableMap(loadPosts(parser, renderer));
+        SyntaxHighlighter syntaxHighlighter = new SyntaxHighlighter();
+        this.postsBySlug = Collections.unmodifiableMap(loadPosts(parser, renderer, syntaxHighlighter));
     }
 
     public List<BlogPost> findAll() {
@@ -38,18 +39,19 @@ public class BlogContentRepository {
         return Optional.ofNullable(postsBySlug.get(slug));
     }
 
-    private Map<String, BlogPost> loadPosts(Parser parser, HtmlRenderer renderer) {
+    private Map<String, BlogPost> loadPosts(Parser parser, HtmlRenderer renderer, SyntaxHighlighter syntaxHighlighter) {
         Map<String, BlogPost> posts = new LinkedHashMap<>();
         for (ManifestEntry entry : loadManifest()) {
             String markdown = readResource(entry.resourcePath());
             Node document = parser.parse(markdown);
+            String html = syntaxHighlighter.highlightCodeBlocks(renderer.render(document));
             posts.put(entry.slug(), new BlogPost(
                     entry.slug(),
                     entry.archiveName(),
                     titleFrom(markdown, entry.archiveName()),
                     excerptFrom(markdown),
                     markdown,
-                    renderer.render(document)
+                    html
             ));
         }
         return posts;

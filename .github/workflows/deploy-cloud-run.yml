@@ -1,6 +1,9 @@
 name: Deploy blogsite to Cloud Run
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       image_tag:
@@ -17,6 +20,10 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: blogsite-cloud-run-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -25,6 +32,8 @@ jobs:
       REGION: ${{ vars.GCP_REGION }}
       REPOSITORY: ${{ vars.ARTIFACT_REGISTRY_REPOSITORY }}
       SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      IMAGE_TAG_OVERRIDE: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
+      ALLOW_UNAUTHENTICATED: ${{ github.event_name != 'workflow_dispatch' || inputs.allow_unauthenticated }}
 
     steps:
       - name: Check out source
@@ -56,7 +65,7 @@ jobs:
         id: image
         run: |
           set -eu
-          tag="${{ inputs.image_tag }}"
+          tag="$IMAGE_TAG_OVERRIDE"
           if [ -z "$tag" ]; then
             tag="$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
           fi
@@ -68,7 +77,7 @@ jobs:
         run: |
           set -eu
           access_flag="--no-allow-unauthenticated"
-          if [ "${{ inputs.allow_unauthenticated }}" = "true" ]; then
+          if [ "$ALLOW_UNAUTHENTICATED" = "true" ]; then
             access_flag="--allow-unauthenticated"
           fi
           gcloud run deploy "$SERVICE" \

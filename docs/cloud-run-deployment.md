@@ -2,10 +2,11 @@
 
 This repository deploys the Spring Boot `blogsite` module to Cloud Run as a container image. The checked-in `Dockerfile` builds `:blogsite:bootJar`, copies `ExperimentBlogSite-*.jar` into a Java 17 runtime image, and starts Spring Boot on `${PORT:-8080}` so the same image works locally and on Cloud Run.
 
-The deployment path has two modes:
+The deployment path has three modes:
 
 - Local/manual: use `gcloud` to build the image with Cloud Build and deploy it.
-- GitHub Actions: use `gh` to configure repository variables/secrets and trigger `.github/workflows/deploy-cloud-run.yml`, which runs the same `gcloud builds submit` and `gcloud run deploy` commands.
+- GitHub Actions autodeploy: merges or direct pushes to `main` run `.github/workflows/deploy-cloud-run.yml`, which runs the same `gcloud builds submit` and `gcloud run deploy` commands.
+- GitHub Actions manual deploy: use `gh workflow run deploy-cloud-run.yml --ref main` when you want to redeploy without a new `main` commit or override the image tag.
 
 ## Prerequisites
 
@@ -22,11 +23,11 @@ Choose deployment values:
 ```bash
 export PROJECT_ID="your-gcp-project-id"
 export REGION="us-central1"
-export REPOSITORY="jexperiments"
+export REPOSITORY="cloud-run-source-deploy"
 export SERVICE="jexperiments-blogsite"
 export POOL_ID="github-actions"
 export PROVIDER_ID="github"
-export SERVICE_ACCOUNT_ID="jexperiments-cloud-run-deployer"
+export SERVICE_ACCOUNT_ID="jexperiments-run-deployer"
 export REPO="lisu188/jexperiments"
 ```
 
@@ -41,7 +42,7 @@ gcloud services enable \
   iamcredentials.googleapis.com
 ```
 
-Create the Artifact Registry repository once:
+Create the Artifact Registry repository once if it does not already exist. The `semiotic-mender-415520` project is configured to reuse the existing `cloud-run-source-deploy` repository.
 
 ```bash
 gcloud artifacts repositories create "$REPOSITORY" \
@@ -161,7 +162,7 @@ gh secret set GCP_WORKLOAD_IDENTITY_PROVIDER --body "$WORKLOAD_IDENTITY_PROVIDER
 gh secret set GCP_SERVICE_ACCOUNT --body "$SERVICE_ACCOUNT"
 ```
 
-After the workflow exists on the default branch, trigger a deployment with `gh`:
+After the workflow exists on the default branch, every push to `main` deploys automatically. You can also trigger a deployment with `gh`:
 
 ```bash
 gh workflow run deploy-cloud-run.yml --ref main
@@ -183,4 +184,4 @@ The workflow builds the Dockerfile from the repository root. The Dockerfile copi
 
 If Cloud Build reports an Artifact Registry permission error, grant `roles/artifactregistry.writer` on the repository to the Cloud Build service account named in the error. Google Cloud projects can differ in which default Cloud Build service account is used.
 
-This deployment path does not change experiment behavior and does not deploy automatically on push. Deployments are manual through `workflow_dispatch`.
+This deployment path does not change experiment behavior. The GitHub workflow deploys automatically on pushes to `main` and still supports manual `workflow_dispatch` deployments for redeploys or custom image tags.
