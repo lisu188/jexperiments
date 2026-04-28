@@ -25,7 +25,7 @@ class BlogSiteApplicationTests {
 
     @Test
     void loadsAllConfiguredPosts() {
-        assertThat(repository.findAll()).hasSize(13);
+        assertThat(repository.findAll()).hasSize(24);
         assertThat(repository.findBySlug("bcel"))
                 .hasValueSatisfying(post -> assertThat(post.title())
                         .isEqualTo("Generating a Class with BCEL"));

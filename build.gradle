@@ -1,6 +1,7 @@
 plugins {
     id 'base'
     id 'org.springframework.boot' version '4.0.6' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.3.0' apply false
 }
 
 allprojects {
@@ -15,7 +16,18 @@ ext.moduleArchives = [
     evolution            : 'Evolution',
     flowpublisher        : 'FlowPublisher',
     hashlife             : 'HashLife',
+    javakotlinbridges    : 'JavaKotlinBridges',
     jneuro               : 'JNeuro',
+    kotlindatasynthetic  : 'KotlinDataSynthetic',
+    kotlindefaultargs    : 'KotlinDefaultArgs',
+    kotlindelegation     : 'KotlinDelegation',
+    kotlininlinecapture  : 'KotlinInlineCapture',
+    kotlinmetadatareader : 'KotlinMetadataReader',
+    kotlinpropertyrefs   : 'KotlinPropertyRefs',
+    kotlinsamfuninterface: 'KotlinSamFunInterface',
+    kotlinsealedwhen     : 'KotlinSealedWhen',
+    kotlinsuspendstate   : 'KotlinSuspendState',
+    kotlinvalueclassboxing: 'KotlinValueClassBoxing',
     lambdabytecode       : 'LambdaBytecode',
     orderedthreadpool    : 'OrderedThreadPool',
     picontroller         : 'PiController',
@@ -55,6 +67,45 @@ configure(javaModules) {
 
 configure([project(':soapserver'), project(':webaspect')]) {
     apply plugin: 'war'
+}
+
+def kotlinBytecodeMainClasses = [
+    javakotlinbridges    : 'experiments.kotlin.bridges.BridgeExperimentKt',
+    kotlindatasynthetic  : 'experiments.kotlin.datasynthetic.DataSyntheticExperimentKt',
+    kotlindefaultargs    : 'experiments.kotlin.defaultargs.DefaultArgsExperimentKt',
+    kotlindelegation     : 'experiments.kotlin.delegation.DelegationExperimentKt',
+    kotlininlinecapture  : 'experiments.kotlin.inlinecapture.InlineCaptureExperimentKt',
+    kotlinmetadatareader : 'experiments.kotlin.metadatareader.MetadataReaderExperiment',
+    kotlinpropertyrefs   : 'experiments.kotlin.propertyrefs.PropertyRefsExperimentKt',
+    kotlinsamfuninterface: 'experiments.kotlin.samfuninterface.SamFunInterfaceExperimentKt',
+    kotlinsealedwhen     : 'experiments.kotlin.sealedwhen.SealedWhenExperimentKt',
+    kotlinsuspendstate   : 'experiments.kotlin.suspendstate.SuspendStateExperimentKt',
+    kotlinvalueclassboxing: 'experiments.kotlin.valueclassboxing.ValueClassBoxingExperimentKt'
+]
+
+configure(kotlinBytecodeMainClasses.keySet().collect { project(":$it") }) {
+    apply plugin: 'org.jetbrains.kotlin.jvm'
+
+    kotlin {
+        jvmToolchain(17)
+    }
+
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile).configureEach {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_9)
+        }
+    }
+}
+
+kotlinBytecodeMainClasses.each { moduleName, mainClassName ->
+    project(":$moduleName") {
+        tasks.register('runExperiment', JavaExec) {
+            group = 'application'
+            description = "Runs the ${moduleArchives[moduleName]} bytecode experiment."
+            classpath = sourceSets.main.runtimeClasspath
+            mainClass = mainClassName
+        }
+    }
 }
 
 project(':bcel') {
