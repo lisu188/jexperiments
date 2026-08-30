@@ -33,6 +33,9 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Export Android APK signer
+        run: cp "$ANDROID_HOME/build-tools/36.0.0/lib/apksigner.jar" apksigner.jar
+
       - name: Build release APK
         working-directory: speech-recorder
         run: gradle --no-daemon :app:assembleRelease
@@ -44,4 +47,10 @@ jobs:
         with:
           name: SpeechRecorder-Release-Unsigned
           path: SpeechRecorder-release-unsigned.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Android-ApkSigner
+          path: apksigner.jar
           if-no-files-found: error
