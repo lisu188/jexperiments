@@ -74,7 +74,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics
           script: |
             mkdir -p screenshots
             adb shell settings put global hide_error_dialogs 1
@@ -84,8 +84,8 @@ jobs:
             adb shell am force-stop experiments.tesseractviewer
             adb shell am start -W -S -n experiments.tesseractviewer/.MainActivity
             sleep 2
-            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'
-            adb shell dumpsys window | grep -q experiments.tesseractviewer
+            adb shell dumpsys window > screenshots/before-window.txt
+            grep -q experiments.tesseractviewer screenshots/before-window.txt
             adb exec-out screencap -p > screenshots/before-default.png
             adb shell input swipe 540 950 790 700 600
             sleep 1
@@ -94,16 +94,22 @@ jobs:
             gradle -p tesseractviewer :app:assembleDebug --no-daemon
             adb install -r tesseractviewer/app/build/outputs/apk/debug/app-debug.apk
             adb shell am force-stop experiments.tesseractviewer
-            adb shell am start -W -S -n experiments.tesseractviewer/.MainActivity
+            adb logcat -c
+            adb shell am start -W -S -n experiments.tesseractviewer/.MainActivity || true
             sleep 2
-            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'
-            adb shell dumpsys window | grep -q experiments.tesseractviewer
+            adb logcat -d -v threadtime > screenshots/after-logcat.txt
+            adb shell dumpsys window > screenshots/after-window.txt
+            if ! grep -q experiments.tesseractviewer screenshots/after-window.txt; then
+              grep -E -A 40 -B 8 'FATAL EXCEPTION|AndroidRuntime|Process: experiments.tesseractviewer|experiments.tesseractviewer' screenshots/after-logcat.txt || true
+              exit 1
+            fi
             adb exec-out screencap -p > screenshots/after-default.png
             adb shell input swipe 540 950 790 700 600
             sleep 1
             adb exec-out screencap -p > screenshots/after-rotated.png
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: TesseractViewer-ux-screenshots
-          path: screenshots/*.png
+          name: TesseractViewer-ux-diagnostics
+          path: screenshots/*
           if-no-files-found: error
