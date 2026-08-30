@@ -1,15 +1,9 @@
-name: Build Speech Recorder APK
+name: Build Speech Recorder Release
 
 on:
   push:
     branches:
-      - build/speech-recorder-apk
-    paths:
-      - speech-recorder/**
-      - .github/workflows/build-speech-recorder.yml
-  pull_request:
-    branches:
-      - main
+      - build/speech-recorder-release
     paths:
       - speech-recorder/**
       - .github/workflows/build-speech-recorder.yml
@@ -39,18 +33,15 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Build installable APK
+      - name: Build release APK
         working-directory: speech-recorder
-        run: gradle --no-daemon :app:assembleDebug
+        run: gradle --no-daemon :app:assembleRelease
 
       - name: Prepare artifact
-        run: cp speech-recorder/app/build/outputs/apk/debug/app-debug.apk SpeechRecorder.apk
-
-      - name: Verify APK signature
-        run: "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs SpeechRecorder.apk
+        run: cp speech-recorder/app/build/outputs/apk/release/app-release-unsigned.apk SpeechRecorder-release-unsigned.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SpeechRecorder-APK
-          path: SpeechRecorder.apk
+          name: SpeechRecorder-Release-Unsigned
+          path: SpeechRecorder-release-unsigned.apk
           if-no-files-found: error
