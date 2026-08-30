@@ -3,7 +3,9 @@ name: Tesseract Viewer Android
 on:
   push:
     branches:
+      - main
       - feature/tesseract-viewer
+      - "release/tesseract-viewer-*"
     paths:
       - "tesseractviewer/**"
       - ".github/workflows/tesseract-viewer-android.yml"
@@ -28,10 +30,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.5.0"
-      - name: Test, lint and build APK
-        run: gradle -p tesseractviewer :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+      - name: Test, lint and build release APK
+        run: gradle -p tesseractviewer :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon
+      - name: Verify and package release APK
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose tesseractviewer/app/build/outputs/apk/release/app-release.apk
+          cp tesseractviewer/app/build/outputs/apk/release/app-release.apk TesseractViewer-1.0.0-release.apk
+          sha256sum TesseractViewer-1.0.0-release.apk > TesseractViewer-1.0.0-release.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: TesseractViewer-debug
-          path: tesseractviewer/app/build/outputs/apk/debug/app-debug.apk
+          name: TesseractViewer-release-1.0.0
+          path: |
+            TesseractViewer-1.0.0-release.apk
+            TesseractViewer-1.0.0-release.apk.sha256
           if-no-files-found: error

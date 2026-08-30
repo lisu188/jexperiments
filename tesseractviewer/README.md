@@ -13,15 +13,21 @@ Native Android/Kotlin viewer for exploring a four-dimensional hypercube.
 - dimension-colored edges with W-axis edges emphasized
 - no game engine and no runtime dependencies
 
+## Version
+
+Current release: `1.0.0` (`versionCode = 2`).
+
 ## Build
 
 The project is intentionally isolated from the repository's JVM Gradle build.
 
 ```bash
-gradle -p tesseractviewer :app:testDebugUnitTest :app:assembleDebug
+gradle -p tesseractviewer :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
 ```
 
-AGP 9.3 requires Gradle 9.5 and JDK 17. GitHub Actions installs those versions explicitly and uploads `TesseractViewer-debug` as an APK artifact.
+AGP 9.3 requires Gradle 9.5 and JDK 17. GitHub Actions installs those versions explicitly, verifies the APK signature with `apksigner`, generates a SHA-256 checksum, and uploads `TesseractViewer-release-1.0.0`.
+
+The repository does not contain a production signing key. The release variant is minified, resource-shrunk and non-debuggable, but it is signed with Android's debug signing configuration so the generated APK is directly installable for internal use. It must not be treated as a Google Play production artifact or as a stable long-term update channel.
 
 ## Controls
 
