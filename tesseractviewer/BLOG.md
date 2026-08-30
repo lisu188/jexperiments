@@ -128,7 +128,7 @@ The unit tests verify topology and a core invariant of the math. The generated g
 
 The 1.1 UI redesign exposed a lifecycle bug that compile-time checks could not detect: requesting `Window.insetsController` before `setContentView()` had created the window `DecorView` caused a launch-time `NullPointerException` on Android 35. Version 1.1.1 fixes the ordering by creating the content view first and then configuring the system bars through the existing decor view.
 
-CI now complements unit tests and lint with an emulator cold-start smoke test. It installs the APK, clears `logcat`, launches `MainActivity`, verifies that the Tesseract activity remains focused after startup, checks the runtime log for fatal exceptions, and captures screenshots. This prevents a release from being considered healthy merely because it compiles and signs successfully.
+CI complements unit tests and lint with an emulator cold-start smoke test. It installs the APK, clears `logcat`, launches `MainActivity`, verifies that the Tesseract activity remains focused after startup, checks the runtime log for fatal exceptions, and captures screenshots. This prevents a release from being considered healthy merely because it compiles and signs successfully.
 
 The CI job builds the Android project independently from the repository's existing JVM Gradle project. It runs unit tests, release lint and `assembleRelease`, verifies the resulting APK with Android `apksigner`, computes a SHA-256 checksum and publishes the versioned APK artifact.
 
