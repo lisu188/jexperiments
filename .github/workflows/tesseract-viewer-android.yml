@@ -35,14 +35,14 @@ jobs:
       - name: Verify and package release APK
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose tesseractviewer/app/build/outputs/apk/release/app-release.apk
-          cp tesseractviewer/app/build/outputs/apk/release/app-release.apk TesseractViewer-1.1.0-release.apk
-          sha256sum TesseractViewer-1.1.0-release.apk > TesseractViewer-1.1.0-release.apk.sha256
+          cp tesseractviewer/app/build/outputs/apk/release/app-release.apk TesseractViewer-1.1.1-release.apk
+          sha256sum TesseractViewer-1.1.1-release.apk > TesseractViewer-1.1.1-release.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: TesseractViewer-release-1.1.0
+          name: TesseractViewer-release-1.1.1
           path: |
-            TesseractViewer-1.1.0-release.apk
-            TesseractViewer-1.1.0-release.apk.sha256
+            TesseractViewer-1.1.1-release.apk
+            TesseractViewer-1.1.1-release.apk.sha256
           if-no-files-found: error
 
   screenshot:
@@ -95,14 +95,14 @@ jobs:
             adb install -r tesseractviewer/app/build/outputs/apk/debug/app-debug.apk
             adb shell am force-stop experiments.tesseractviewer
             adb logcat -c
-            adb shell am start -W -S -n experiments.tesseractviewer/.MainActivity || true
+            adb shell am start -W -S -n experiments.tesseractviewer/.MainActivity
             sleep 2
             adb logcat -d -v threadtime > screenshots/after-logcat.txt
             adb shell dumpsys window > screenshots/after-window.txt
-            if ! grep -q experiments.tesseractviewer screenshots/after-window.txt; then
-              grep -E -A 40 -B 8 'FATAL EXCEPTION|AndroidRuntime|Process: experiments.tesseractviewer|experiments.tesseractviewer' screenshots/after-logcat.txt || true
+            if grep -E 'FATAL EXCEPTION|Process: experiments.tesseractviewer' screenshots/after-logcat.txt; then
               exit 1
             fi
+            grep -q experiments.tesseractviewer screenshots/after-window.txt
             adb exec-out screencap -p > screenshots/after-default.png
             adb shell input swipe 540 950 790 700 600
             sleep 1
