@@ -1,0 +1,217 @@
+name: Apply Speech Recorder Persistence
+
+on:
+  push:
+    branches:
+      - feature/speech-recorder-persistent
+    paths:
+      - .github/workflows/apply-speech-recorder-persistence.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/speech-recorder-persistent
+
+      - name: Apply persistent foreground recorder changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          service = Path('speech-recorder/app/src/main/java/pl/lisu188/speechrecorder/RecorderService.java')
+          s = service.read_text()
+          old = '''        if (ACTION_STOP.equals(action)) {
+              stopCapture();
+              stopForeground(STOP_FOREGROUND_REMOVE);
+              stopSelf();
+              return START_NOT_STICKY;
+          }
+
+          startAsForeground(false);
+          if (!running.get()) {
+              startCapture();
+          }
+          return START_NOT_STICKY;'''.replace('          ', '        ')
+          new = '''        if (ACTION_STOP.equals(action)) {
+              getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", false).apply();
+              stopCapture();
+              stopForeground(STOP_FOREGROUND_REMOVE);
+              stopSelf();
+              return START_NOT_STICKY;
+          }
+
+          getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", true).apply();
+          startAsForeground(false);
+          if (!running.get()) {
+              startCapture();
+          }
+          return START_STICKY;'''.replace('          ', '        ')
+          if old not in s:
+              raise SystemExit('RecorderService start block not found')
+          s = s.replace(old, new, 1)
+          s = s.replace('.setSmallIcon(android.R.drawable.ic_btn_speak_now)', '.setSmallIcon(R.drawable.ic_mic_notification)', 1)
+          service.write_text(s)
+
+          activity = Path('speech-recorder/app/src/main/java/pl/lisu188/speechrecorder/MainActivity.java')
+          s = activity.read_text()
+          s = s.replace('public class MainActivity extends Activity {\n    private static final int REQUEST_PERMISSIONS = 1001;', 'public class MainActivity extends Activity {\n    public static final String ACTION_RESUME_AFTER_BOOT = "pl.lisu188.speechrecorder.RESUME_AFTER_BOOT";\n    private static final int REQUEST_PERMISSIONS = 1001;', 1)
+          s = s.replace('        setContentView(buildUi());\n    }', '        setContentView(buildUi());\n        if (ACTION_RESUME_AFTER_BOOT.equals(getIntent().getAction())) {\n            requestAndStart();\n        }\n    }', 1)
+          s = s.replace('settings.setText("Ustawienia: 5 s bufora przed mową, 8 s ciszy kończącej klip, WAV 16 kHz mono.\\nNagrania: Music/SpeechRecorder");', 'settings.setText("Ustawienia: 5 s bufora przed mową, 8 s ciszy kończącej klip, WAV 16 kHz mono.\\nNagrania: Music/SpeechRecorder\\nTryb trwały: foreground service + START_STICKY.");', 1)
+          marker = '''        LinearLayout.LayoutParams appSettingsParams = matchWrap();
+          appSettingsParams.topMargin = dp(20);
+          root.addView(appSettings, appSettingsParams);
+
+          return root;'''.replace('          ', '        ')
+          replacement = '''        LinearLayout.LayoutParams appSettingsParams = matchWrap();
+          appSettingsParams.topMargin = dp(20);
+          root.addView(appSettings, appSettingsParams);
+
+          Button batterySettings = new Button(this);
+          batterySettings.setText("OPTYMALIZACJA BATERII");
+          batterySettings.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
+          LinearLayout.LayoutParams batteryParams = matchWrap();
+          batteryParams.topMargin = dp(10);
+          root.addView(batterySettings, batteryParams);
+
+          TextView persistence = new TextView(this);
+          persistence.setText("Po uruchomieniu Android będzie utrzymywał usługę w tle i próbował odtworzyć ją po ubiciu procesu. Force stop, odebranie mikrofonu lub ograniczenia systemowe nadal zatrzymują aplikację.");
+          persistence.setTextSize(13);
+          persistence.setPadding(0, dp(16), 0, 0);
+          root.addView(persistence, matchWrap());
+
+          return root;'''.replace('          ', '        ')
+          if marker not in s:
+              raise SystemExit('MainActivity insertion point not found')
+          activity.write_text(s.replace(marker, replacement, 1))
+
+          manifest = Path('speech-recorder/app/src/main/AndroidManifest.xml')
+          manifest.write_text('''<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_mic_app"
+        android:roundIcon="@drawable/ic_mic_app"
+        android:label="Speech Recorder"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".RecorderService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="microphone" />
+
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
+''')
+
+          boot = Path('speech-recorder/app/src/main/java/pl/lisu188/speechrecorder/BootReceiver.java')
+          boot.write_text('''package pl.lisu188.speechrecorder;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+
+public class BootReceiver extends BroadcastReceiver {
+    private static final String CHANNEL_ID = "speech_recorder_resume";
+    private static final int NOTIFICATION_ID = 42;
+
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        boolean enabled = context.getSharedPreferences("recorder", Context.MODE_PRIVATE).getBoolean("enabled", false);
+        if (!enabled) {
+            return;
+        }
+
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Wznowienie nagrywania", NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription("Pozwala wznowić nasłuchiwanie po restarcie telefonu");
+        manager.createNotificationChannel(channel);
+
+        Intent open = new Intent(context, MainActivity.class).setAction(MainActivity.ACTION_RESUME_AFTER_BOOT);
+        PendingIntent pending = PendingIntent.getActivity(context, 3, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification = new Notification.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_mic_notification)
+                .setContentTitle("Speech Recorder zatrzymany po restarcie")
+                .setContentText("Dotknij, aby wznowić stałe nasłuchiwanie mikrofonu")
+                .setAutoCancel(true)
+                .setContentIntent(pending)
+                .build();
+        manager.notify(NOTIFICATION_ID, notification);
+    }
+}
+''')
+
+          drawable = Path('speech-recorder/app/src/main/res/drawable')
+          drawable.mkdir(parents=True, exist_ok=True)
+          (drawable / 'ic_mic_notification.xml').write_text('''<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zM17.3,11c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11H5c0,3.41 2.72,6.23 6,6.72V21H8v2h8v-2h-3v-3.28c3.28,-0.49 6,-3.31 6,-6.72h-1.7z" />
+</vector>
+''')
+          (drawable / 'ic_mic_app.xml').write_text('''<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FF202124" android:pathData="M54,4A50,50 0,1 0,54 104A50,50 0,1 0,54 4" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,62c7.46,0 13.46,-6.03 13.46,-13.5v-18c0,-7.47 -6.03,-13.5 -13.5,-13.5s-13.5,6.03 -13.5,13.5v18C40.46,55.97 46.5,62 54,62zM77.85,48.5c0,13.5 -11.43,22.95 -23.85,22.95S30.15,62 30.15,48.5H22.5c0,15.35 12.24,28.04 27,30.24V93H36v9h36v-9H58.5V78.74c14.76,-2.2 27,-14.89 27,-30.24h-7.65z" />
+</vector>
+''')
+
+          gradle = Path('speech-recorder/app/build.gradle')
+          s = gradle.read_text().replace('versionCode 2', 'versionCode 3').replace("versionName '1.0.1'", "versionName '1.1.0'")
+          gradle.write_text(s)
+
+          readme = Path('speech-recorder/README.md')
+          s = readme.read_text().replace('- wersja 1.0.1', '- wersja 1.1.0')
+          s += '\n- foreground service z `START_STICKY` i `stopWithTask=false`\n- po restarcie telefonu powiadomienie pozwala wznowić mikrofon jednym tapnięciem\n- własna ikona mikrofonu\n'
+          readme.write_text(s)
+
+          workflow = Path('.github/workflows/build-speech-recorder.yml')
+          s = workflow.read_text()
+          start = '''  push:
+    branches:
+      - build/speech-recorder-release
+    paths:'''
+          if start in s:
+              s = s.replace(start, '''  push:
+    branches:
+      - main
+    paths:''', 1)
+          workflow.write_text(s)
+          PY
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add speech-recorder .github/workflows/build-speech-recorder.yml
+          git commit -m "feat: keep speech recorder persistent in background"
+          git push origin HEAD:feature/speech-recorder-persistent
