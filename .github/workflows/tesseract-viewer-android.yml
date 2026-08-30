@@ -70,18 +70,22 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           script: |
             mkdir -p screenshots
+            adb shell settings put global hide_error_dialogs 1
+
             gradle -p /tmp/jexperiments-main/tesseractviewer :app:assembleDebug --no-daemon
             adb install -r /tmp/jexperiments-main/tesseractviewer/app/build/outputs/apk/debug/app-debug.apk
             adb shell am force-stop experiments.tesseractviewer
-            adb shell am start -W -n experiments.tesseractviewer/.MainActivity
+            adb shell am start -W -S -n experiments.tesseractviewer/.MainActivity
             sleep 2
+            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'
+            adb shell dumpsys window | grep -q experiments.tesseractviewer
             adb exec-out screencap -p > screenshots/before-default.png
             adb shell input swipe 540 950 790 700 600
             sleep 1
@@ -90,8 +94,10 @@ jobs:
             gradle -p tesseractviewer :app:assembleDebug --no-daemon
             adb install -r tesseractviewer/app/build/outputs/apk/debug/app-debug.apk
             adb shell am force-stop experiments.tesseractviewer
-            adb shell am start -W -n experiments.tesseractviewer/.MainActivity
+            adb shell am start -W -S -n experiments.tesseractviewer/.MainActivity
             sleep 2
+            adb shell dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'
+            adb shell dumpsys window | grep -q experiments.tesseractviewer
             adb exec-out screencap -p > screenshots/after-default.png
             adb shell input swipe 540 950 790 700 600
             sleep 1
