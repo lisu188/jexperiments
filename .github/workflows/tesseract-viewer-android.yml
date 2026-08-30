@@ -35,14 +35,14 @@ jobs:
       - name: Verify and package release APK
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose tesseractviewer/app/build/outputs/apk/release/app-release.apk
-          cp tesseractviewer/app/build/outputs/apk/release/app-release.apk TesseractViewer-1.0.0-release.apk
-          sha256sum TesseractViewer-1.0.0-release.apk > TesseractViewer-1.0.0-release.apk.sha256
+          cp tesseractviewer/app/build/outputs/apk/release/app-release.apk TesseractViewer-1.1.0-release.apk
+          sha256sum TesseractViewer-1.1.0-release.apk > TesseractViewer-1.1.0-release.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: TesseractViewer-release-1.0.0
+          name: TesseractViewer-release-1.1.0
           path: |
-            TesseractViewer-1.0.0-release.apk
-            TesseractViewer-1.0.0-release.apk.sha256
+            TesseractViewer-1.1.0-release.apk
+            TesseractViewer-1.1.0-release.apk.sha256
           if-no-files-found: error
 
   screenshot:
