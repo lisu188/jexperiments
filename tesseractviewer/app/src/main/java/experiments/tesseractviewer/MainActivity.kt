@@ -44,8 +44,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        configureSystemBars()
         setContentView(buildScreen())
+        configureSystemBars()
         viewer.onStateChanged = ::renderState
         renderState(viewer.state())
     }
@@ -374,7 +374,7 @@ class MainActivity : Activity() {
         }
         if (Build.VERSION.SDK_INT >= 30) {
             window.setDecorFitsSystemWindows(false)
-            window.insetsController?.setSystemBarsAppearance(
+            window.decorView.windowInsetsController?.setSystemBarsAppearance(
                 0,
                 WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
             )
