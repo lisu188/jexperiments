@@ -17,7 +17,9 @@ Native Android/Kotlin viewer for exploring a four-dimensional hypercube.
 
 ## Version
 
-Current development release: `1.1.0` (`versionCode = 3`).
+Current development release: `1.1.1` (`versionCode = 4`).
+
+Version 1.1.1 fixes the launch crash introduced by the 1.1 UI redesign. System-bar configuration now runs after `setContentView()` creates the window decor, and emulator CI checks that a cold-started activity remains in the foreground without an Android runtime fatal exception.
 
 ## Build
 
@@ -27,7 +29,7 @@ The project is intentionally isolated from the repository's JVM Gradle build.
 gradle -p tesseractviewer :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
 ```
 
-AGP 9.3 requires Gradle 9.5 and JDK 17. GitHub Actions installs those versions explicitly, verifies the APK signature with `apksigner`, generates a SHA-256 checksum, and uploads `TesseractViewer-release-1.1.0`.
+AGP 9.3 requires Gradle 9.5 and JDK 17. GitHub Actions installs those versions explicitly, verifies the APK signature with `apksigner`, generates a SHA-256 checksum, and uploads `TesseractViewer-release-1.1.1`.
 
 The repository does not contain a production signing key. The release variant is minified, resource-shrunk and non-debuggable, but it is signed with Android's debug signing configuration so the generated APK is directly installable for internal use. It must not be treated as a Google Play production artifact or as a stable long-term update channel.
 
