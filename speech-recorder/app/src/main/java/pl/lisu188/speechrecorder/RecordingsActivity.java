@@ -1,35 +1,56 @@
 package pl.lisu188.speechrecorder;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ContentUris;
+import android.content.Intent;
+import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.media.MediaMetadataRetriever;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.BaseAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.FileInputStream;
+import java.nio.channels.FileChannel;
 import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
 public class RecordingsActivity extends Activity {
+    private static final String[] SORT_LABELS = {"Najnowsze", "Najstarsze", "Najdłuższe", "Największe"};
+    private static final char[] BARS = {'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'};
+
     private final List<Recording> recordings = new ArrayList<>();
-    private final List<String> labels = new ArrayList<>();
-    private ArrayAdapter<String> adapter;
+    private final List<Recording> visible = new ArrayList<>();
+    private RecordingAdapter adapter;
     private MediaPlayer player;
     private Uri playingUri;
+    private TextView summary;
     private TextView nowPlaying;
+    private EditText search;
+    private Spinner sort;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,65 +72,62 @@ public class RecordingsActivity extends Activity {
     }
 
     private View buildUi() {
-        int pad = dp(20);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, pad, pad, pad);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(Color.rgb(18, 18, 18));
 
-        TextView title = new TextView(this);
-        title.setText("Nagrania");
-        title.setTextSize(26);
-        title.setGravity(Gravity.CENTER_HORIZONTAL);
-        root.addView(title, matchWrap());
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(18), dp(18), dp(18), dp(8));
+        page.addView(content, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        TextView hint = new TextView(this);
-        hint.setText("Dotknij nagrania, aby je odtworzyć lub zatrzymać.");
-        hint.setTextSize(14);
-        hint.setPadding(0, dp(10), 0, dp(14));
-        root.addView(hint, matchWrap());
+        TextView title = text("Nagrania", 30, Color.WHITE, true);
+        content.addView(title, matchWrap());
 
-        nowPlaying = new TextView(this);
-        nowPlaying.setText("Nic nie jest odtwarzane");
-        nowPlaying.setTextSize(15);
-        nowPlaying.setPadding(0, 0, 0, dp(10));
-        root.addView(nowPlaying, matchWrap());
+        summary = text("0 nagrań", 14, Color.LTGRAY, false);
+        summary.setPadding(0, dp(4), 0, dp(14));
+        content.addView(summary, matchWrap());
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
+        search = new EditText(this);
+        search.setHint("Szukaj nagrania");
+        search.setSingleLine(true);
+        search.setTextColor(Color.WHITE);
+        search.setHintTextColor(Color.GRAY);
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { applyFilterAndSort(); }
+            @Override public void afterTextChanged(Editable s) {}
+        });
+        content.addView(search, matchWrap());
 
-        Button refresh = new Button(this);
-        refresh.setText("ODŚWIEŻ");
-        refresh.setOnClickListener(v -> loadRecordings());
-        actions.addView(refresh, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        sort = new Spinner(this);
+        ArrayAdapter<String> sortAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, SORT_LABELS);
+        sort.setAdapter(sortAdapter);
+        sort.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) { applyFilterAndSort(); }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+        });
+        LinearLayout.LayoutParams sortParams = matchWrap();
+        sortParams.topMargin = dp(6);
+        content.addView(sort, sortParams);
 
-        Button stop = new Button(this);
-        stop.setText("STOP");
-        stop.setOnClickListener(v -> stopPlayback());
-        LinearLayout.LayoutParams stopParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        stopParams.leftMargin = dp(8);
-        actions.addView(stop, stopParams);
-        root.addView(actions, matchWrap());
+        nowPlaying = text("Nic nie jest odtwarzane", 13, Color.rgb(111, 207, 135), false);
+        nowPlaying.setPadding(0, dp(8), 0, dp(8));
+        content.addView(nowPlaying, matchWrap());
 
         ListView list = new ListView(this);
-        adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, labels);
+        list.setDividerHeight(dp(1));
+        list.setCacheColorHint(Color.TRANSPARENT);
+        adapter = new RecordingAdapter();
         list.setAdapter(adapter);
-        list.setOnItemClickListener((parent, view, position, id) -> {
-            if (recordings.isEmpty()) {
-                return;
-            }
-            togglePlayback(recordings.get(position));
-        });
-        LinearLayout.LayoutParams listParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        listParams.topMargin = dp(10);
-        root.addView(list, listParams);
+        content.addView(list, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        return root;
+        page.addView(AppNavigation.create(this, AppNavigation.RECORDINGS), matchWrap());
+        return page;
     }
 
     private void loadRecordings() {
         recordings.clear();
-        labels.clear();
-
         Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
         String[] projection = {
                 MediaStore.Audio.Media._ID,
@@ -120,38 +138,66 @@ public class RecordingsActivity extends Activity {
         };
         String selection = MediaStore.Audio.Media.RELATIVE_PATH + "=?";
         String[] args = {"Music/SpeechRecorder/"};
-        String sort = MediaStore.Audio.Media.DATE_ADDED + " DESC";
 
-        try (Cursor cursor = getContentResolver().query(collection, projection, selection, args, sort)) {
+        try (Cursor cursor = getContentResolver().query(collection, projection, selection, args, null)) {
             if (cursor != null) {
                 int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
                 int nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME);
                 int dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED);
                 int sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE);
                 int durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION);
-
                 while (cursor.moveToNext()) {
-                    long id = cursor.getLong(idColumn);
-                    String name = cursor.getString(nameColumn);
-                    long dateAdded = cursor.getLong(dateColumn) * 1000L;
-                    long size = cursor.getLong(sizeColumn);
+                    Uri uri = ContentUris.withAppendedId(collection, cursor.getLong(idColumn));
                     long duration = cursor.getLong(durationColumn);
-                    Uri uri = ContentUris.withAppendedId(collection, id);
                     if (duration <= 0) {
                         duration = readDuration(uri);
                     }
-                    Recording recording = new Recording(uri, name, dateAdded, size, duration);
-                    recordings.add(recording);
-                    labels.add(formatLabel(recording));
+                    recordings.add(new Recording(
+                            uri,
+                            cursor.getString(nameColumn),
+                            cursor.getLong(dateColumn) * 1000L,
+                            cursor.getLong(sizeColumn),
+                            duration,
+                            buildWaveform(uri)
+                    ));
                 }
             }
         } catch (Exception e) {
             Toast.makeText(this, "Nie udało się odczytać nagrań", Toast.LENGTH_LONG).show();
         }
+        applyFilterAndSort();
+    }
 
-        if (labels.isEmpty()) {
-            labels.add("Brak nagrań w Music/SpeechRecorder");
+    private void applyFilterAndSort() {
+        if (adapter == null || search == null || sort == null) {
+            return;
         }
+        String query = search.getText().toString().trim().toLowerCase(Locale.getDefault());
+        visible.clear();
+        for (Recording recording : recordings) {
+            if (query.isEmpty() || recording.name.toLowerCase(Locale.getDefault()).contains(query) || formatDate(recording.dateAdded).toLowerCase(Locale.getDefault()).contains(query)) {
+                visible.add(recording);
+            }
+        }
+
+        int selected = sort.getSelectedItemPosition();
+        Comparator<Recording> comparator;
+        if (selected == 1) {
+            comparator = Comparator.comparingLong(r -> r.dateAdded);
+        } else if (selected == 2) {
+            comparator = (a, b) -> Long.compare(b.durationMs, a.durationMs);
+        } else if (selected == 3) {
+            comparator = (a, b) -> Long.compare(b.sizeBytes, a.sizeBytes);
+        } else {
+            comparator = (a, b) -> Long.compare(b.dateAdded, a.dateAdded);
+        }
+        Collections.sort(visible, comparator);
+
+        long bytes = 0;
+        for (Recording recording : visible) {
+            bytes += recording.sizeBytes;
+        }
+        summary.setText(visible.size() + (visible.size() == 1 ? " nagranie" : " nagrań") + "  •  " + formatSize(bytes));
         adapter.notifyDataSetChanged();
     }
 
@@ -164,23 +210,117 @@ public class RecordingsActivity extends Activity {
         } catch (Exception ignored) {
             return 0;
         } finally {
-            try {
-                retriever.release();
-            } catch (Exception ignored) {
-            }
+            try { retriever.release(); } catch (Exception ignored) {}
         }
     }
 
-    private String formatLabel(Recording recording) {
-        String date = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(new Date(recording.dateAdded));
-        return recording.name + "\n" + date + "   •   " + formatDuration(recording.durationMs) + "   •   " + formatSize(recording.sizeBytes);
+    private String buildWaveform(Uri uri) {
+        StringBuilder result = new StringBuilder();
+        try (AssetFileDescriptor afd = getContentResolver().openAssetFileDescriptor(uri, "r");
+             FileInputStream in = afd == null ? null : new FileInputStream(afd.getFileDescriptor())) {
+            if (afd == null || in == null || afd.getLength() <= 80) {
+                return "";
+            }
+            FileChannel channel = in.getChannel();
+            long dataLength = Math.max(1, afd.getLength() - 44);
+            byte[] buffer = new byte[768];
+            int bars = 28;
+            for (int i = 0; i < bars; i++) {
+                long position = afd.getStartOffset() + 44 + dataLength * i / bars;
+                channel.position(position);
+                int read = in.read(buffer);
+                int max = 0;
+                for (int p = 0; p + 1 < read; p += 2) {
+                    int sample = (short) ((buffer[p] & 0xff) | (buffer[p + 1] << 8));
+                    max = Math.max(max, Math.abs(sample));
+                }
+                int level = Math.max(0, Math.min(7, (int) Math.floor(Math.sqrt(max / 32767.0) * 8)));
+                result.append(BARS[level]);
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+        return result.toString();
+    }
+
+    private void togglePlayback(Recording recording) {
+        if (playingUri != null && playingUri.equals(recording.uri) && player != null && player.isPlaying()) {
+            stopPlayback();
+            adapter.notifyDataSetChanged();
+            return;
+        }
+        stopPlayback();
+        try {
+            player = new MediaPlayer();
+            player.setDataSource(this, recording.uri);
+            player.setOnCompletionListener(mp -> {
+                stopPlayback();
+                adapter.notifyDataSetChanged();
+            });
+            player.prepare();
+            player.start();
+            playingUri = recording.uri;
+            nowPlaying.setText("Odtwarzanie: " + formatDate(recording.dateAdded));
+            adapter.notifyDataSetChanged();
+        } catch (Exception e) {
+            stopPlayback();
+            Toast.makeText(this, "Nie udało się odtworzyć nagrania", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void shareRecording(Recording recording) {
+        Intent share = new Intent(Intent.ACTION_SEND);
+        share.setType("audio/wav");
+        share.putExtra(Intent.EXTRA_STREAM, recording.uri);
+        share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        startActivity(Intent.createChooser(share, "Udostępnij nagranie"));
+    }
+
+    private void confirmDelete(Recording recording) {
+        new AlertDialog.Builder(this)
+                .setTitle("Usunąć nagranie?")
+                .setMessage(formatDate(recording.dateAdded))
+                .setNegativeButton("Anuluj", null)
+                .setPositiveButton("Usuń", (dialog, which) -> deleteRecording(recording))
+                .show();
+    }
+
+    private void deleteRecording(Recording recording) {
+        if (recording.uri.equals(playingUri)) {
+            stopPlayback();
+        }
+        try {
+            int deleted = getContentResolver().delete(recording.uri, null, null);
+            if (deleted > 0) {
+                Toast.makeText(this, "Nagranie usunięte", Toast.LENGTH_SHORT).show();
+                loadRecordings();
+            } else {
+                Toast.makeText(this, "Nie udało się usunąć nagrania", Toast.LENGTH_LONG).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Android nie pozwolił usunąć tego nagrania", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void stopPlayback() {
+        if (player != null) {
+            try { player.stop(); } catch (Exception ignored) {}
+            try { player.release(); } catch (Exception ignored) {}
+            player = null;
+        }
+        playingUri = null;
+        if (nowPlaying != null) {
+            nowPlaying.setText("Nic nie jest odtwarzane");
+        }
+    }
+
+    private String formatDate(long millis) {
+        return DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(new Date(millis));
     }
 
     private String formatDuration(long ms) {
         long totalSeconds = Math.max(0, ms / 1000L);
-        long minutes = totalSeconds / 60;
-        long seconds = totalSeconds % 60;
-        return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds);
+        return String.format(Locale.getDefault(), "%d:%02d", totalSeconds / 60, totalSeconds % 60);
     }
 
     private String formatSize(long bytes) {
@@ -190,43 +330,15 @@ public class RecordingsActivity extends Activity {
         return String.format(Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
-    private void togglePlayback(Recording recording) {
-        if (playingUri != null && playingUri.equals(recording.uri) && player != null && player.isPlaying()) {
-            stopPlayback();
-            return;
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        if (bold) {
+            view.setTypeface(Typeface.DEFAULT_BOLD);
         }
-
-        stopPlayback();
-        try {
-            player = new MediaPlayer();
-            player.setDataSource(this, recording.uri);
-            player.setOnCompletionListener(mp -> stopPlayback());
-            player.prepare();
-            player.start();
-            playingUri = recording.uri;
-            nowPlaying.setText("Odtwarzanie: " + recording.name);
-        } catch (Exception e) {
-            stopPlayback();
-            Toast.makeText(this, "Nie udało się odtworzyć nagrania", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void stopPlayback() {
-        if (player != null) {
-            try {
-                player.stop();
-            } catch (Exception ignored) {
-            }
-            try {
-                player.release();
-            } catch (Exception ignored) {
-            }
-            player = null;
-        }
-        playingUri = null;
-        if (nowPlaying != null) {
-            nowPlaying.setText("Nic nie jest odtwarzane");
-        }
+        return view;
     }
 
     private LinearLayout.LayoutParams matchWrap() {
@@ -237,19 +349,87 @@ public class RecordingsActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    private final class RecordingAdapter extends BaseAdapter {
+        @Override public int getCount() { return visible.size(); }
+        @Override public Recording getItem(int position) { return visible.get(position); }
+        @Override public long getItemId(int position) { return position; }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            Recording recording = getItem(position);
+            LinearLayout row = new LinearLayout(RecordingsActivity.this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setPadding(dp(6), dp(10), dp(6), dp(10));
+
+            LinearLayout top = new LinearLayout(RecordingsActivity.this);
+            top.setOrientation(LinearLayout.HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+
+            Button play = new Button(RecordingsActivity.this);
+            boolean playing = recording.uri.equals(playingUri) && player != null && player.isPlaying();
+            play.setText(playing ? "Ⅱ" : "▶");
+            play.setMinWidth(dp(54));
+            play.setOnClickListener(v -> togglePlayback(recording));
+            top.addView(play, new LinearLayout.LayoutParams(dp(58), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+            LinearLayout info = new LinearLayout(RecordingsActivity.this);
+            info.setOrientation(LinearLayout.VERTICAL);
+            info.setPadding(dp(10), 0, 0, 0);
+
+            TextView date = text(formatDate(recording.dateAdded), 16, Color.WHITE, true);
+            info.addView(date, matchWrap());
+
+            TextView meta = text(formatDuration(recording.durationMs) + "  •  " + formatSize(recording.sizeBytes) + "  •  " + recording.name, 12, Color.LTGRAY, false);
+            meta.setMaxLines(1);
+            info.addView(meta, matchWrap());
+
+            if (!recording.waveform.isEmpty()) {
+                TextView waveform = text(recording.waveform, 18, Color.rgb(111, 207, 135), false);
+                waveform.setLetterSpacing(0.02f);
+                info.addView(waveform, matchWrap());
+            }
+            top.addView(info, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            row.addView(top, matchWrap());
+
+            LinearLayout actions = new LinearLayout(RecordingsActivity.this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            actions.setGravity(Gravity.END);
+            actions.setPadding(dp(58), dp(6), 0, 0);
+
+            Button share = new Button(RecordingsActivity.this);
+            share.setText("UDOSTĘPNIJ");
+            share.setTextSize(11);
+            share.setOnClickListener(v -> shareRecording(recording));
+            actions.addView(share, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+            Button delete = new Button(RecordingsActivity.this);
+            delete.setText("USUŃ");
+            delete.setTextSize(11);
+            delete.setOnClickListener(v -> confirmDelete(recording));
+            LinearLayout.LayoutParams deleteParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            deleteParams.leftMargin = dp(6);
+            actions.addView(delete, deleteParams);
+            row.addView(actions, matchWrap());
+
+            return row;
+        }
+    }
+
     private static final class Recording {
         final Uri uri;
         final String name;
         final long dateAdded;
         final long sizeBytes;
         final long durationMs;
+        final String waveform;
 
-        Recording(Uri uri, String name, long dateAdded, long sizeBytes, long durationMs) {
+        Recording(Uri uri, String name, long dateAdded, long sizeBytes, long durationMs, String waveform) {
             this.uri = uri;
             this.name = name;
             this.dateAdded = dateAdded;
             this.sizeBytes = sizeBytes;
             this.durationMs = durationMs;
+            this.waveform = waveform;
         }
     }
 }
