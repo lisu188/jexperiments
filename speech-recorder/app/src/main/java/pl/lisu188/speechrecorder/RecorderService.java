@@ -39,6 +39,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class RecorderService extends Service {
     public static final String ACTION_START = "pl.lisu188.speechrecorder.START";
     public static final String ACTION_STOP = "pl.lisu188.speechrecorder.STOP";
+    public static final String ACTION_LEVEL = "pl.lisu188.speechrecorder.LEVEL";
+    public static final String EXTRA_LEVEL = "level";
+    public static final String EXTRA_SPEECH = "speech";
+    public static final String EXTRA_LAST_SPEECH = "last_speech";
 
     private static final String CHANNEL_ID = "speech_recorder";
     private static final int NOTIFICATION_ID = 41;
@@ -50,23 +54,31 @@ public class RecorderService extends Service {
     private static final int SPEECH_FRAMES_TO_START = 4;
     private static final int MAX_CLIP_FRAMES = 30 * 60 * 1000 / FRAME_MS;
     private static final long RESTART_DELAY_MS = 2000L;
+    private static final long LEVEL_BROADCAST_INTERVAL_MS = 200L;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread worker;
     private AudioRecord audioRecord;
     private NoiseSuppressor noiseSuppressor;
+    private long lastLevelBroadcastMs;
+    private long lastSpeechTimestamp;
 
     @Override
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        lastSpeechTimestamp = getSharedPreferences("recorder", MODE_PRIVATE).getLong("last_speech", 0L);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
-            getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", false).apply();
+            getSharedPreferences("recorder", MODE_PRIVATE).edit()
+                    .putBoolean("enabled", false)
+                    .putBoolean("speech_active", false)
+                    .apply();
+            sendLevelBroadcast(0, false);
             stopCapture();
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
@@ -88,6 +100,8 @@ public class RecorderService extends Service {
 
     @Override
     public void onDestroy() {
+        getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("speech_active", false).apply();
+        sendLevelBroadcast(0, false);
         stopCapture();
         super.onDestroy();
     }
@@ -102,6 +116,7 @@ public class RecorderService extends Service {
     }
 
     private void updateNotification(boolean speechActive) {
+        getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("speech_active", speechActive).apply();
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.notify(NOTIFICATION_ID, buildNotification(speechActive));
     }
@@ -115,12 +130,12 @@ public class RecorderService extends Service {
 
         return new Notification.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_mic_notification)
-                .setContentTitle("Speech Recorder")
+                .setContentTitle("Dyktafon")
                 .setContentText(speechActive ? "Wykryto mowę — zapisuję" : "Nasłuchuję — czekam na mowę")
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(openPending)
-                .addAction(new Notification.Action.Builder(null, "STOP", stopPending).build())
+                .addAction(new Notification.Action.Builder(null, "ZATRZYMAJ", stopPending).build())
                 .build();
     }
 
@@ -169,6 +184,7 @@ public class RecorderService extends Service {
                 break;
             }
             updateNotification(false);
+            sendLevelBroadcast(0, false);
             try {
                 Thread.sleep(RESTART_DELAY_MS);
             } catch (InterruptedException ignored) {
@@ -219,6 +235,12 @@ public class RecorderService extends Service {
                 FrameStats stats = analyze(frame, read);
                 double adaptiveThreshold = Math.max(-46.0, Math.min(-30.0, noiseFloorDb + 11.0));
                 boolean speech = stats.dbFs > adaptiveThreshold && stats.zeroCrossingRate > 0.008 && stats.zeroCrossingRate < 0.48;
+                long now = System.currentTimeMillis();
+
+                if (now - lastLevelBroadcastMs >= LEVEL_BROADCAST_INTERVAL_MS) {
+                    sendLevelBroadcast(mapLevel(stats.dbFs), sink != null);
+                    lastLevelBroadcastMs = now;
+                }
 
                 if (!speech && sink == null && stats.dbFs < noiseFloorDb + 6.0) {
                     noiseFloorDb = noiseFloorDb * 0.995 + stats.dbFs * 0.005;
@@ -234,6 +256,9 @@ public class RecorderService extends Service {
                 if (speech) {
                     consecutiveSpeechFrames++;
                     silenceFrames = 0;
+                    if (sink != null && now - lastSpeechTimestamp >= 1000L) {
+                        rememberSpeech(now);
+                    }
                 } else {
                     consecutiveSpeechFrames = 0;
                     if (sink != null) {
@@ -247,7 +272,9 @@ public class RecorderService extends Service {
                         sink.write(bufferedFrame, bufferedFrame.length);
                     }
                     clipFrames = prebuffer.size();
+                    rememberSpeech(now);
                     updateNotification(true);
+                    sendLevelBroadcast(mapLevel(stats.dbFs), true);
                     continue;
                 }
 
@@ -263,6 +290,7 @@ public class RecorderService extends Service {
                         clipFrames = 0;
                         prebuffer.clear();
                         updateNotification(false);
+                        sendLevelBroadcast(mapLevel(stats.dbFs), false);
                     }
                 }
             }
@@ -275,6 +303,8 @@ public class RecorderService extends Service {
                 } catch (Exception ignored) {
                 }
             }
+            updateNotification(false);
+            sendLevelBroadcast(0, false);
             if (noiseSuppressor != null) {
                 noiseSuppressor.release();
                 noiseSuppressor = null;
@@ -287,6 +317,24 @@ public class RecorderService extends Service {
                 audioRecord = null;
             }
         }
+    }
+
+    private void rememberSpeech(long timestamp) {
+        lastSpeechTimestamp = timestamp;
+        getSharedPreferences("recorder", MODE_PRIVATE).edit().putLong("last_speech", timestamp).apply();
+    }
+
+    private void sendLevelBroadcast(int level, boolean speechActive) {
+        Intent intent = new Intent(ACTION_LEVEL).setPackage(getPackageName());
+        intent.putExtra(EXTRA_LEVEL, level);
+        intent.putExtra(EXTRA_SPEECH, speechActive);
+        intent.putExtra(EXTRA_LAST_SPEECH, lastSpeechTimestamp);
+        sendBroadcast(intent);
+    }
+
+    private int mapLevel(double dbFs) {
+        double normalized = (dbFs + 60.0) / 60.0;
+        return (int) Math.round(Math.max(0.0, Math.min(1.0, normalized)) * 100.0);
     }
 
     private int readFrame(AudioRecord record, short[] frame) {
