@@ -136,7 +136,7 @@ OpenGL would become useful if the experiment rendered filled and translucent cub
 
 The viewer redraws continuously only while auto-rotation is active. Manual interaction invalidates the view on demand, so an idle screen does not need a permanent render loop.
 
-## Validation
+## Validation and release packaging
 
 The unit tests verify topology and a core invariant of the math. The generated graph must contain sixteen vertices, thirty-two total edges, and eight edges for each dimension. A composition of all six plane rotations must preserve squared 4D length within floating-point tolerance.
 
@@ -147,7 +147,9 @@ val rotated = TesseractMath.rotate(
 )
 ```
 
-The CI job builds the Android project independently from the repository's existing JVM Gradle project, runs unit tests and Android lint, assembles a debug APK, and uploads it as `TesseractViewer-debug`.
+The CI job builds the Android project independently from the repository's existing JVM Gradle project. It runs unit tests, release lint and `assembleRelease`, then verifies the resulting APK with Android `apksigner`, computes a SHA-256 checksum and publishes the versioned APK artifact.
+
+The release build enables R8 minification and resource shrinking and is explicitly non-debuggable. The repository intentionally does not contain a private production keystore. To keep CI artifacts directly installable, the release variant currently uses Android's debug signing configuration. That makes it suitable for internal distribution and testing, not for Google Play publication or a stable long-term update channel. A production distribution pipeline should instead inject a persistent signing key through repository secrets.
 
 ## Follow-up experiments
 
