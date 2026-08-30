@@ -99,9 +99,7 @@ jobs:
             sleep 2
             adb logcat -d -v threadtime > screenshots/after-logcat.txt
             adb shell dumpsys window > screenshots/after-window.txt
-            if grep -E 'FATAL EXCEPTION|Process: experiments.tesseractviewer' screenshots/after-logcat.txt; then
-              exit 1
-            fi
+            ! grep -Eq 'FATAL EXCEPTION|Process: experiments.tesseractviewer' screenshots/after-logcat.txt
             grep -q experiments.tesseractviewer screenshots/after-window.txt
             adb exec-out screencap -p > screenshots/after-default.png
             adb shell input swipe 540 950 790 700 600
