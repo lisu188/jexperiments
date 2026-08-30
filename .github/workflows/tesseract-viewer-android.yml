@@ -44,3 +44,39 @@ jobs:
             TesseractViewer-1.0.0-release.apk
             TesseractViewer-1.0.0-release.apk.sha256
           if-no-files-found: error
+
+  screenshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            gradle -p tesseractviewer :app:assembleDebug --no-daemon
+            adb install -r tesseractviewer/app/build/outputs/apk/debug/app-debug.apk
+            adb shell am force-stop experiments.tesseractviewer
+            adb shell am start -W -n experiments.tesseractviewer/.MainActivity
+            sleep 2
+            mkdir -p screenshots
+            adb exec-out screencap -p > screenshots/default.png
+            adb shell input swipe 540 950 790 700 600
+            sleep 1
+            adb exec-out screencap -p > screenshots/rotated.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TesseractViewer-screenshots
+          path: screenshots/*.png
+          if-no-files-found: error
