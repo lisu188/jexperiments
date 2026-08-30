@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends Activity {
+    public static final String ACTION_RESUME_AFTER_BOOT = "pl.lisu188.speechrecorder.RESUME_AFTER_BOOT";
     private static final int REQUEST_PERMISSIONS = 1001;
     private TextView status;
 
@@ -26,6 +27,18 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(buildUi());
+        if (ACTION_RESUME_AFTER_BOOT.equals(getIntent().getAction())) {
+            requestAndStart();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (status != null) {
+            boolean enabled = getSharedPreferences("recorder", MODE_PRIVATE).getBoolean("enabled", false);
+            status.setText(enabled ? "Status: nasłuchiwanie aktywne" : "Status: zatrzymany");
+        }
     }
 
     private View buildUi() {
@@ -67,7 +80,7 @@ public class MainActivity extends Activity {
         root.addView(stop, stopParams);
 
         TextView settings = new TextView(this);
-        settings.setText("Ustawienia: 5 s bufora przed mową, 8 s ciszy kończącej klip, WAV 16 kHz mono.\nNagrania: Music/SpeechRecorder");
+        settings.setText("Ustawienia: 5 s bufora przed mową, 8 s ciszy kończącej klip, WAV 16 kHz mono.\nNagrania: Music/SpeechRecorder\nTryb trwały: foreground service + START_STICKY.");
         settings.setTextSize(14);
         settings.setPadding(0, dp(24), 0, dp(16));
         root.addView(settings, matchWrap());
@@ -87,6 +100,19 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams appSettingsParams = matchWrap();
         appSettingsParams.topMargin = dp(20);
         root.addView(appSettings, appSettingsParams);
+
+        Button batterySettings = new Button(this);
+        batterySettings.setText("OPTYMALIZACJA BATERII");
+        batterySettings.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
+        LinearLayout.LayoutParams batteryParams = matchWrap();
+        batteryParams.topMargin = dp(10);
+        root.addView(batterySettings, batteryParams);
+
+        TextView persistence = new TextView(this);
+        persistence.setText("Po uruchomieniu Android utrzymuje usługę w tle i może odtworzyć ją po ubiciu procesu. Force stop, odebranie dostępu do mikrofonu albo ograniczenia systemowe nadal mogą zatrzymać aplikację.");
+        persistence.setTextSize(13);
+        persistence.setPadding(0, dp(16), 0, 0);
+        root.addView(persistence, matchWrap());
 
         return root;
     }
@@ -122,6 +148,7 @@ public class MainActivity extends Activity {
     private void startRecorder() {
         Intent intent = new Intent(this, RecorderService.class).setAction(RecorderService.ACTION_START);
         startForegroundService(intent);
+        getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", true).apply();
         status.setText("Status: nasłuchiwanie aktywne");
         Toast.makeText(this, "Nasłuchiwanie uruchomione", Toast.LENGTH_SHORT).show();
     }
@@ -129,6 +156,7 @@ public class MainActivity extends Activity {
     private void stopRecorder() {
         Intent intent = new Intent(this, RecorderService.class).setAction(RecorderService.ACTION_STOP);
         startService(intent);
+        getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", false).apply();
         status.setText("Status: zatrzymany");
         Toast.makeText(this, "Nasłuchiwanie zatrzymane", Toast.LENGTH_SHORT).show();
     }

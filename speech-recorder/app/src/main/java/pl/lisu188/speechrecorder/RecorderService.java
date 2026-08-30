@@ -49,6 +49,7 @@ public class RecorderService extends Service {
     private static final int SILENCE_FRAMES_TO_STOP = 8000 / FRAME_MS;
     private static final int SPEECH_FRAMES_TO_START = 4;
     private static final int MAX_CLIP_FRAMES = 30 * 60 * 1000 / FRAME_MS;
+    private static final long RESTART_DELAY_MS = 2000L;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private Thread worker;
@@ -65,17 +66,19 @@ public class RecorderService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         String action = intent == null ? ACTION_START : intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", false).apply();
             stopCapture();
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
         }
 
+        getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", true).apply();
         startAsForeground(false);
         if (!running.get()) {
             startCapture();
         }
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 
     @Override
@@ -111,7 +114,7 @@ public class RecorderService extends Service {
         PendingIntent stopPending = PendingIntent.getService(this, 2, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         return new Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setSmallIcon(R.drawable.ic_mic_notification)
                 .setContentTitle("Speech Recorder")
                 .setContentText(speechActive ? "Wykryto mowę — zapisuję" : "Nasłuchuję — czekam na mowę")
                 .setOngoing(true)
@@ -130,11 +133,12 @@ public class RecorderService extends Service {
 
     private void startCapture() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", false).apply();
             stopSelf();
             return;
         }
         running.set(true);
-        worker = new Thread(this::captureLoop, "speech-recorder-capture");
+        worker = new Thread(this::captureSupervisorLoop, "speech-recorder-capture");
         worker.start();
     }
 
@@ -156,6 +160,22 @@ public class RecorderService extends Service {
             }
         }
         worker = null;
+    }
+
+    private void captureSupervisorLoop() {
+        while (running.get() && getSharedPreferences("recorder", MODE_PRIVATE).getBoolean("enabled", false)) {
+            captureLoop();
+            if (!running.get() || !getSharedPreferences("recorder", MODE_PRIVATE).getBoolean("enabled", false)) {
+                break;
+            }
+            updateNotification(false);
+            try {
+                Thread.sleep(RESTART_DELAY_MS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
     }
 
     private void captureLoop() {
@@ -266,7 +286,6 @@ public class RecorderService extends Service {
                 }
                 audioRecord = null;
             }
-            running.set(false);
         }
     }
 
