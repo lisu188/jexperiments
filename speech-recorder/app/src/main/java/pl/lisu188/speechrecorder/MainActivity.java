@@ -2,26 +2,57 @@ package pl.lisu188.speechrecorder;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 public class MainActivity extends Activity {
     public static final String ACTION_RESUME_AFTER_BOOT = "pl.lisu188.speechrecorder.RESUME_AFTER_BOOT";
     private static final int REQUEST_PERMISSIONS = 1001;
-    private TextView status;
+
+    private TextView statusTitle;
+    private TextView statusSubtitle;
+    private TextView lastSpeech;
+    private ProgressBar levelMeter;
+    private Button primaryAction;
+    private boolean receiverRegistered;
+    private boolean speechActive;
+
+    private final BroadcastReceiver levelReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (!RecorderService.ACTION_LEVEL.equals(intent.getAction())) {
+                return;
+            }
+            levelMeter.setProgress(intent.getIntExtra(RecorderService.EXTRA_LEVEL, 0));
+            speechActive = intent.getBooleanExtra(RecorderService.EXTRA_SPEECH, false);
+            long timestamp = intent.getLongExtra(RecorderService.EXTRA_LAST_SPEECH, 0L);
+            if (timestamp > 0) {
+                getSharedPreferences("recorder", MODE_PRIVATE).edit().putLong("last_speech", timestamp).apply();
+            }
+            renderState();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -35,93 +66,126 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (status != null) {
-            boolean enabled = getSharedPreferences("recorder", MODE_PRIVATE).getBoolean("enabled", false);
-            status.setText(enabled ? "Status: nasłuchiwanie aktywne" : "Status: zatrzymany");
+        registerLevelReceiver();
+        renderState();
+    }
+
+    @Override
+    protected void onPause() {
+        if (receiverRegistered) {
+            unregisterReceiver(levelReceiver);
+            receiverRegistered = false;
         }
+        super.onPause();
+    }
+
+    private void registerLevelReceiver() {
+        if (receiverRegistered) {
+            return;
+        }
+        IntentFilter filter = new IntentFilter(RecorderService.ACTION_LEVEL);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(levelReceiver, filter, RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(levelReceiver, filter);
+        }
+        receiverRegistered = true;
     }
 
     private View buildUi() {
-        int pad = dp(24);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(pad, pad, pad, pad);
-        root.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(Color.rgb(18, 18, 18));
 
-        TextView title = new TextView(this);
-        title.setText("Speech Recorder");
-        title.setTextSize(28);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(title, matchWrap());
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(22), dp(22), dp(22), dp(22));
+        scroll.addView(content, matchWrap());
+        page.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        TextView description = new TextView(this);
-        description.setText("Nasłuchuje lokalnie i zapisuje tylko fragmenty, w których wykryje mowę. Audio nie opuszcza telefonu.");
-        description.setTextSize(16);
-        description.setPadding(0, dp(18), 0, dp(18));
-        root.addView(description, matchWrap());
+        TextView title = text("Dyktafon", 30, Color.WHITE, true);
+        content.addView(title, matchWrap());
 
-        status = new TextView(this);
-        status.setText("Status: zatrzymany");
-        status.setTextSize(18);
-        status.setTypeface(Typeface.DEFAULT_BOLD);
-        status.setPadding(0, 0, 0, dp(18));
-        root.addView(status, matchWrap());
+        TextView intro = text("Zapisuje tylko fragmenty, w których wykryje mowę.", 15, Color.LTGRAY, false);
+        intro.setPadding(0, dp(6), 0, dp(20));
+        content.addView(intro, matchWrap());
 
-        Button start = new Button(this);
-        start.setText("START");
-        start.setOnClickListener(v -> requestAndStart());
-        root.addView(start, matchWrap());
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
+        card.setBackground(cardBackground());
+        content.addView(card, matchWrap());
 
-        Button stop = new Button(this);
-        stop.setText("STOP");
-        stop.setOnClickListener(v -> stopRecorder());
-        LinearLayout.LayoutParams stopParams = matchWrap();
-        stopParams.topMargin = dp(10);
-        root.addView(stop, stopParams);
+        statusTitle = text("Zatrzymane", 24, Color.WHITE, true);
+        card.addView(statusTitle, matchWrap());
 
-        Button recordings = new Button(this);
-        recordings.setText("NAGRANIA");
-        recordings.setOnClickListener(v -> startActivity(new Intent(this, RecordingsActivity.class)));
-        LinearLayout.LayoutParams recordingsParams = matchWrap();
-        recordingsParams.topMargin = dp(10);
-        root.addView(recordings, recordingsParams);
+        statusSubtitle = text("Mikrofon nie jest aktywny", 15, Color.LTGRAY, false);
+        statusSubtitle.setPadding(0, dp(4), 0, dp(16));
+        card.addView(statusSubtitle, matchWrap());
 
-        TextView settings = new TextView(this);
-        settings.setText("Ustawienia: 5 s bufora przed mową, 8 s ciszy kończącej klip, WAV 16 kHz mono.\nNagrania: Music/SpeechRecorder\nTryb trwały: foreground service + START_STICKY.");
-        settings.setTextSize(14);
-        settings.setPadding(0, dp(24), 0, dp(16));
-        root.addView(settings, matchWrap());
+        TextView levelLabel = text("Poziom wejścia", 12, Color.GRAY, false);
+        card.addView(levelLabel, matchWrap());
 
-        TextView privacy = new TextView(this);
-        privacy.setText("Nagrywanie mikrofonu jest sygnalizowane przez Androida. Używaj zgodnie z prawem i zasadami prywatności osób znajdujących się w otoczeniu.");
-        privacy.setTextSize(13);
-        root.addView(privacy, matchWrap());
+        levelMeter = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        levelMeter.setMax(100);
+        levelMeter.setProgress(0);
+        LinearLayout.LayoutParams meterParams = matchWrap();
+        meterParams.topMargin = dp(5);
+        card.addView(levelMeter, meterParams);
 
-        Button appSettings = new Button(this);
-        appSettings.setText("USTAWIENIA APLIKACJI");
-        appSettings.setOnClickListener(v -> {
-            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-            intent.setData(android.net.Uri.parse("package:" + getPackageName()));
-            startActivity(intent);
-        });
-        LinearLayout.LayoutParams appSettingsParams = matchWrap();
-        appSettingsParams.topMargin = dp(20);
-        root.addView(appSettings, appSettingsParams);
+        lastSpeech = text("Ostatnia mowa: —", 13, Color.LTGRAY, false);
+        lastSpeech.setPadding(0, dp(12), 0, 0);
+        card.addView(lastSpeech, matchWrap());
 
-        Button batterySettings = new Button(this);
-        batterySettings.setText("OPTYMALIZACJA BATERII");
-        batterySettings.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)));
-        LinearLayout.LayoutParams batteryParams = matchWrap();
-        batteryParams.topMargin = dp(10);
-        root.addView(batterySettings, batteryParams);
+        primaryAction = new Button(this);
+        primaryAction.setText("ROZPOCZNIJ");
+        primaryAction.setTextSize(17);
+        primaryAction.setMinHeight(dp(58));
+        primaryAction.setOnClickListener(v -> toggleRecorder());
+        LinearLayout.LayoutParams actionParams = matchWrap();
+        actionParams.topMargin = dp(18);
+        content.addView(primaryAction, actionParams);
 
-        TextView persistence = new TextView(this);
-        persistence.setText("Po uruchomieniu Android utrzymuje usługę w tle i może odtworzyć ją po ubiciu procesu. Force stop, odebranie dostępu do mikrofonu albo ograniczenia systemowe nadal mogą zatrzymać aplikację.");
-        persistence.setTextSize(13);
-        persistence.setPadding(0, dp(16), 0, 0);
-        root.addView(persistence, matchWrap());
+        TextView privacy = text("Audio pozostaje na telefonie. Android pokazuje aktywność mikrofonu, gdy nasłuchiwanie jest włączone.", 13, Color.GRAY, false);
+        privacy.setPadding(0, dp(18), 0, dp(8));
+        content.addView(privacy, matchWrap());
 
-        return root;
+        page.addView(AppNavigation.create(this, AppNavigation.RECORDER), matchWrap());
+        return page;
+    }
+
+    private void toggleRecorder() {
+        boolean enabled = getSharedPreferences("recorder", MODE_PRIVATE).getBoolean("enabled", false);
+        if (enabled) {
+            stopRecorder();
+        } else {
+            requestAndStart();
+        }
+    }
+
+    private void renderState() {
+        if (statusTitle == null) {
+            return;
+        }
+        boolean enabled = getSharedPreferences("recorder", MODE_PRIVATE).getBoolean("enabled", false);
+        long last = getSharedPreferences("recorder", MODE_PRIVATE).getLong("last_speech", 0L);
+        if (!enabled) {
+            speechActive = false;
+            statusTitle.setText("Zatrzymane");
+            statusSubtitle.setText("Mikrofon nie jest aktywny");
+            primaryAction.setText("ROZPOCZNIJ");
+            levelMeter.setProgress(0);
+        } else if (speechActive) {
+            statusTitle.setText("Nagrywanie");
+            statusSubtitle.setText("Wykryto mowę — zapisuję ten fragment");
+            primaryAction.setText("ZATRZYMAJ");
+        } else {
+            statusTitle.setText("Nasłuchiwanie");
+            statusSubtitle.setText("Czekam na mowę");
+            primaryAction.setText("ZATRZYMAJ");
+        }
+        lastSpeech.setText(last > 0 ? "Ostatnia mowa: " + DateFormat.getTimeInstance(DateFormat.MEDIUM).format(new Date(last)) : "Ostatnia mowa: —");
     }
 
     private void requestAndStart() {
@@ -142,30 +206,43 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != REQUEST_PERMISSIONS) {
-            return;
-        }
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == REQUEST_PERMISSIONS && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             startRecorder();
-        } else {
+        } else if (requestCode == REQUEST_PERMISSIONS) {
             Toast.makeText(this, "Bez dostępu do mikrofonu aplikacja nie może działać.", Toast.LENGTH_LONG).show();
         }
     }
 
     private void startRecorder() {
-        Intent intent = new Intent(this, RecorderService.class).setAction(RecorderService.ACTION_START);
-        startForegroundService(intent);
         getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", true).apply();
-        status.setText("Status: nasłuchiwanie aktywne");
-        Toast.makeText(this, "Nasłuchiwanie uruchomione", Toast.LENGTH_SHORT).show();
+        startForegroundService(new Intent(this, RecorderService.class).setAction(RecorderService.ACTION_START));
+        renderState();
     }
 
     private void stopRecorder() {
-        Intent intent = new Intent(this, RecorderService.class).setAction(RecorderService.ACTION_STOP);
-        startService(intent);
         getSharedPreferences("recorder", MODE_PRIVATE).edit().putBoolean("enabled", false).apply();
-        status.setText("Status: zatrzymany");
-        Toast.makeText(this, "Nasłuchiwanie zatrzymane", Toast.LENGTH_SHORT).show();
+        startService(new Intent(this, RecorderService.class).setAction(RecorderService.ACTION_STOP));
+        speechActive = false;
+        renderState();
+    }
+
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        if (bold) {
+            view.setTypeface(Typeface.DEFAULT_BOLD);
+        }
+        return view;
+    }
+
+    private GradientDrawable cardBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.rgb(32, 32, 32));
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(dp(1), Color.rgb(55, 55, 55));
+        return drawable;
     }
 
     private LinearLayout.LayoutParams matchWrap() {
