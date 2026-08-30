@@ -46,6 +46,9 @@ jobs:
       - name: Prepare artifact
         run: cp speech-recorder/app/build/outputs/apk/debug/app-debug.apk SpeechRecorder.apk
 
+      - name: Verify APK signature
+        run: "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs SpeechRecorder.apk
+
       - uses: actions/upload-artifact@v4
         with:
           name: SpeechRecorder-APK
