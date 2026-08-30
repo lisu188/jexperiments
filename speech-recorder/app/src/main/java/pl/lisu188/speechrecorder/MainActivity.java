@@ -79,6 +79,13 @@ public class MainActivity extends Activity {
         stopParams.topMargin = dp(10);
         root.addView(stop, stopParams);
 
+        Button recordings = new Button(this);
+        recordings.setText("NAGRANIA");
+        recordings.setOnClickListener(v -> startActivity(new Intent(this, RecordingsActivity.class)));
+        LinearLayout.LayoutParams recordingsParams = matchWrap();
+        recordingsParams.topMargin = dp(10);
+        root.addView(recordings, recordingsParams);
+
         TextView settings = new TextView(this);
         settings.setText("Ustawienia: 5 s bufora przed mową, 8 s ciszy kończącej klip, WAV 16 kHz mono.\nNagrania: Music/SpeechRecorder\nTryb trwały: foreground service + START_STICKY.");
         settings.setTextSize(14);
