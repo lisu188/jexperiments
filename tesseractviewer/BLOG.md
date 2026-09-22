@@ -89,7 +89,7 @@ val y2 = point.y * pitchCos - z1 * pitchSin
 val z2 = point.y * pitchSin + z1 * pitchCos
 ```
 
-Keeping these transforms separate avoids a common visualization mistake: making a 3D orbit look like a 4D rotation. The application exposes two explicit interaction modes, `CAMERA` and `4D`, so the difference is observable rather than hidden inside gesture code.
+Keeping these transforms separate avoids a common visualization mistake: making a 3D orbit look like a 4D rotation. The application exposes two explicit interaction modes, `3D camera` and `4D rotation`, so the difference is observable rather than hidden inside gesture code.
 
 ## Mapping the 3D result to the screen
 
@@ -97,38 +97,24 @@ The final stage is a conventional perspective camera in 3D. It only exists to ma
 
 ```java
 val perspective3D = cameraDistance / (cameraDistance - point.z)
-val scale = min(width.toFloat(), usableHeight) * 0.20f * zoom * perspective3D
+val scale = min(width.toFloat(), height.toFloat()) * 0.255f * zoom * perspective3D
 ```
 
 At this point Android `Canvas` is sufficient. Each edge becomes a `drawLine` call and each vertex a small circle. Edges are sorted by average depth before drawing, which gives the wireframe a stable back-to-front visual order without introducing a depth buffer.
 
 ## Dimension-aware rendering
 
-Each edge remembers which coordinate bit changed when it was generated. That gives the renderer dimension information at no extra geometric cost.
+Each edge remembers which coordinate bit changed when it was generated. That gives the renderer dimension information at no extra geometric cost. The UI exposes the same X/Y/Z/W colors in a legend, and 4D mode de-emphasizes edges outside the selected rotation plane. This makes the currently changing coordinates visible instead of forcing the user to infer them from geometry alone.
 
-```java
-linePaint.color = edgeColors[edge.dimension]
-linePaint.strokeWidth = if (edge.dimension == 3) dp(3.2f) else dp(2.0f)
-```
+W-direction edges remain slightly thicker when active so the fourth-dimensional connections are easier to follow during XW, YW, and ZW rotations.
 
-W-direction edges are thicker, making the fourth-dimensional connections easier to follow during XW, YW, and ZW rotations.
+## Gesture model and UI hierarchy
 
-## Gesture model
+A one-finger drag has two meanings selected explicitly by the interaction control. In camera mode it changes yaw and pitch. In 4D mode it changes the angle of the selected four-dimensional rotation plane. Pinch zoom remains independent of both modes.
 
-A one-finger drag has two meanings, selected explicitly by the mode control. In camera mode it changes yaw and pitch.
+The controls are native Android `TextView`-based buttons rather than hit boxes painted into the renderer. This gives each action a real focus target, ripple feedback, state description and at least a 48 dp touch target. The fourth-dimensional XW, YW and ZW planes are presented before XY, XZ and YZ because they are the distinctive operations the viewer exists to demonstrate.
 
-```java
-cameraYaw += dx * 0.008f
-cameraPitch = (cameraPitch + dy * 0.008f).coerceIn(-1.45f, 1.45f)
-```
-
-In 4D mode the same drag changes the angle of the selected 4D rotation plane.
-
-```java
-rotations[selectedPlane] += (dx - dy * 0.35f) * 0.009f
-```
-
-Pinch zoom is independent of both modes and only changes the final display scale.
+The layout adapts to orientation. Portrait keeps the model above the control surface; landscape moves controls to a fixed-width side panel. System-bar and display-cutout insets are applied to the root so the UI remains usable under Android's edge-to-edge behavior.
 
 ## Why Canvas rather than OpenGL
 
@@ -136,18 +122,15 @@ OpenGL would become useful if the experiment rendered filled and translucent cub
 
 The viewer redraws continuously only while auto-rotation is active. Manual interaction invalidates the view on demand, so an idle screen does not need a permanent render loop.
 
-## Validation and release packaging
+## Validation, launch regression and release packaging
 
 The unit tests verify topology and a core invariant of the math. The generated graph must contain sixteen vertices, thirty-two total edges, and eight edges for each dimension. A composition of all six plane rotations must preserve squared 4D length within floating-point tolerance.
 
-```java
-val rotated = TesseractMath.rotate(
-    original,
-    floatArrayOf(0.2f, -0.5f, 0.7f, 0.3f, -0.4f, 0.9f)
-)
-```
+The 1.1 UI redesign exposed a lifecycle bug that compile-time checks could not detect: requesting `Window.insetsController` before `setContentView()` had created the window `DecorView` caused a launch-time `NullPointerException` on Android 35. Version 1.1.1 fixes the ordering by creating the content view first and then configuring the system bars through the existing decor view.
 
-The CI job builds the Android project independently from the repository's existing JVM Gradle project. It runs unit tests, release lint and `assembleRelease`, then verifies the resulting APK with Android `apksigner`, computes a SHA-256 checksum and publishes the versioned APK artifact.
+CI complements unit tests and lint with an emulator cold-start smoke test. It installs the APK, clears `logcat`, launches `MainActivity`, verifies that the Tesseract activity remains focused after startup, checks the runtime log for fatal exceptions, and captures screenshots. This prevents a release from being considered healthy merely because it compiles and signs successfully.
+
+The CI job builds the Android project independently from the repository's existing JVM Gradle project. It runs unit tests, release lint and `assembleRelease`, verifies the resulting APK with Android `apksigner`, computes a SHA-256 checksum and publishes the versioned APK artifact.
 
 The release build enables R8 minification and resource shrinking and is explicitly non-debuggable. The repository intentionally does not contain a private production keystore. To keep CI artifacts directly installable, the release variant currently uses Android's debug signing configuration. That makes it suitable for internal distribution and testing, not for Google Play publication or a stable long-term update channel. A production distribution pipeline should instead inject a persistent signing key through repository secrets.
 
