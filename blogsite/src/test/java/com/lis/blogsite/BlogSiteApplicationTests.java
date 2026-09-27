@@ -25,10 +25,13 @@ class BlogSiteApplicationTests {
 
     @Test
     void loadsAllConfiguredPosts() {
-        assertThat(repository.findAll()).hasSize(24);
+        assertThat(repository.findAll()).hasSize(25);
         assertThat(repository.findBySlug("bcel"))
                 .hasValueSatisfying(post -> assertThat(post.title())
                         .isEqualTo("Generating a Class with BCEL"));
+        assertThat(repository.findBySlug("observableconcurrenttree"))
+                .hasValueSatisfying(post -> assertThat(post.title())
+                        .isEqualTo("ObservableConcurrentTree: a Java 27 concurrent tree optimized for read-heavy workloads"));
     }
 
     @Test
