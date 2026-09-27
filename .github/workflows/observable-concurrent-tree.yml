@@ -5,6 +5,7 @@ on:
     paths:
       - 'observableconcurrenttree/**'
       - 'build.gradle'
+      - 'blogsite/**'
       - 'gradle/wrapper/**'
       - '.github/workflows/observable-concurrent-tree.yml'
   pull_request:
