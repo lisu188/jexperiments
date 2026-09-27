@@ -22,6 +22,7 @@ A long-running laboratory for small, focused **Java and Kotlin/JVM experiments**
 - `CompletableFuture`
 - ordered and distributed thread-pool experiments
 - `Flow.Publisher`
+- observable concurrent tree mutation and snapshots
 
 ### Algorithms and simulation
 
