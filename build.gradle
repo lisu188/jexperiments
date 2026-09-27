@@ -109,6 +109,15 @@ kotlinBytecodeMainClasses.each { moduleName, mainClassName ->
     }
 }
 
+project(':observableconcurrenttree') {
+    tasks.register('runExperiment', JavaExec) {
+        group = 'application'
+        description = 'Runs the ObservableConcurrentTree usage examples.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'ObservableConcurrentTreeExample'
+    }
+}
+
 project(':bcel') {
     dependencies {
         implementation 'org.apache.bcel:bcel:5.2'
