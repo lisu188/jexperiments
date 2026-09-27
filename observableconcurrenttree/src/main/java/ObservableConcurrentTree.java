@@ -256,7 +256,7 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         private Node<K, V> parent;
         private V value;
         private final ArrayList<Node<K, V>> children = new ArrayList<>();
-        private transient volatile List<K> childIds;
+        private transient volatile Entry<K, V> entry;
 
         private Node(K id, V value) {
             this.id = id;
@@ -378,7 +378,7 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
             node.parent = parent;
             nodes.put(nodeId, node);
             parent.children.add(node);
-            parent.childIds = null;
+            parent.entry = null;
             size++;
             var newVersion = ++version;
             listeners = observers;
@@ -409,6 +409,7 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
             var node = requireNode(nodeId);
             var oldValue = node.value;
             node.value = value;
+            node.entry = null;
             var newVersion = ++version;
             listeners = observers;
             if (listeners.length != 0) {
@@ -451,10 +452,11 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
             }
             ensureNotDescendant(node, newParent);
             oldParent.children.remove(node);
-            oldParent.childIds = null;
+            oldParent.entry = null;
             newParent.children.add(node);
-            newParent.childIds = null;
+            newParent.entry = null;
             node.parent = newParent;
+            node.entry = null;
             var newVersion = ++version;
             listeners = observers;
             if (listeners.length != 0) {
@@ -488,12 +490,17 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
             var oldValue = node.value;
             if (oldParent != null) {
                 oldParent.children.remove(node);
-                oldParent.childIds = null;
+                oldParent.entry = null;
             }
-            var removed = removeSubtreeNodes(node);
-            size -= removed.size();
+            ArrayList<K> removed;
             if (node.id.equals(rootId)) {
+                removed = collectSubtreeIds(node);
+                nodes.clear();
                 rootId = null;
+                size = 0;
+            } else {
+                removed = removeSubtreeNodes(node);
+                size -= removed.size();
             }
             removedView = Collections.unmodifiableList(removed);
             var newVersion = ++version;
@@ -774,25 +781,26 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
     }
 
     private Entry<K, V> toEntry(Node<K, V> node) {
-        var parent = node.parent;
-        return new Entry<>(node.id, parent == null ? null : parent.id, node.value, childIds(node));
-    }
-
-    private List<K> childIds(Node<K, V> node) {
-        var children = node.children;
-        if (children.isEmpty()) {
-            return List.of();
-        }
-        var cached = node.childIds;
+        var cached = node.entry;
         if (cached != null) {
             return cached;
         }
-        var ids = new ArrayList<K>(children.size());
-        for (var child : children) {
-            ids.add(child.id);
+
+        var parent = node.parent;
+        var children = node.children;
+        List<K> childIds;
+        if (children.isEmpty()) {
+            childIds = List.of();
+        } else {
+            var ids = new ArrayList<K>(children.size());
+            for (var child : children) {
+                ids.add(child.id);
+            }
+            childIds = Collections.unmodifiableList(ids);
         }
-        cached = Collections.unmodifiableList(ids);
-        node.childIds = cached;
+
+        cached = new Entry<>(node.id, parent == null ? null : parent.id, node.value, childIds);
+        node.entry = cached;
         return cached;
     }
 
