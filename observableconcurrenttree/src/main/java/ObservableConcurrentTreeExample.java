@@ -1,11 +1,8 @@
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ObservableConcurrentTreeExample {
@@ -26,7 +23,7 @@ public final class ObservableConcurrentTreeExample {
         section("1. Constructors and initialization");
 
         ObservableConcurrentTree<String, String> emptyTree =
-                new ObservableConcurrentTree<String, String>();
+                new ObservableConcurrentTree<>();
 
         System.out.println("emptyTree.isEmpty() = " + emptyTree.isEmpty());
         System.out.println("emptyTree.size() = " + emptyTree.size());
@@ -37,7 +34,7 @@ public final class ObservableConcurrentTreeExample {
         printEntry("initialized root", emptyTree.getRoot());
 
         ObservableConcurrentTree<String, String> initializedTree =
-                new ObservableConcurrentTree<String, String>("root", "Root from constructor");
+                new ObservableConcurrentTree<>("root", "Root from constructor");
 
         printEntry("constructor root", initializedTree.getRoot());
         System.out.println("constructor tree version = " + initializedTree.getVersion());
@@ -47,15 +44,9 @@ public final class ObservableConcurrentTreeExample {
         section("2. Direct mutations, observers, and read API");
 
         ObservableConcurrentTree<String, String> tree =
-                new ObservableConcurrentTree<String, String>();
+                new ObservableConcurrentTree<>();
 
-        ObservableConcurrentTree.Observer<String, String> observer =
-                new ObservableConcurrentTree.Observer<String, String>() {
-                    @Override
-                    public void onChange(ObservableConcurrentTree.Change<String, String> change) {
-                        printChange(change);
-                    }
-                };
+        ObservableConcurrentTree.Observer<String, String> observer = ObservableConcurrentTreeExample::printChange;
 
         tree.addObserver(observer);
         tree.initialize("root", "Infrastructure");
@@ -90,16 +81,16 @@ public final class ObservableConcurrentTreeExample {
             printEntry("  dfs", entry);
         }
 
-        ObservableConcurrentTree.Snapshot<String, String> beforeMove = tree.snapshot();
+        var beforeMove = tree.snapshot();
         printSnapshot("snapshot before move", beforeMove);
 
         tree.move("server-2", "dc-2");
         System.out.println("parent of server-2 after move = " + tree.getParentId("server-2"));
-        long versionAfterMove = tree.getVersion();
+        var versionAfterMove = tree.getVersion();
         tree.move("server-2", "dc-2");
         System.out.println("same-parent move is a no-op = " + (tree.getVersion() == versionAfterMove));
 
-        List<String> removed = tree.removeSubtree("dc-1");
+        var removed = tree.removeSubtree("dc-1");
         System.out.println("removeSubtree(dc-1) removed = " + removed);
         System.out.println("size after subtree removal = " + tree.size());
 
@@ -114,7 +105,7 @@ public final class ObservableConcurrentTreeExample {
         section("3. TreeEvent factories, getters, and apply()");
 
         ObservableConcurrentTree<String, String> tree =
-                new ObservableConcurrentTree<String, String>("root", "Root");
+                new ObservableConcurrentTree<>("root", "Root");
 
         ObservableConcurrentTree.TreeEvent<String, String> addParent =
                 ObservableConcurrentTree.TreeEvent.add("root", "parent", "Parent");
@@ -148,13 +139,13 @@ public final class ObservableConcurrentTreeExample {
         section("4. NodeState and atomic loadState()");
 
         ObservableConcurrentTree.NodeState<String, String> root =
-                new ObservableConcurrentTree.NodeState<String, String>("root", null, "Loaded root");
+                new ObservableConcurrentTree.NodeState<>("root", null, "Loaded root");
         ObservableConcurrentTree.NodeState<String, String> branchA =
-                new ObservableConcurrentTree.NodeState<String, String>("a", "root", "Branch A");
+                new ObservableConcurrentTree.NodeState<>("a", "root", "Branch A");
         ObservableConcurrentTree.NodeState<String, String> branchB =
-                new ObservableConcurrentTree.NodeState<String, String>("b", "root", "Branch B");
+                new ObservableConcurrentTree.NodeState<>("b", "root", "Branch B");
         ObservableConcurrentTree.NodeState<String, String> leaf =
-                new ObservableConcurrentTree.NodeState<String, String>("leaf", "a", "Leaf");
+                new ObservableConcurrentTree.NodeState<>("leaf", "a", "Leaf");
 
         System.out.println(
                 "NodeState getters: id=" + leaf.getId()
@@ -162,16 +153,11 @@ public final class ObservableConcurrentTreeExample {
                         + ", value=" + leaf.getValue());
 
         ObservableConcurrentTree<String, String> tree =
-                new ObservableConcurrentTree<String, String>();
+                new ObservableConcurrentTree<>();
 
-        tree.addObserver(new ObservableConcurrentTree.Observer<String, String>() {
-            @Override
-            public void onChange(ObservableConcurrentTree.Change<String, String> change) {
-                printChange(change);
-            }
-        });
+        tree.addObserver(ObservableConcurrentTreeExample::printChange);
 
-        tree.loadState(Arrays.asList(root, branchA, branchB, leaf));
+        tree.loadState(List.of(root, branchA, branchB, leaf));
 
         printSnapshot("loaded state", tree.snapshot());
     }
@@ -180,11 +166,11 @@ public final class ObservableConcurrentTreeExample {
         section("5. Serialization and deserialization");
 
         ObservableConcurrentTree<String, String> tree =
-                new ObservableConcurrentTree<String, String>("root", "Serializable root");
+                new ObservableConcurrentTree<>("root", "Serializable root");
 
         tree.add("root", "child", "Serializable child");
 
-        byte[] bytes = tree.toByteArray();
+        var bytes = tree.toByteArray();
         System.out.println("serialized bytes = " + bytes.length);
 
         ObservableConcurrentTree<String, String> restored =
@@ -194,12 +180,9 @@ public final class ObservableConcurrentTreeExample {
         System.out.println("restored size = " + restored.size());
         printSnapshot("restored snapshot", restored.snapshot());
 
-        restored.addObserver(new ObservableConcurrentTree.Observer<String, String>() {
-            @Override
-            public void onChange(ObservableConcurrentTree.Change<String, String> change) {
-                System.out.println("observer registered after deserialization:");
-                printChange(change);
-            }
+        restored.addObserver(change -> {
+            System.out.println("observer registered after deserialization:");
+            printChange(change);
         });
 
         restored.update("child", "Observers are transient and must be registered again");
@@ -208,26 +191,19 @@ public final class ObservableConcurrentTreeExample {
     private static void concurrentReadersAndWriters() throws Exception {
         section("6. Concurrent readers and writers");
 
-        final ObservableConcurrentTree<String, String> tree =
+        var tree =
                 new ObservableConcurrentTree<String, String>("root", "Concurrent root");
 
-        final AtomicInteger observedChanges = new AtomicInteger();
-        tree.addObserver(new ObservableConcurrentTree.Observer<String, String>() {
-            @Override
-            public void onChange(ObservableConcurrentTree.Change<String, String> change) {
-                observedChanges.incrementAndGet();
-            }
-        });
+        var observedChanges = new AtomicInteger();
+        tree.addObserver(change -> observedChanges.incrementAndGet());
 
-        ExecutorService executor = Executors.newFixedThreadPool(4);
-        CountDownLatch start = new CountDownLatch(1);
-        List<Future<?>> futures = new ArrayList<Future<?>>();
+        var start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<>();
 
-        for (int writer = 0; writer < 2; writer++) {
-            final int writerId = writer;
-            futures.add(executor.submit(new Runnable() {
-                @Override
-                public void run() {
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int writer = 0; writer < 2; writer++) {
+                var writerId = writer;
+                futures.add(executor.submit(() -> {
                     await(start);
                     for (int i = 0; i < 5; i++) {
                         tree.add(
@@ -235,14 +211,11 @@ public final class ObservableConcurrentTreeExample {
                                 "writer-" + writerId + "-node-" + i,
                                 "value-" + writerId + "-" + i);
                     }
-                }
-            }));
-        }
+                }));
+            }
 
-        for (int reader = 0; reader < 2; reader++) {
-            futures.add(executor.submit(new Runnable() {
-                @Override
-                public void run() {
+            for (int reader = 0; reader < 2; reader++) {
+                futures.add(executor.submit(() -> {
                     await(start);
                     for (int i = 0; i < 20; i++) {
                         tree.contains("root");
@@ -250,19 +223,13 @@ public final class ObservableConcurrentTreeExample {
                         tree.snapshot();
                         tree.depthFirst();
                     }
-                }
-            }));
-        }
+                }));
+            }
 
-        start.countDown();
-
-        for (Future<?> future : futures) {
-            future.get();
-        }
-
-        executor.shutdown();
-        if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-            throw new IllegalStateException("Concurrent example did not terminate");
+            start.countDown();
+            for (var future : futures) {
+                future.get();
+            }
         }
 
         System.out.println("concurrent final size = " + tree.size());
@@ -273,14 +240,11 @@ public final class ObservableConcurrentTreeExample {
     private static void observerFailureSemantics() {
         section("7. Observer failure happens after mutation commit");
 
-        final ObservableConcurrentTree<String, String> tree =
+        var tree =
                 new ObservableConcurrentTree<String, String>("root", "Root");
 
-        tree.addObserver(new ObservableConcurrentTree.Observer<String, String>() {
-            @Override
-            public void onChange(ObservableConcurrentTree.Change<String, String> change) {
-                throw new IllegalStateException("observer failed intentionally");
-            }
+        tree.addObserver(change -> {
+            throw new IllegalStateException("observer failed intentionally");
         });
 
         try {
@@ -298,72 +262,31 @@ public final class ObservableConcurrentTreeExample {
         section("8. Validation and rejected operations");
 
         ObservableConcurrentTree<String, String> tree =
-                new ObservableConcurrentTree<String, String>("root", "Root");
+                new ObservableConcurrentTree<>("root", "Root");
 
         tree.add("root", "a", "A");
         tree.add("a", "b", "B");
 
-        expectFailure("duplicate node id", new Runnable() {
-            @Override
-            public void run() {
-                tree.add("root", "a", "Duplicate");
-            }
-        });
-
-        expectFailure("missing parent", new Runnable() {
-            @Override
-            public void run() {
-                tree.add("missing", "x", "X");
-            }
-        });
-
-        expectFailure("moving root", new Runnable() {
-            @Override
-            public void run() {
-                tree.move("root", "a");
-            }
-        });
-
-        expectFailure("self-parent move", new Runnable() {
-            @Override
-            public void run() {
-                tree.move("a", "a");
-            }
-        });
-
-        expectFailure("cycle-producing move", new Runnable() {
-            @Override
-            public void run() {
-                tree.move("a", "b");
-            }
-        });
-
-        expectFailure("second initialize", new Runnable() {
-            @Override
-            public void run() {
-                tree.initialize("new-root", "New root");
-            }
-        });
-
-        expectFailure("invalid loaded state with two roots", new Runnable() {
-            @Override
-            public void run() {
-                tree.loadState(Arrays.asList(
-                        new ObservableConcurrentTree.NodeState<String, String>("root-1", null, "Root 1"),
-                        new ObservableConcurrentTree.NodeState<String, String>("root-2", null, "Root 2")));
-            }
-        });
+        expectFailure("duplicate node id", () -> tree.add("root", "a", "Duplicate"));
+        expectFailure("missing parent", () -> tree.add("missing", "x", "X"));
+        expectFailure("moving root", () -> tree.move("root", "a"));
+        expectFailure("self-parent move", () -> tree.move("a", "a"));
+        expectFailure("cycle-producing move", () -> tree.move("a", "b"));
+        expectFailure("second initialize", () -> tree.initialize("new-root", "New root"));
+        expectFailure("invalid loaded state with two roots", () -> tree.loadState(List.of(
+                new ObservableConcurrentTree.NodeState<>("root-1", null, "Root 1"),
+                new ObservableConcurrentTree.NodeState<>("root-2", null, "Root 2"))));
     }
 
     private static void clearAndObserverRemoval() {
         section("9. clear(), empty-state reads, and root subtree removal");
 
         ObservableConcurrentTree<String, String> tree =
-                new ObservableConcurrentTree<String, String>("root", "Root");
+                new ObservableConcurrentTree<>("root", "Root");
 
         tree.add("root", "child", "Child");
 
-        List<String> allRemoved = tree.removeSubtree("root");
+        var allRemoved = tree.removeSubtree("root");
         System.out.println("removing root subtree removed = " + allRemoved);
         System.out.println("rootId after root removal = " + tree.getRootId());
         System.out.println("isEmpty after root removal = " + tree.isEmpty());
@@ -448,9 +371,9 @@ public final class ObservableConcurrentTreeExample {
     private static void await(CountDownLatch latch) {
         try {
             latch.await();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while waiting to start", e);
+            throw new IllegalStateException("Interrupted while waiting to start", exception);
         }
     }
 
