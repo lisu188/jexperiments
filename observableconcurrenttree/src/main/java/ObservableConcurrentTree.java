@@ -18,7 +18,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public final class ObservableConcurrentTree<K extends Serializable, V extends Serializable> implements Serializable {
     @Serial
-    private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 2L;
 
     private static final Observer<?, ?>[] NO_OBSERVERS = new Observer<?, ?>[0];
 
@@ -250,7 +250,7 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
 
     private static final class Node<K extends Serializable, V extends Serializable> implements Serializable {
         @Serial
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 2L;
 
         private final K id;
         private Node<K, V> parent;
