@@ -70,6 +70,24 @@ ObservableConcurrentTree<String, String> restored =
 
 Finally, the program deliberately attempts representative invalid operations: duplicate ids, missing parents, moving the root, self-parenting, introducing a cycle, initializing twice, and loading multiple roots. Those examples document the class's rejection behavior alongside the successful paths rather than leaving validation semantics implicit.
 
+The runnable example also includes real concurrent access. Two writer tasks add distinct nodes while two reader tasks repeatedly call `contains`, `getRoot`, `snapshot`, and `depthFirst` from a shared executor. The final size and observer count are checked through the normal API, demonstrating that callers do not need external synchronization around these operations.
+
+It also demonstrates the observer failure contract explicitly:
+
+```java
+tree.addObserver(change -> {
+    throw new IllegalStateException("observer failed intentionally");
+});
+
+try {
+    tree.add("root", "committed", "value");
+} catch (IllegalStateException expected) {
+    System.out.println(tree.contains("committed")); // true
+}
+```
+
+The node remains present because notification happens after the structural mutation commits and after the write lock is released. The example also shows that moving a node to its current parent is a no-op and does not advance the version.
+
 ## Data model
 
 The tree is generic in both node id and value:
