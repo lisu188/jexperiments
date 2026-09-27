@@ -1,5 +1,12 @@
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ObservableConcurrentTreeExample {
 
@@ -9,6 +16,8 @@ public final class ObservableConcurrentTreeExample {
         eventDrivenMutations();
         bulkStateLoading();
         serializationRoundTrip();
+        concurrentReadersAndWriters();
+        observerFailureSemantics();
         validationFailures();
         clearAndObserverRemoval();
     }
@@ -86,6 +95,9 @@ public final class ObservableConcurrentTreeExample {
 
         tree.move("server-2", "dc-2");
         System.out.println("parent of server-2 after move = " + tree.getParentId("server-2"));
+        long versionAfterMove = tree.getVersion();
+        tree.move("server-2", "dc-2");
+        System.out.println("same-parent move is a no-op = " + (tree.getVersion() == versionAfterMove));
 
         List<String> removed = tree.removeSubtree("dc-1");
         System.out.println("removeSubtree(dc-1) removed = " + removed);
@@ -193,8 +205,97 @@ public final class ObservableConcurrentTreeExample {
         restored.update("child", "Observers are transient and must be registered again");
     }
 
+    private static void concurrentReadersAndWriters() throws Exception {
+        section("6. Concurrent readers and writers");
+
+        final ObservableConcurrentTree<String, String> tree =
+                new ObservableConcurrentTree<String, String>("root", "Concurrent root");
+
+        final AtomicInteger observedChanges = new AtomicInteger();
+        tree.addObserver(new ObservableConcurrentTree.Observer<String, String>() {
+            @Override
+            public void onChange(ObservableConcurrentTree.Change<String, String> change) {
+                observedChanges.incrementAndGet();
+            }
+        });
+
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> futures = new ArrayList<Future<?>>();
+
+        for (int writer = 0; writer < 2; writer++) {
+            final int writerId = writer;
+            futures.add(executor.submit(new Runnable() {
+                @Override
+                public void run() {
+                    await(start);
+                    for (int i = 0; i < 5; i++) {
+                        tree.add(
+                                "root",
+                                "writer-" + writerId + "-node-" + i,
+                                "value-" + writerId + "-" + i);
+                    }
+                }
+            }));
+        }
+
+        for (int reader = 0; reader < 2; reader++) {
+            futures.add(executor.submit(new Runnable() {
+                @Override
+                public void run() {
+                    await(start);
+                    for (int i = 0; i < 20; i++) {
+                        tree.contains("root");
+                        tree.getRoot();
+                        tree.snapshot();
+                        tree.depthFirst();
+                    }
+                }
+            }));
+        }
+
+        start.countDown();
+
+        for (Future<?> future : futures) {
+            future.get();
+        }
+
+        executor.shutdown();
+        if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Concurrent example did not terminate");
+        }
+
+        System.out.println("concurrent final size = " + tree.size());
+        System.out.println("concurrent observer notifications = " + observedChanges.get());
+        printSnapshot("concurrent final snapshot", tree.snapshot());
+    }
+
+    private static void observerFailureSemantics() {
+        section("7. Observer failure happens after mutation commit");
+
+        final ObservableConcurrentTree<String, String> tree =
+                new ObservableConcurrentTree<String, String>("root", "Root");
+
+        tree.addObserver(new ObservableConcurrentTree.Observer<String, String>() {
+            @Override
+            public void onChange(ObservableConcurrentTree.Change<String, String> change) {
+                throw new IllegalStateException("observer failed intentionally");
+            }
+        });
+
+        try {
+            tree.add("root", "committed", "Mutation commits before observer callback");
+            throw new AssertionError("Expected observer failure");
+        } catch (IllegalStateException expected) {
+            System.out.println("observer exception = " + expected.getMessage());
+        }
+
+        System.out.println("node exists despite observer exception = " + tree.contains("committed"));
+        printEntry("committed node", tree.get("committed"));
+    }
+
     private static void validationFailures() {
-        section("6. Validation and rejected operations");
+        section("8. Validation and rejected operations");
 
         ObservableConcurrentTree<String, String> tree =
                 new ObservableConcurrentTree<String, String>("root", "Root");
@@ -255,7 +356,7 @@ public final class ObservableConcurrentTreeExample {
     }
 
     private static void clearAndObserverRemoval() {
-        section("7. clear(), empty-state reads, and root subtree removal");
+        section("9. clear(), empty-state reads, and root subtree removal");
 
         ObservableConcurrentTree<String, String> tree =
                 new ObservableConcurrentTree<String, String>("root", "Root");
@@ -341,6 +442,15 @@ public final class ObservableConcurrentTreeExample {
             throw new AssertionError("Expected failure for: " + label);
         } catch (IllegalArgumentException | IllegalStateException expected) {
             System.out.println(label + " rejected: " + expected.getMessage());
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting to start", e);
         }
     }
 
