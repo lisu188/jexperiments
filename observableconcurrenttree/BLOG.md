@@ -8,6 +8,68 @@ The design deliberately uses ordinary JDK concurrency primitives rather than a s
 
 For experienced Java developers, the useful questions are about boundaries: what state is protected by the tree lock, what is copied before returning to callers, which behavior is atomic, and what happens when observer callbacks fail after a mutation has already committed.
 
+## Running the complete example
+
+The module includes `ObservableConcurrentTreeExample`, a runnable walkthrough of the complete public API. It can be launched with:
+
+```bash
+./gradlew :observableconcurrenttree:runExperiment
+```
+
+The example intentionally uses small string ids and values so the topology changes are easy to follow in console output. It covers both construction styles:
+
+```java
+ObservableConcurrentTree<String, String> emptyTree =
+        new ObservableConcurrentTree<String, String>();
+emptyTree.initialize("root", "Root");
+
+ObservableConcurrentTree<String, String> initializedTree =
+        new ObservableConcurrentTree<String, String>("root", "Root from constructor");
+```
+
+It registers an observer, performs direct mutations, then removes the observer again:
+
+```java
+ObservableConcurrentTree.Observer<String, String> observer =
+        change -> System.out.println(change.getType() + " " + change.getNodeId());
+
+tree.addObserver(observer);
+tree.add("root", "dc-1", "Datacenter 1");
+tree.update("dc-1", "Datacenter 1 updated");
+tree.removeObserver(observer);
+```
+
+The runnable class exercises all read views as well: `contains`, `get`, `getRootId`, `getRoot`, `getParentId`, `getChildren`, `depthFirst`, `snapshot`, `getVersion`, `size`, and `isEmpty`.
+
+Event-driven usage is shown separately so it is clear that the event API is only another entrypoint into the same mutation logic:
+
+```java
+tree.apply(ObservableConcurrentTree.TreeEvent.add("root", "parent", "Parent"));
+tree.apply(ObservableConcurrentTree.TreeEvent.add("parent", "child", "Child"));
+tree.apply(ObservableConcurrentTree.TreeEvent.update("child", "Updated"));
+tree.apply(ObservableConcurrentTree.TreeEvent.move("child", "root"));
+tree.apply(ObservableConcurrentTree.TreeEvent.remove("parent"));
+```
+
+The example also demonstrates atomic full-state loading:
+
+```java
+tree.loadState(Arrays.asList(
+        new ObservableConcurrentTree.NodeState<String, String>("root", null, "Root"),
+        new ObservableConcurrentTree.NodeState<String, String>("a", "root", "A"),
+        new ObservableConcurrentTree.NodeState<String, String>("leaf", "a", "Leaf")));
+```
+
+Serialization is exercised as an actual round-trip:
+
+```java
+byte[] bytes = tree.toByteArray();
+ObservableConcurrentTree<String, String> restored =
+        ObservableConcurrentTree.fromByteArray(bytes);
+```
+
+Finally, the program deliberately attempts representative invalid operations: duplicate ids, missing parents, moving the root, self-parenting, introducing a cycle, initializing twice, and loading multiple roots. Those examples document the class's rejection behavior alongside the successful paths rather than leaving validation semantics implicit.
+
 ## Data model
 
 The tree is generic in both node id and value:
