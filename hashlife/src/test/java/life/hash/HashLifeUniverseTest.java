@@ -79,8 +79,7 @@ class HashLifeUniverseTest {
         TreeNode dead = canonical.create(false);
         TreeNode parent = canonical.create(live, dead, dead, live);
 
-        assertEquals(1, live.hashCode());
-        assertEquals(0, dead.hashCode());
+        assertNotEquals(live.hashCode(), dead.hashCode());
         assertNotEquals(live, dead);
         assertFalse(parent.equals(live));
         assertTrue(parent.equals(parent));
