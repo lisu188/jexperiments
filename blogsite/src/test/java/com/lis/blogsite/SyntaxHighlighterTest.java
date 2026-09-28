@@ -46,12 +46,11 @@ class SyntaxHighlighterTest {
 
     @Test
     void handlesCommentsTripleQuotesEscapesAndUnknownLanguages() {
-        String kotlin = highlighter.highlightCodeBlocks("""
-                <pre><code class="language-kotlin">/* block */
-                val text = """triple"""
-                val quote = '\\''
-                </code></pre>
-                """);
+        String kotlin = highlighter.highlightCodeBlocks(
+                "<pre><code class=\"language-kotlin\">/* block */\\n"
+                        + "val text = \\\"\\\"\\\"triple\\\"\\\"\\\"\\n"
+                        + "val quote = '\\\\''\\n"
+                        + "</code></pre>");
         String unknown = highlighter.highlightCodeBlocks(
                 "<pre><code class=\"language-text\">&lt;raw&gt; &amp; value</code></pre>");
         String unchanged = highlighter.highlightCodeBlocks("<p>plain</p>");
