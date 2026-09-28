@@ -215,7 +215,12 @@ class OrderedThreadPoolExecutorTest {
         try (var workers = Executors.newFixedThreadPool(2);
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers, options)) {
             executor.executeOrdered(() -> {
-                gate.await();
+                try {
+                    gate.await();
+                } catch (InterruptedException failure) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(failure);
+                }
                 return 1;
             });
 
