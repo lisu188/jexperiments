@@ -20,11 +20,7 @@ final class ServerConnectionThread extends SocketAccessor<ThreadPoolServer> {
         this.id = id;
         context.registerClient(id, this);
         startTransport();
-        sendRegistration(id).whenComplete((ignored, failure) -> {
-            if (failure != null) {
-                close();
-            }
-        });
+        sendRegistration(id);
     }
 
     int id() {
