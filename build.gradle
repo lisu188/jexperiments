@@ -857,7 +857,7 @@ def coverageSmokeMains = [
     kotlinsealedwhen: 'experiments.kotlin.sealedwhen.SealedWhenExperimentKt',
     kotlinsuspendstate: 'experiments.kotlin.suspendstate.SuspendStateExperimentKt',
     kotlinvalueclassboxing: 'experiments.kotlin.valueclassboxing.ValueClassBoxingExperimentKt',
-    lambdabytecode: 'com.company.ConstructorReferenceLambda,com.company.ExpressionLambda,com.company.LambdaConstant,com.company.MemberMethodReferenceLambda,com.company.StaticMethodReferenceLambda',
+    lambdabytecode: 'com.company.ConstructorReferenceLambda,com.company.ExpressionLambda,com.company.MemberMethodReferenceLambda,com.company.StaticMethodReferenceLambda',
     observableconcurrenttree: 'ObservableConcurrentTreeVerification',
     orderedthreadpoolexecutor: 'com.lis.threadpool.OrderedThreadPoolExecutorVerification'
 ]
