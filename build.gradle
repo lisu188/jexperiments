@@ -269,6 +269,39 @@ project(':orderedthreadpoolexecutor') {
         options.release = 27
         options.compilerArgs += ['-Xlint:all', '-Werror']
     }
+
+    def java27 = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
+
+    tasks.register('runExperiment', JavaExec) {
+        group = 'application'
+        description = 'Runs the OrderedThreadPoolExecutor usage examples.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorExample'
+        javaLauncher = java27
+    }
+
+    tasks.register('verifyExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs deterministic OrderedThreadPoolExecutor verification.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorVerification'
+        javaLauncher = java27
+    }
+
+    tasks.register('benchmarkExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs the OrderedThreadPoolExecutor benchmark harness.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorBenchmark'
+        javaLauncher = java27
+        jvmArgs = ['-Xms1g', '-Xmx1g']
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('verifyExperiment')
+    }
 }
 
 project(':bcel') {
