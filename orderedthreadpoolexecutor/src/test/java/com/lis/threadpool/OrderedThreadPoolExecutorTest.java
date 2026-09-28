@@ -7,7 +7,9 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -102,6 +104,15 @@ class OrderedThreadPoolExecutorTest {
     @Test
     void synchronousFutureCompletionCoversSuccessNullFailureAndShutdown() throws Exception {
         var output = new LinkedBlockingQueue<Integer>();
+
+        try (var workers = Executors.newSingleThreadExecutor()) {
+            assertThrows(NullPointerException.class,
+                    () -> new OrderedThreadPoolExecutor<Integer>(null, workers));
+            assertThrows(NullPointerException.class,
+                    () -> new OrderedThreadPoolExecutor<Integer>(output, null));
+            assertThrows(NullPointerException.class,
+                    () -> new OrderedThreadPoolExecutor<Integer>(output, workers, null));
+        }
         var options = OrderedThreadPoolExecutor.Options.defaults()
                 .withAsyncFutureCompletion(false)
                 .withVirtualPublisher(false)
@@ -186,6 +197,46 @@ class OrderedThreadPoolExecutorTest {
             assertEquals(1, stats.completed());
             assertEquals(1, stats.failed());
             assertEquals(0, stats.inFlight());
+        }
+    }
+
+    @Test
+    void interruptedBackpressureRestoresInterruptAndStillSubmits() throws Exception {
+        var output = new LinkedBlockingQueue<Integer>();
+        var gate = new CountDownLatch(1);
+        var started = new CountDownLatch(1);
+        var finished = new CountDownLatch(1);
+        var interruptRestored = new AtomicBoolean();
+        var options = OrderedThreadPoolExecutor.Options.defaults()
+                .withMaxInFlight(1)
+                .withVirtualPublisher(false)
+                .withPublisherSpinCount(0);
+
+        try (var workers = Executors.newFixedThreadPool(2);
+             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers, options)) {
+            executor.executeOrdered(() -> {
+                gate.await();
+                return 1;
+            });
+
+            var submitter = Thread.ofPlatform().start(() -> {
+                started.countDown();
+                executor.executeOrdered(() -> 2);
+                interruptRestored.set(Thread.currentThread().isInterrupted());
+                Thread.interrupted();
+                finished.countDown();
+            });
+
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            submitter.interrupt();
+            Thread.sleep(20);
+            gate.countDown();
+
+            assertTrue(finished.await(5, TimeUnit.SECONDS));
+            submitter.join();
+            assertTrue(interruptRestored.get());
+            assertEquals(1, output.poll(5, TimeUnit.SECONDS));
+            assertEquals(2, output.poll(5, TimeUnit.SECONDS));
         }
     }
 
