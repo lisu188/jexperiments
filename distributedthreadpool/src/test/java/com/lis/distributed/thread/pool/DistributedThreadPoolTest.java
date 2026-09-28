@@ -316,13 +316,14 @@ class DistributedThreadPoolTest {
             var handshake = new CountDownLatch(1);
             var peer = Thread.ofVirtual().start(() -> {
                 try (var socket = serverSocket.accept();
-                     var out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-                     var in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()))) {
+                     var out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()))) {
                     out.flush();
-                    handshake.countDown();
-                    try {
-                        in.readObject();
-                    } catch (EOFException ignored) {
+                    try (var in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()))) {
+                        handshake.countDown();
+                        try {
+                            in.readObject();
+                        } catch (EOFException ignored) {
+                        }
                     }
                 } catch (Exception ignored) {
                     handshake.countDown();
@@ -347,15 +348,16 @@ class DistributedThreadPoolTest {
             var sent = new CountDownLatch(1);
             var peer = Thread.ofVirtual().start(() -> {
                 try (var socket = serverSocket.accept();
-                     var out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-                     var in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()))) {
+                     var out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()))) {
                     out.flush();
-                    out.writeObject("not a wire message");
-                    out.flush();
-                    sent.countDown();
-                    try {
-                        in.readObject();
-                    } catch (Exception ignored) {
+                    try (var in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()))) {
+                        out.writeObject("not a wire message");
+                        out.flush();
+                        sent.countDown();
+                        try {
+                            in.readObject();
+                        } catch (Exception ignored) {
+                        }
                     }
                 } catch (Exception ignored) {
                     sent.countDown();
