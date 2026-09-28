@@ -226,6 +226,56 @@ public final class Neuro {
         }
     }
 
+    public final class ParallelInferenceSession implements AutoCloseable {
+        private final int parallelism;
+        private final ForkJoinPool pool;
+        private final InferenceSession[] sessions;
+
+        private ParallelInferenceSession(int parallelism) {
+            if (parallelism <= 0) {
+                throw new IllegalArgumentException("parallelism must be > 0");
+            }
+            this.parallelism = parallelism;
+            pool = new ForkJoinPool(parallelism);
+            sessions = new InferenceSession[parallelism];
+            for (int i = 0; i < parallelism; i++) {
+                sessions[i] = newInferenceSession();
+            }
+        }
+
+        public void predictBatch(double[] inputs, int batchSize, double[] outputs) {
+            validateBatch(inputs, batchSize, outputs);
+            if (batchSize == 0) {
+                return;
+            }
+            var workerCount = Math.min(parallelism, batchSize);
+            var inputSize = topology[0];
+            var outputSize = topology[topology.length - 1];
+            Future<?>[] futures = new Future<?>[workerCount];
+            for (int worker = 0; worker < workerCount; worker++) {
+                var start = worker * batchSize / workerCount;
+                var end = (worker + 1) * batchSize / workerCount;
+                var session = sessions[worker];
+                futures[worker] = pool.submit(() -> {
+                    for (int sample = start; sample < end; sample++) {
+                        forward(
+                                inputs,
+                                sample * inputSize,
+                                session.workspace,
+                                outputs,
+                                sample * outputSize);
+                    }
+                });
+            }
+            await(futures);
+        }
+
+        @Override
+        public void close() {
+            pool.shutdown();
+        }
+    }
+
     public static final class FloatModel {
         private final int[] topology;
         private final float[][] weights;
@@ -435,40 +485,13 @@ public final class Neuro {
     }
 
     public void predictBatchParallel(double[] inputs, int batchSize, double[] outputs, int parallelism) {
-        validateBatch(inputs, batchSize, outputs);
-        if (parallelism <= 0) {
-            throw new IllegalArgumentException("parallelism must be > 0");
+        try (var session = newParallelInferenceSession(parallelism)) {
+            session.predictBatch(inputs, batchSize, outputs);
         }
-        if (batchSize == 0) {
-            return;
-        }
-        var workers = Math.min(parallelism, batchSize);
-        var inputSize = topology[0];
-        var outputSize = topology[topology.length - 1];
-        var pool = new ForkJoinPool(workers);
-        try {
-            @SuppressWarnings("unchecked")
-            Future<?>[] futures = new Future<?>[workers];
-            for (int worker = 0; worker < workers; worker++) {
-                var start = worker * batchSize / workers;
-                var end = (worker + 1) * batchSize / workers;
-                futures[worker] = pool.submit(() -> {
-                    var session = newInferenceSession();
-                    for (int sample = start; sample < end; sample++) {
-                        forward(
-                                inputs,
-                                sample * inputSize,
-                                session.workspace,
-                                outputs,
-                                sample * outputSize);
-                    }
-                    return null;
-                });
-            }
-            await(futures);
-        } finally {
-            pool.shutdown();
-        }
+    }
+
+    public ParallelInferenceSession newParallelInferenceSession(int parallelism) {
+        return new ParallelInferenceSession(parallelism);
     }
 
     public FloatModel toFloatModel() {
