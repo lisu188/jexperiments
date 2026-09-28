@@ -374,7 +374,9 @@ class DistributedThreadPoolTest {
                 }
                 assertTrue(connection.isClosed());
                 assertTrue(connection.awaitTermination(5, TimeUnit.SECONDS));
-                assertThrows(RejectedExecutionException.class, () -> client.callOnServer(() -> 1));
+                var afterClose = client.callOnServer(() -> 1);
+                var failure = assertThrows(CompletionException.class, afterClose::join);
+                assertInstanceOf(RejectedExecutionException.class, failure.getCause());
             } finally {
                 client.close();
             }
