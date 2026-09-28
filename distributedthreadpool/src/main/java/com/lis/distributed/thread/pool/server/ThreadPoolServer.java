@@ -110,9 +110,7 @@ public final class ThreadPoolServer implements AutoCloseable {
     }
 
     public CompletableFuture<Void> executeOnClient(int clientId, TaskMessage<ThreadPoolClient> task) {
-        @SuppressWarnings("unchecked")
-        var adapted = (TaskMessage<ThreadPoolServer>) (TaskMessage<?>) task;
-        return requireClient(clientId).execute(adapted);
+        return requireClient(clientId).execute(task);
     }
 
     void registerClient(int id, ServerConnectionThread connection) {
