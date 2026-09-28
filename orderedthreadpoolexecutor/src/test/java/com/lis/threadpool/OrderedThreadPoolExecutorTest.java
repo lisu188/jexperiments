@@ -246,6 +246,36 @@ class OrderedThreadPoolExecutorTest {
     }
 
     @Test
+    void publisherAndFutureNotifierRecoverFromInterrupts() throws Exception {
+        var output = new LinkedBlockingQueue<Integer>();
+        var options = OrderedThreadPoolExecutor.Options.defaults()
+                .withVirtualPublisher(false)
+                .withVirtualFutureNotifier(false)
+                .withPublisherSpinCount(0);
+
+        try (var workers = Executors.newSingleThreadExecutor();
+             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers, options)) {
+            var first = executor.process(() -> 1);
+            assertEquals(1, first.get(5, TimeUnit.SECONDS));
+            assertEquals(1, output.poll(5, TimeUnit.SECONDS));
+
+            var publisherField = OrderedThreadPoolExecutor.class.getDeclaredField("publisherThread");
+            publisherField.setAccessible(true);
+            ((Thread) publisherField.get(executor)).interrupt();
+
+            var notifierField = OrderedThreadPoolExecutor.class.getDeclaredField("futureNotifierThread");
+            notifierField.setAccessible(true);
+            var notifier = (Thread) notifierField.get(executor);
+            assertNotNull(notifier);
+            notifier.interrupt();
+
+            var second = executor.process(() -> 2);
+            assertEquals(2, second.get(5, TimeUnit.SECONDS));
+            assertEquals(2, output.poll(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
     void publicationFailureCompletesFutureExceptionallyAndDoesNotCreateGap() throws Exception {
         var output = new LinkedBlockingQueue<Integer>() {
             @Override
