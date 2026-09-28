@@ -148,9 +148,9 @@ public final class ObservableConcurrentTreeExample {
                 new ObservableConcurrentTree.NodeState<>("leaf", "a", "Leaf");
 
         System.out.println(
-                "NodeState getters: id=" + leaf.getId()
-                        + ", parentId=" + leaf.getParentId()
-                        + ", value=" + leaf.getValue());
+                "NodeState getters: id=" + leaf.id()
+                        + ", parentId=" + leaf.parentId()
+                        + ", value=" + leaf.value());
 
         ObservableConcurrentTree<String, String> tree =
                 new ObservableConcurrentTree<>();
@@ -163,29 +163,29 @@ public final class ObservableConcurrentTreeExample {
     }
 
     private static void serializationRoundTrip() throws Exception {
-        section("5. Serialization and deserialization");
+        section("5. JSON serialization and deserialization");
 
-        ObservableConcurrentTree<String, String> tree =
-                new ObservableConcurrentTree<>("root", "Serializable root");
+        var tree = new ObservableConcurrentTree<String, String>("root", "JSON root");
+        tree.add("root", "child", "JSON child");
 
-        tree.add("root", "child", "Serializable child");
+        var json = tree.toJson();
+        System.out.println("serialized JSON = " + json);
 
-        var bytes = tree.toByteArray();
-        System.out.println("serialized bytes = " + bytes.length);
-
-        ObservableConcurrentTree<String, String> restored =
-                ObservableConcurrentTree.fromByteArray(bytes);
+        var restored = ObservableConcurrentTree.fromJson(
+                json,
+                String.class,
+                String.class);
 
         System.out.println("restored version = " + restored.getVersion());
         System.out.println("restored size = " + restored.size());
         printSnapshot("restored snapshot", restored.snapshot());
 
         restored.addObserver(change -> {
-            System.out.println("observer registered after deserialization:");
+            System.out.println("observer registered after JSON restore:");
             printChange(change);
         });
 
-        restored.update("child", "Observers are transient and must be registered again");
+        restored.update("child", "Observers are runtime state and are not serialized");
     }
 
     private static void concurrentReadersAndWriters() throws Exception {
@@ -314,10 +314,10 @@ public final class ObservableConcurrentTreeExample {
 
         System.out.println(
                 label
-                        + " = {id=" + entry.getId()
-                        + ", parentId=" + entry.getParentId()
-                        + ", value=" + entry.getValue()
-                        + ", children=" + entry.getChildren()
+                        + " = {id=" + entry.id()
+                        + ", parentId=" + entry.parentId()
+                        + ", value=" + entry.value()
+                        + ", children=" + entry.children()
                         + "}");
     }
 
@@ -326,11 +326,11 @@ public final class ObservableConcurrentTreeExample {
             ObservableConcurrentTree.Snapshot<String, String> snapshot) {
         System.out.println(
                 label
-                        + ": rootId=" + snapshot.getRootId()
-                        + ", version=" + snapshot.getVersion()
-                        + ", entries=" + snapshot.getEntries().size());
+                        + ": rootId=" + snapshot.rootId()
+                        + ", version=" + snapshot.version()
+                        + ", entries=" + snapshot.entries().size());
 
-        for (ObservableConcurrentTree.Entry<String, String> entry : snapshot.getEntries()) {
+        for (ObservableConcurrentTree.Entry<String, String> entry : snapshot.entries()) {
             printEntry("  snapshot entry", entry);
         }
     }
@@ -339,24 +339,31 @@ public final class ObservableConcurrentTreeExample {
             ObservableConcurrentTree.Change<String, String> change) {
         System.out.println(
                 "change"
-                        + " type=" + change.getType()
-                        + " version=" + change.getVersion()
-                        + " nodeId=" + change.getNodeId()
-                        + " oldParentId=" + change.getOldParentId()
-                        + " newParentId=" + change.getNewParentId()
-                        + " oldValue=" + change.getOldValue()
-                        + " newValue=" + change.getNewValue()
-                        + " affectedNodeIds=" + change.getAffectedNodeIds());
+                        + " type=" + change.type()
+                        + " version=" + change.version()
+                        + " nodeId=" + change.nodeId()
+                        + " oldParentId=" + change.oldParentId()
+                        + " newParentId=" + change.newParentId()
+                        + " oldValue=" + change.oldValue()
+                        + " newValue=" + change.newValue()
+                        + " affectedNodeIds=" + change.affectedNodeIds());
     }
 
     private static void printEvent(
             ObservableConcurrentTree.TreeEvent<String, String> event) {
-        System.out.println(
-                "event"
-                        + " type=" + event.getType()
-                        + " nodeId=" + event.getNodeId()
-                        + " parentId=" + event.getParentId()
-                        + " value=" + event.getValue());
+        switch (event) {
+            case ObservableConcurrentTree.Add<String, String>(
+                    var parentId, var nodeId, var value) ->
+                    System.out.printf("event ADD nodeId=%s parentId=%s value=%s%n", nodeId, parentId, value);
+            case ObservableConcurrentTree.Update<String, String>(
+                    var nodeId, var value) ->
+                    System.out.printf("event UPDATE nodeId=%s value=%s%n", nodeId, value);
+            case ObservableConcurrentTree.Move<String, String>(
+                    var nodeId, var parentId) ->
+                    System.out.printf("event MOVE nodeId=%s parentId=%s%n", nodeId, parentId);
+            case ObservableConcurrentTree.Remove<String, String>(var nodeId) ->
+                    System.out.printf("event REMOVE nodeId=%s%n", nodeId);
+        }
     }
 
     private static void expectFailure(String label, Runnable action) {
