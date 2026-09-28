@@ -16,7 +16,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -24,11 +24,13 @@ jobs:
           distribution: temurin
           java-version: '27'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Verify Evolution
-        run: ./gradlew --no-daemon :evolution:check
+      - name: Verify Evolution and coverage
+        run: ./gradlew --no-daemon :evolution:check :evolution:jacocoTestReport
       - name: JMH smoke
         run: ./gradlew --no-daemon :evolution:jmhSmoke
       - name: Performance matrix smoke
-        run: ./gradlew --no-daemon :evolution:performanceMatrix -PevolutionMatrixGenerations=10
+        run: ./gradlew --no-daemon :evolution:performanceMatrix -PevolutionMatrixGenerations=5
+      - name: Convergence smoke
+        run: ./gradlew --no-daemon :evolution:convergenceBenchmark -PevolutionConvergenceSeeds=3 -PevolutionConvergenceMaxGenerations=500
       - name: Run example
         run: ./gradlew --no-daemon :evolution:runExperiment
