@@ -2,6 +2,12 @@ plugins {
     id("com.android.application")
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
+}
+
 android {
     namespace = "experiments.tesseractviewer"
     compileSdk = 36
