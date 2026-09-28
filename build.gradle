@@ -30,7 +30,7 @@ ext.moduleArchives = [
     kotlinvalueclassboxing: 'KotlinValueClassBoxing',
     lambdabytecode       : 'LambdaBytecode',
     observableconcurrenttree: 'ObservableConcurrentTree',
-    orderedthreadpool    : 'OrderedThreadPool',
+    orderedthreadpoolexecutor: 'OrderedThreadPoolExecutor',
     picontroller         : 'PiController',
     slickproject         : 'SlickGame',
     soapserver           : 'SoapServer',
