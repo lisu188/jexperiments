@@ -170,7 +170,7 @@ class OrderedThreadPoolExecutorCoverageTest {
     }
 
     @Test
-    void interruptingBlockedPublisherTurnsPublicationIntoFailure() throws Exception {
+    void interruptingBlockedPublisherRecoversAndPublishes() throws Exception {
         var output = new ArrayBlockingQueue<Integer>(1);
         output.put(-1);
 
@@ -181,15 +181,16 @@ class OrderedThreadPoolExecutorCoverageTest {
             while (executor.statistics().completed() == 0 && System.nanoTime() < deadline) {
                 Thread.onSpinWait();
             }
+            assertEquals(1, executor.statistics().completed());
 
             var field = OrderedThreadPoolExecutor.class.getDeclaredField("publisherThread");
             field.setAccessible(true);
             ((Thread) field.get(executor)).interrupt();
 
-            var failure = assertThrows(java.util.concurrent.ExecutionException.class,
-                    () -> future.get(5, TimeUnit.SECONDS));
-            assertInstanceOf(InterruptedException.class, failure.getCause());
             assertEquals(-1, output.take());
+            assertEquals(1, future.get(5, TimeUnit.SECONDS));
+            assertEquals(1, output.poll(5, TimeUnit.SECONDS));
+            assertEquals(1, executor.statistics().published());
         }
     }
 
