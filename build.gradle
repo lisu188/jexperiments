@@ -573,6 +573,121 @@ project(':distributedthreadpool') {
     }
 }
 
+project(':jneuro') {
+    sourceSets {
+        jmh {
+            java.srcDir 'src/jmh/java'
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += output + compileClasspath
+        }
+    }
+
+    configurations {
+        jmhImplementation.extendsFrom implementation
+        jmhRuntimeOnly.extendsFrom runtimeOnly
+    }
+
+    dependencies {
+        jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
+        jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(27)
+        }
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 27
+        options.compilerArgs += ['-Xlint:all', '-Werror']
+    }
+
+    def java27 = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
+
+    tasks.register('runExperiment', JavaExec) {
+        group = 'application'
+        description = 'Runs the JNeuro usage example.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroExample'
+        javaLauncher = java27
+    }
+
+    tasks.register('verifyExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs deterministic JNeuro correctness verification.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroVerification'
+        javaLauncher = java27
+    }
+
+    tasks.register('benchmarkExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs the lightweight JNeuro benchmark harness.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroBenchmark'
+        javaLauncher = java27
+        jvmArgs = ['-Xms1g', '-Xmx1g']
+    }
+
+    tasks.register('performanceMatrix', JavaExec) {
+        group = 'verification'
+        description = 'Runs JNeuro topology and allocation performance matrix.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroPerformanceMatrix'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('neuroMatrixIterations').orElse('20000').get(),
+                providers.gradleProperty('neuroMatrixEpochs').orElse('20').get()
+    }
+
+    tasks.register('jmh', JavaExec) {
+        group = 'verification'
+        description = 'Runs JMH benchmarks for JNeuro.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.neuro.*JmhBenchmark.*'
+    }
+
+    tasks.register('jmhSmoke', JavaExec) {
+        group = 'verification'
+        description = 'Runs a bounded JNeuro JMH smoke benchmark.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.neuro.NeuroInferenceJmhBenchmark.predictInto',
+                '-wi', '1',
+                '-i', '1',
+                '-f', '1',
+                '-p', 'topology=small'
+    }
+
+    tasks.register('profileNeuro', JavaExec) {
+        group = 'verification'
+        description = 'Runs the JNeuro performance matrix with JFR enabled.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroPerformanceMatrix'
+        javaLauncher = java27
+        args providers.gradleProperty('neuroProfileIterations').orElse('50000').get(), '50'
+        doFirst {
+            def recording = layout.buildDirectory.file('jfr/jneuro.jfr').get().asFile
+            recording.parentFile.mkdirs()
+            jvmArgs "-XX:StartFlightRecording=filename=${recording.absolutePath},settings=profile,dumponexit=true"
+        }
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('verifyExperiment')
+    }
+}
+
 project(':bcel') {
     dependencies {
         implementation 'org.apache.bcel:bcel:5.2'
