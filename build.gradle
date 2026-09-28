@@ -425,6 +425,154 @@ project(':orderedthreadpoolexecutor') {
         dependsOn tasks.named('verifyExperiment')
     }
 }
+project(':distributedthreadpool') {
+    sourceSets {
+        jmh {
+            java.srcDir 'src/jmh/java'
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += output + compileClasspath
+        }
+        jcstress {
+            java.srcDir 'src/jcstress/java'
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += output + compileClasspath
+        }
+    }
+
+    configurations {
+        jmhImplementation.extendsFrom implementation
+        jmhRuntimeOnly.extendsFrom runtimeOnly
+        jcstressImplementation.extendsFrom implementation
+        jcstressRuntimeOnly.extendsFrom runtimeOnly
+    }
+
+    dependencies {
+        jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
+        jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+        jcstressImplementation 'org.openjdk.jcstress:jcstress-core:0.16'
+        jcstressAnnotationProcessor 'org.openjdk.jcstress:jcstress-core:0.16'
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(27)
+        }
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 27
+        options.compilerArgs += ['-Xlint:all', '-Werror']
+    }
+
+    def java27 = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
+
+    tasks.register('runExperiment', JavaExec) {
+        group = 'application'
+        description = 'Runs the DistributedThreadPool loopback example.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.distributed.thread.pool.DistributedThreadPoolExample'
+        javaLauncher = java27
+    }
+
+    tasks.register('verifyExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs deterministic loopback verification for DistributedThreadPool.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.distributed.thread.pool.DistributedThreadPoolVerification'
+        javaLauncher = java27
+    }
+
+    tasks.register('benchmarkExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs the lightweight DistributedThreadPool benchmark.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.distributed.thread.pool.DistributedThreadPoolBenchmark'
+        javaLauncher = java27
+        jvmArgs = ['-Xms1g', '-Xmx1g']
+    }
+
+    tasks.register('performanceMatrix', JavaExec) {
+        group = 'verification'
+        description = 'Runs worker, batching and TCP latency matrix benchmarks.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.distributed.thread.pool.DistributedThreadPoolPerformanceMatrix'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('distributedMatrixRequests').orElse('5000').get(),
+                providers.gradleProperty('distributedMatrixRepetitions').orElse('3').get()
+    }
+
+    tasks.register('soakExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs a long-lived concurrent loopback DistributedThreadPool soak.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.distributed.thread.pool.DistributedThreadPoolSoak'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('distributedSoakSeconds').orElse('60').get(),
+                providers.gradleProperty('distributedSoakProducers').orElse('16').get()
+    }
+
+    tasks.register('jmh', JavaExec) {
+        group = 'verification'
+        description = 'Runs JMH loopback round-trip benchmarks.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.distributed.thread.pool.*JmhBenchmark.*'
+    }
+
+    tasks.register('jmhSmoke', JavaExec) {
+        group = 'verification'
+        description = 'Runs a bounded DistributedThreadPool JMH smoke benchmark.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.distributed.thread.pool.DistributedThreadPoolJmhBenchmark.roundTrip',
+                '-wi', '1',
+                '-i', '1',
+                '-f', '1',
+                '-p', 'batchSize=16',
+                '-p', 'tcpNoDelay=true',
+                '-p', 'workerModel=virtual'
+    }
+
+    tasks.register('jcstress', JavaExec) {
+        group = 'verification'
+        description = 'Runs jcstress races for the distributed request repository.'
+        dependsOn tasks.named('jcstressClasses')
+        classpath = sourceSets.jcstress.runtimeClasspath
+        mainClass = 'org.openjdk.jcstress.Main'
+        javaLauncher = java27
+        args '-m', providers.gradleProperty('distributedJcstressMode').orElse('sanity').get(),
+                '-t', 'com.lis.distributed.thread.pool.*Stress'
+    }
+
+    tasks.register('profileDistributedPool', JavaExec) {
+        group = 'verification'
+        description = 'Runs the distributed performance matrix with JFR enabled.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.distributed.thread.pool.DistributedThreadPoolPerformanceMatrix'
+        javaLauncher = java27
+        args providers.gradleProperty('distributedProfileRequests').orElse('10000').get(), '1'
+        doFirst {
+            def recording = layout.buildDirectory.file('jfr/distributed-thread-pool.jfr').get().asFile
+            recording.parentFile.mkdirs()
+            jvmArgs "-XX:StartFlightRecording=filename=${recording.absolutePath},settings=profile,dumponexit=true"
+        }
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('verifyExperiment')
+    }
+}
+
 project(':bcel') {
     dependencies {
         implementation 'org.apache.bcel:bcel:5.2'
