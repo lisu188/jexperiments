@@ -509,33 +509,11 @@ private static <K, V> void addChild(Node<K, V> parent, Node<K, V> child) {
 
 When the final child is detached, the reference returns to `null`. Traversal helpers explicitly handle the null representation. This primarily reduces retained memory for leaf-heavy, chain, balanced, and random trees.
 
-### Exact child capacity during bulk rebuild
+### Rejected pre-sizing experiment
 
-`loadState` now uses adaptive pre-sizing. A bounded sample first detects whether the incoming topology contains a genuinely wide parent. Only then does the rebuild pay for a full child-count pass; chain, balanced, and ordinary random topologies skip that extra work. When enabled, nodes receive an `ArrayList` with the exact expected capacity:
+An exact child-capacity pass for `loadState` was implemented and benchmarked, then removed. On the same GitHub Actions runner with 50,000-node STAR input and seven measured repetitions, median `loadState` time changed from 7.705 ms on `main` to 9.231 ms with pre-sizing, a 19.8% regression.
 
-```java
-HashMap<K, Integer> childCounts = null;
-if (shouldPreSizeChildren(state)) {
-    childCounts = new HashMap<>();
-    for (var item : state) {
-        var parentId = item.parentId();
-        if (parentId != null) {
-            childCounts.merge(parentId, 1, Integer::sum);
-        }
-    }
-}
-```
-
-Node construction then uses that count:
-
-```java
-var expectedChildren = childCounts == null
-        ? 0
-        : childCounts.getOrDefault(id, 0);
-new Node<>(id, item.value(), expectedChildren);
-```
-
-This removes repeated backing-array growth for wide parents during state loading without imposing the counting pass on topologies where pre-sizing does not pay for itself.
+The extra parent-count pass cost more than the avoided `ArrayList` growth at this scale. The final stage keeps lazy child allocation but does not perform a speculative counting pass before bulk rebuild.
 
 ### Single immutable-copy boundaries
 
