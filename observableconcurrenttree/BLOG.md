@@ -482,6 +482,76 @@ None of those syntax changes is counted as a performance optimization. They are 
 
 This is intentionally separate from the human-readable example program.
 
+## Allocation optimization without new caching
+
+The next optimization pass deliberately avoids adding any new cache. It reduces allocation and copying in three places while preserving the existing consistency model and public API.
+
+### Lazy child storage
+
+Leaf nodes no longer allocate an empty `ArrayList`:
+
+```java
+private ArrayList<Node<K, V>> children;
+```
+
+A child list is created only when the first child is attached:
+
+```java
+private static <K, V> void addChild(Node<K, V> parent, Node<K, V> child) {
+    var children = parent.children;
+    if (children == null) {
+        children = new ArrayList<>(4);
+        parent.children = children;
+    }
+    children.add(child);
+}
+```
+
+When the final child is detached, the reference returns to `null`. Traversal helpers explicitly handle the null representation. This primarily reduces retained memory for leaf-heavy, chain, balanced, and random trees.
+
+### Exact child capacity during bulk rebuild
+
+`loadState` now counts child relationships before allocating nodes. Nodes that will have children receive an `ArrayList` with the exact expected capacity:
+
+```java
+var childCounts = new HashMap<K, Integer>();
+for (var item : state) {
+    var parentId = item.parentId();
+    if (parentId != null) {
+        childCounts.merge(parentId, 1, Integer::sum);
+    }
+}
+```
+
+Node construction then uses that count:
+
+```java
+var expectedChildren = childCounts.getOrDefault(id, 0);
+new Node<>(id, item.value(), expectedChildren);
+```
+
+This removes repeated backing-array growth for wide parents during state loading.
+
+### Single immutable-copy boundaries
+
+The immutable records already defend their collection components with `List.copyOf`. Callers therefore pass their freshly built mutable list directly instead of first wrapping it in `Collections.unmodifiableList` and then copying it again.
+
+For example, snapshot construction is now:
+
+```java
+return new Snapshot<>(currentRootId, version, entries);
+```
+
+and `Snapshot` performs the one immutable copy:
+
+```java
+public Snapshot {
+    entries = List.copyOf(entries);
+}
+```
+
+The same principle is applied to `Entry` child ids and observer `Change` affected-node lists. No whole-tree or query-result cache was introduced by this pass.
+
 ## Verification architecture
 
 The experiment now has four complementary verification layers instead of relying only on the executable smoke test.
