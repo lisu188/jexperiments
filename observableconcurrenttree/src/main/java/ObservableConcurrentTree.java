@@ -118,7 +118,7 @@ public final class ObservableConcurrentTree<K, V> {
         private final K id;
         private Node<K, V> parent;
         private V value;
-        private final ArrayList<Node<K, V>> children = new ArrayList<>();
+        private ArrayList<Node<K, V>> children;
         private transient volatile Entry<K, V> entry;
 
         private Node(K id, V value) {
@@ -240,7 +240,7 @@ public final class ObservableConcurrentTree<K, V> {
             var node = new Node<K, V>(nodeId, value);
             node.parent = parent;
             nodes.put(nodeId, node);
-            parent.children.add(node);
+            addChild(parent, node);
             parent.entry = null;
             size++;
             var newVersion = ++version;
@@ -314,9 +314,9 @@ public final class ObservableConcurrentTree<K, V> {
                 return;
             }
             ensureNotDescendant(node, newParent);
-            oldParent.children.remove(node);
+            removeChild(oldParent, node);
             oldParent.entry = null;
-            newParent.children.add(node);
+            addChild(newParent, node);
             newParent.entry = null;
             node.parent = newParent;
             node.entry = null;
@@ -352,7 +352,7 @@ public final class ObservableConcurrentTree<K, V> {
             var oldParentId = oldParent == null ? null : oldParent.id;
             var oldValue = node.value;
             if (oldParent != null) {
-                oldParent.children.remove(node);
+                removeChild(oldParent, node);
                 oldParent.entry = null;
             }
             ArrayList<K> removed;
@@ -365,7 +365,6 @@ public final class ObservableConcurrentTree<K, V> {
                 removed = removeSubtreeNodes(node);
                 size -= removed.size();
             }
-            removedView = Collections.unmodifiableList(removed);
             var newVersion = ++version;
             listeners = observers;
             if (listeners.length != 0) {
@@ -377,7 +376,10 @@ public final class ObservableConcurrentTree<K, V> {
                         null,
                         oldValue,
                         null,
-                        removedView);
+                        removed);
+                removedView = change.affectedNodeIds();
+            } else {
+                removedView = List.copyOf(removed);
             }
         } finally {
             writeLock.unlock();
@@ -410,7 +412,7 @@ public final class ObservableConcurrentTree<K, V> {
                         null,
                         null,
                         null,
-                        Collections.unmodifiableList(removed));
+                        removed);
             }
         } finally {
             writeLock.unlock();
@@ -433,7 +435,7 @@ public final class ObservableConcurrentTree<K, V> {
             var newVersion = ++version;
             listeners = observers;
             if (listeners.length != 0) {
-                var affected = root == null ? List.<K>of() : Collections.unmodifiableList(collectSubtreeIds(root));
+                var affected = root == null ? List.<K>of() : collectSubtreeIds(root);
                 change = new Change<>(
                         ChangeType.STATE_LOADED,
                         newVersion,
@@ -516,7 +518,7 @@ public final class ObservableConcurrentTree<K, V> {
         readLock.lock();
         try {
             var children = requireNode(nodeId).children;
-            if (children.isEmpty()) {
+            if (children == null) {
                 return List.of();
             }
             var result = new ArrayList<Entry<K, V>>(children.size());
@@ -572,7 +574,7 @@ public final class ObservableConcurrentTree<K, V> {
             if (currentRootId != null) {
                 appendDepthFirst(nodes.get(currentRootId), entries);
             }
-            return new Snapshot<>(currentRootId, version, Collections.unmodifiableList(entries));
+            return new Snapshot<>(currentRootId, version, entries);
         } finally {
             readLock.unlock();
         }
@@ -667,6 +669,25 @@ public final class ObservableConcurrentTree<K, V> {
         }
     }
 
+    private static <K, V> void addChild(Node<K, V> parent, Node<K, V> child) {
+        var children = parent.children;
+        if (children == null) {
+            children = new ArrayList<>(10);
+            parent.children = children;
+        }
+        children.add(child);
+    }
+
+    private static <K, V> void removeChild(Node<K, V> parent, Node<K, V> child) {
+        var children = parent.children;
+        if (children == null || !children.remove(child)) {
+            throw new IllegalStateException("Parent/child relationship is inconsistent");
+        }
+        if (children.isEmpty()) {
+            parent.children = null;
+        }
+    }
+
     private void ensureNotDescendant(Node<K, V> node, Node<K, V> candidateParent) {
         for (var current = candidateParent; current != null; current = current.parent) {
             if (current == node) {
@@ -727,6 +748,9 @@ public final class ObservableConcurrentTree<K, V> {
             Node<K, V> node,
             ArrayDeque<Node<K, V>> stack) {
         var children = node.children;
+        if (children == null) {
+            return;
+        }
         for (int i = children.size() - 1; i >= 0; i--) {
             stack.push(children.get(i));
         }
@@ -741,14 +765,14 @@ public final class ObservableConcurrentTree<K, V> {
         var parent = node.parent;
         var children = node.children;
         List<K> childIds;
-        if (children.isEmpty()) {
+        if (children == null) {
             childIds = List.of();
         } else {
             var ids = new ArrayList<K>(children.size());
             for (var child : children) {
                 ids.add(child.id);
             }
-            childIds = Collections.unmodifiableList(ids);
+            childIds = ids;
         }
 
         cached = new Entry<>(node.id, parent == null ? null : parent.id, node.value, childIds);
@@ -804,7 +828,7 @@ public final class ObservableConcurrentTree<K, V> {
             }
             var node = rebuilt.get(item.id());
             node.parent = parent;
-            parent.children.add(node);
+            addChild(parent, node);
         }
 
         if (countReachable(root) != rebuilt.size()) {
