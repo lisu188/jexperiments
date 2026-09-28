@@ -448,7 +448,7 @@ public final class Neuro {
         var pool = new ForkJoinPool(workers);
         try {
             @SuppressWarnings("unchecked")
-            Future<Void>[] futures = new Future[workers];
+            Future<?>[] futures = new Future<?>[workers];
             for (int worker = 0; worker < workers; worker++) {
                 var start = worker * batchSize / workers;
                 var end = (worker + 1) * batchSize / workers;
@@ -617,7 +617,7 @@ public final class Neuro {
             } else {
                 var activeWorkers = Math.min(parallelism, count);
                 @SuppressWarnings("unchecked")
-                Future<Void>[] futures = new Future[activeWorkers];
+                Future<?>[] futures = new Future<?>[activeWorkers];
                 for (int worker = 0; worker < activeWorkers; worker++) {
                     var state = workers[worker];
                     state.gradient.clear();
@@ -1078,7 +1078,7 @@ public final class Neuro {
         }
     }
 
-    private static void await(Future<Void>[] futures) {
+    private static void await(Future<?>[] futures) {
         for (var future : futures) {
             try {
                 future.get();
