@@ -923,6 +923,13 @@ def coverageExcludes = [
     hashlife: [
         '**/Driver*'
     ],
+    jneuro: [
+        '**/NeuroBenchmark*',
+        '**/NeuroExample*',
+        '**/NeuroJfr*',
+        '**/NeuroPerformanceMatrix*',
+        '**/NeuroVerification*'
+    ],
     observableconcurrenttree: [
         '**/ObservableConcurrentTreeBenchmark*',
         '**/ObservableConcurrentTreeExample*',
