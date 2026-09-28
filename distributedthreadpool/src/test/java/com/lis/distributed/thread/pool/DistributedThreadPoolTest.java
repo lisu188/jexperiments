@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -226,6 +227,11 @@ class DistributedThreadPoolTest {
 
             var id = client.awaitClientId(Duration.ofSeconds(5));
             assertTrue(id > 0);
+            var connection = connectionOf(client);
+            assertFalse(connection.awaitTermination(0, TimeUnit.MILLISECONDS));
+            assertFalse(connection.awaitTermination(-1, TimeUnit.MILLISECONDS));
+            assertThrows(NullPointerException.class, () -> connection.awaitTermination(1, null));
+            assertEquals(0, connection.statistics().writeFailures());
             assertEquals(1, server.clientCount());
             assertTrue(server.clientIds().contains(id));
 
@@ -238,6 +244,14 @@ class DistributedThreadPoolTest {
 
             assertEquals(42, client.callOnServer(() -> 42, Duration.ofSeconds(5)));
             assertEquals(77, server.callOnClient(id, () -> 77, Duration.ofSeconds(5)));
+
+            var clientCallbackValue = new AtomicInteger();
+            assertEquals(8, client.callOnServer(() -> 8, clientCallbackValue::set).get(5, TimeUnit.SECONDS));
+            assertEquals(8, clientCallbackValue.get());
+
+            var serverCallbackValue = new AtomicInteger();
+            assertEquals(9, server.callOnClient(id, () -> 9, serverCallbackValue::set).get(5, TimeUnit.SECONDS));
+            assertEquals(9, serverCallbackValue.get());
 
             var clientCallback = client.callOnServer(() -> 5, value -> {
                 throw new IOException("client callback");
@@ -257,11 +271,23 @@ class DistributedThreadPoolTest {
                 }
             }).get(5, TimeUnit.SECONDS);
 
+            var failedServerCommand = client.executeOnServer(context -> {
+                throw new IOException("server command");
+            });
+            var failedServerCommandCause = assertThrows(CompletionException.class, failedServerCommand::join);
+            assertInstanceOf(RemoteExecutionException.class, failedServerCommandCause.getCause());
+
             server.executeOnClient(id, context -> {
                 if (context.statistics().received() == 0) {
                     throw new IllegalStateException("client context");
                 }
             }).get(5, TimeUnit.SECONDS);
+
+            var failedClientCommand = server.executeOnClient(id, context -> {
+                throw new IOException("client command");
+            });
+            var failedClientCommandCause = assertThrows(CompletionException.class, failedClientCommand::join);
+            assertInstanceOf(RemoteExecutionException.class, failedClientCommandCause.getCause());
 
             var stats = client.statistics();
             assertTrue(stats.sent() > 0);
