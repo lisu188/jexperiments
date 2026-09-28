@@ -257,6 +257,33 @@ project(':observableconcurrenttree') {
 }
 
 project(':orderedthreadpoolexecutor') {
+    sourceSets {
+        jmh {
+            java.srcDir 'src/jmh/java'
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += output + compileClasspath
+        }
+        jcstress {
+            java.srcDir 'src/jcstress/java'
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += output + compileClasspath
+        }
+    }
+
+    configurations {
+        jmhImplementation.extendsFrom implementation
+        jmhRuntimeOnly.extendsFrom runtimeOnly
+        jcstressImplementation.extendsFrom implementation
+        jcstressRuntimeOnly.extendsFrom runtimeOnly
+    }
+
+    dependencies {
+        jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
+        jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+        jcstressImplementation 'org.openjdk.jcstress:jcstress-core:0.16'
+        jcstressAnnotationProcessor 'org.openjdk.jcstress:jcstress-core:0.16'
+    }
+
     java {
         toolchain {
             languageVersion = JavaLanguageVersion.of(27)
@@ -292,18 +319,99 @@ project(':orderedthreadpoolexecutor') {
 
     tasks.register('benchmarkExperiment', JavaExec) {
         group = 'verification'
-        description = 'Runs the OrderedThreadPoolExecutor benchmark harness.'
+        description = 'Runs the lightweight OrderedThreadPoolExecutor benchmark harness.'
         classpath = sourceSets.main.runtimeClasspath
         mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorBenchmark'
         javaLauncher = java27
         jvmArgs = ['-Xms1g', '-Xmx1g']
     }
 
+    tasks.register('performanceMatrix', JavaExec) {
+        group = 'verification'
+        description = 'Runs the OrderedThreadPoolExecutor throughput, latency and backpressure matrix.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorPerformanceMatrix'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('orderedMatrixTasks').orElse('20000').get(),
+                providers.gradleProperty('orderedMatrixRepetitions').orElse('3').get()
+    }
+
+    tasks.register('headOfLineBenchmark', JavaExec) {
+        group = 'verification'
+        description = 'Measures head-of-line buffering, tail latency and drain behavior.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorHeadOfLineBenchmark'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('orderedHolTasks').orElse('100000').get()
+    }
+
+    tasks.register('soakExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs a long-lived randomized OrderedThreadPoolExecutor soak workload.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorSoak'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('orderedSoakSeconds').orElse('60').get(),
+                providers.gradleProperty('orderedSoakProducers').orElse('8').get()
+    }
+
+    tasks.register('jmh', JavaExec) {
+        group = 'verification'
+        description = 'Runs JMH benchmarks for OrderedThreadPoolExecutor.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.threadpool.*JmhBenchmark.*'
+    }
+
+    tasks.register('jmhSmoke', JavaExec) {
+        group = 'verification'
+        description = 'Runs a bounded JMH smoke suite.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.threadpool.OrderedCompletionBufferJmhBenchmark.*',
+                '-wi', '1',
+                '-i', '1',
+                '-f', '1',
+                '-p', 'size=1024',
+                '-p', 'order=reverse'
+    }
+
+    tasks.register('jcstress', JavaExec) {
+        group = 'verification'
+        description = 'Runs jcstress races for OrderedThreadPoolExecutor.'
+        dependsOn tasks.named('jcstressClasses')
+        classpath = sourceSets.jcstress.runtimeClasspath
+        mainClass = 'org.openjdk.jcstress.Main'
+        javaLauncher = java27
+        args '-m', providers.gradleProperty('orderedJcstressMode').orElse('sanity').get(),
+                '-t', 'experiments.ordered.jcstress.*'
+    }
+
+    tasks.register('profileOrderedExecutor', JavaExec) {
+        group = 'verification'
+        description = 'Runs the performance matrix with JFR recording enabled.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.threadpool.OrderedThreadPoolExecutorPerformanceMatrix'
+        javaLauncher = java27
+        args providers.gradleProperty('orderedProfileTasks').orElse('50000').get(), '1'
+        doFirst {
+            def recording = layout.buildDirectory.file('jfr/ordered-thread-pool-executor.jfr').get().asFile
+            recording.parentFile.mkdirs()
+            jvmArgs "-XX:StartFlightRecording=filename=${recording.absolutePath},settings=profile,dumponexit=true"
+        }
+    }
+
     tasks.named('check') {
         dependsOn tasks.named('verifyExperiment')
     }
 }
-
 project(':bcel') {
     dependencies {
         implementation 'org.apache.bcel:bcel:5.2'
