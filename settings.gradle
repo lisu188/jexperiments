@@ -23,16 +23,23 @@ include 'flowpublisher'
 include 'hashlife'
 include 'jneuro'
 include 'javakotlinbridges'
-include 'kotlindatasynthetic'
-include 'kotlindefaultargs'
-include 'kotlindelegation'
-include 'kotlininlinecapture'
-include 'kotlinmetadatareader'
-include 'kotlinpropertyrefs'
-include 'kotlinsamfuninterface'
-include 'kotlinsealedwhen'
-include 'kotlinsuspendstate'
-include 'kotlinvalueclassboxing'
+def kotlinBytecodeModules = [
+    'kotlindatasynthetic',
+    'kotlindefaultargs',
+    'kotlindelegation',
+    'kotlininlinecapture',
+    'kotlinmetadatareader',
+    'kotlinpropertyrefs',
+    'kotlinsamfuninterface',
+    'kotlinsealedwhen',
+    'kotlinsuspendstate',
+    'kotlinvalueclassboxing'
+]
+
+kotlinBytecodeModules.each { moduleName ->
+    include moduleName
+    project(":$moduleName").projectDir = file("kotlin/$moduleName")
+}
 include 'lambdabytecode'
 include 'observableconcurrenttree'
 include 'orderedthreadpoolexecutor'

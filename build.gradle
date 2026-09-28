@@ -644,7 +644,7 @@ project(':blogsite') {
     }
 
     def blogContentDir = layout.buildDirectory.dir('generated/blog-content')
-    def blogFiles = moduleArchives.keySet().collect { rootProject.file("${it}/BLOG.md") }
+    def blogFiles = moduleArchives.keySet().collect { project(":$it").file('BLOG.md') }
 
     tasks.register('generateBlogContent') {
         inputs.files(blogFiles)
@@ -659,7 +659,7 @@ project(':blogsite') {
             def manifest = new File(postsDir, 'manifest.tsv')
             manifest.withWriter('UTF-8') { writer ->
                 moduleArchives.each { moduleName, archiveName ->
-                    def source = rootProject.file("${moduleName}/BLOG.md")
+                    def source = project(":$moduleName").file('BLOG.md')
                     def target = new File(postsDir, "${moduleName}.md")
                     target.text = source.getText('UTF-8')
                     writer.write("${moduleName}\t${archiveName}\tblog-posts/${moduleName}.md\n")
