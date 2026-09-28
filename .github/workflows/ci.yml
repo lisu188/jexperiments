@@ -36,7 +36,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Run full build
-        run: ./gradlew --no-daemon clean build
+        run: ./gradlew --no-daemon clean build --continue
 
       - name: Upload test reports
         if: failure()
