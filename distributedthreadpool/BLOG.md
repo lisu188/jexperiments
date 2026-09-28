@@ -1,213 +1,564 @@
-# A Distributed Thread Pool over Object Streams
+# Distributed Thread Pool: Symmetric RPC over Java Object Streams
 
 ## Why this experiment exists
 
-This experiment asks a provocative question: how little code is needed to make
-one JVM ask another JVM to run a piece of Java logic? The answer here is a
-small distributed thread-pool sketch built on sockets, `ObjectInputStream`,
-`ObjectOutputStream`, serializable functional interfaces, and callbacks that can
-cross the client/server boundary.
+This experiment explores the mechanics behind remote execution without hiding them behind HTTP, gRPC, JSON, or a framework runtime.
 
-It is not a production RPC framework. That is precisely why it is interesting.
-The module exposes the raw mechanics that frameworks usually hide: both peers
-must share compatible classes, lambdas must be serializable, socket streams must
-agree on object serialization protocol, responses need correlation ids, and a
-remote callback is just another serialized command sent in the opposite
-direction. The code is compact enough that those tradeoffs are easy to see.
+Two JVM peers are connected by a TCP socket. A caller serializes a Java lambda implementing a serializable functional interface, the remote peer executes it, and a correlated response travels back over the same connection.
 
-For experienced Java developers, the main value is architectural. Java
-serialization makes remote execution look deceptively local. A
-`SerializableSupplier<T>` can be shipped to another process, executed there, and
-the result can be returned through a callback. But that convenience comes with
-security, compatibility, lifecycle, and failure-mode costs that are visible in
-this experiment.
+The original version from 2015 intentionally collapsed transport, dispatch, result correlation, callbacks, and lifecycle into a handful of classes. That made the idea visible, but it also exposed several real distributed-systems problems:
 
-## Execution path
+- responses were implemented as nested remote callbacks,
+- client registration was incomplete,
+- blocking requests could wait forever,
+- Java object streams were not explicitly flushed,
+- one executor serialized both inbound execution and outbound writes,
+- exceptions were not returned as protocol results,
+- sockets and executors leaked,
+- there was no backpressure or transport observability,
+- ObjectOutputStream could retain cross-message object references indefinitely,
+- user CompletableFuture callbacks could block the socket reader,
+- the server had no deterministic test or performance harness.
 
-The server entrypoint calls
-`new ThreadPoolServer(55555).start().await()`. `start()` submits an accept loop
-to a cached executor. For every accepted socket it creates a
-`ServerConnectionThread`, which is a specialization of the shared socket
-accessor. The server also stores connected clients in a concurrent map using
-generated integer ids.
+The modern implementation keeps the educational premise — serializable Java code crossing a socket — while separating the transport responsibilities explicitly.
 
-The client entrypoint connects to that port and periodically asks the server to
-execute a supplier:
+It is still a trusted-peer experiment. Native Java deserialization of arbitrary network input is unsafe for untrusted networks.
 
-```java
-ThreadPoolClient threadPoolClient = new ThreadPoolClient("127.0.0.1",
-        55555);
-for (int i = 0; i < 100; i++) {
-    Thread.sleep(1000);
-    threadPoolClient.callOnServer(() -> {
-        return Numbers.getId();
-    }, System.out::println);
+## Protocol model
+
+The transport now sends a small sealed protocol instead of treating every serialized consumer as an implicit protocol message.
+
+The wire model contains four message variants:
+
+~~~java
+sealed interface WireMessage extends Serializable
+        permits Invocation, Command, Response, Registration
+~~~
+
+A normal remote function call is an Invocation:
+
+~~~java
+record Invocation(
+        long requestId,
+        SerializableSupplier<?> task)
+        implements WireMessage
+~~~
+
+A context-aware one-way operation is represented as a correlated Command:
+
+~~~java
+record Command(
+        long requestId,
+        TaskMessage<?> task)
+        implements WireMessage
+~~~
+
+Both Invocation and Command receive a Response.
+
+~~~java
+record Response(
+        long requestId,
+        Object value,
+        RemoteFailure failure)
+        implements WireMessage
+~~~
+
+Registration is explicit:
+
+~~~java
+record Registration(int clientId)
+        implements WireMessage
+~~~
+
+This removes the old requirement that a server task send another serialized callback to the client just to complete a synchronous request.
+
+A request is now one outbound message plus one response message.
+
+## Correlation without CountDownLatch maps
+
+The old DataRepository allocated one CountDownLatch and one separate value map entry for each blocking request.
+
+The new repository stores CompletableFuture values directly:
+
+~~~java
+private final AtomicLong nextId = new AtomicLong();
+
+private final ConcurrentHashMap<
+        Long,
+        CompletableFuture<Object>> pending =
+        new ConcurrentHashMap<>();
+~~~
+
+Registering a request creates one future and one correlation id.
+
+A response removes the future from the table and completes it.
+
+Failures complete the same future exceptionally.
+
+Connection shutdown fails every still-pending request.
+
+The repository therefore has a single lifecycle for each request instead of separate latch and value structures.
+
+## Public async API
+
+Client calls are asynchronous by default:
+
+~~~java
+public <T> CompletableFuture<T> callOnServer(
+        SerializableSupplier<T> target)
+~~~
+
+A timeout-oriented blocking convenience overload is also available:
+
+~~~java
+public <T> T callOnServer(
+        SerializableSupplier<T> target,
+        Duration timeout)
+        throws Exception
+~~~
+
+The server exposes the symmetric API for invoking work on an already connected client:
+
+~~~java
+public <T> CompletableFuture<T> callOnClient(
+        int clientId,
+        SerializableSupplier<T> target)
+~~~
+
+This symmetry is important.
+
+The client and server now use the same transport semantics in both directions.
+
+## Explicit remote failures
+
+Arbitrary Throwable graphs are not serialized back to the caller.
+
+Instead the remote peer converts failures to a stable record containing:
+
+- remote exception class name,
+- message,
+- rendered remote stack trace.
+
+~~~java
+record RemoteFailure(
+        String type,
+        String message,
+        String stackTrace)
+        implements Serializable
+~~~
+
+The caller receives RemoteExecutionException.
+
+That keeps the wire error model independent from the serializability of a particular Throwable subclass.
+
+A result that is not Serializable is also converted into a remote failure before the transport attempts to write it.
+
+## Reader and writer separation
+
+The original SocketAccesor used one single-thread executor for both received work and outbound writes.
+
+That created unnecessary coupling.
+
+Slow execution could delay writes, and slow writes could delay local work.
+
+The new SocketAccessor has separate responsibilities:
+
+~~~text
+socket input
+    ↓
+reader thread
+    ↓
+protocol dispatch
+    ↓
+invocation executor
+
+producers
+    ↓
+MPSC write queue
+    ↓
+writer thread
+    ↓
+socket output
+~~~
+
+The reader blocks in ObjectInputStream.readObject().
+
+The writer owns ObjectOutputStream exclusively.
+
+Remote task execution runs on a separate executor supplied by ThreadPoolClient or ThreadPoolServer.
+
+By default those invocation executors use virtual threads.
+
+## Batched MPSC writer
+
+Outbound messages are placed into a LinkedTransferQueue.
+
+~~~java
+writes.offer(outbound);
+~~~
+
+Only the dedicated writer thread touches ObjectOutputStream.
+
+It takes one message, polls up to writerBatchSize additional messages, serializes the batch, resets the object stream handle table, then flushes once.
+
+~~~java
+for (int i = 0; i < count; i++) {
+    out.writeObject(batch[i].message());
 }
-```
 
-The supplier runs where the receiving side executes it. The callback prints the
-result after the answer comes back. In a single-machine demo this looks simple;
-across real machines it assumes the same bytecode is available on both sides.
+out.reset();
+out.flush();
+~~~
 
-```java
-// Accept clients on a fixed local demo port.
-public static void main(String[] args) throws InterruptedException {
-    new ThreadPoolServer(55555).start().await();
-}
-```
+This has several consequences.
 
-That one line hides the accept loop, client registration, and long-running
-executor lifecycle that the rest of the module expands.
+Writes cannot interleave and corrupt ObjectOutputStream.
 
-## Core code walkthrough
+Multiple concurrent producers do not synchronize on the stream.
 
-The shared transport loop is `SocketAccesor`. It owns the object streams and a
-single-thread executor for running received work:
+Flush overhead can be amortized across bursts.
 
-```java
-Object readObject = in.readObject();
-if (readObject instanceof SerializableConsumer) {
-    executor.submit((Callable<Void>) () -> {
-        ((SerializableConsumer<T>) readObject).accept(context);
-        return null;
-    });
-}
-```
+ObjectOutputStream does not retain an ever-growing identity table across unrelated RPC messages.
 
-This is the core of the experiment. The received object is not decoded into a
-custom protocol message. If it is a `SerializableConsumer`, it is invoked with
-the local context. On the server side that context is `ThreadPoolServer`; on the
-client side it is `ThreadPoolClient`.
+The writer reuses one array for batch collection instead of allocating a new collection for every flush.
 
-That choice makes the transport extremely flexible. It also makes the transport
-almost impossible to reason about statically. A message can call any public
-method reachable from the context object, capture values from the sender, and
-throw any checked exception declared by the functional interface. In effect,
-the protocol is "execute this Java closure", not a fixed set of named commands.
+The default batch size is 64 and is configurable.
 
-Sending work is symmetric. `postMessage` submits a write task to the same
-single-thread executor and calls `out.writeObject(message)`. That serializes
-outbound writes and inbound callback execution through one executor. It keeps
-the demo small, although it also means slow local work can delay socket writes.
+## Buffered object streams
 
-```java
-// The "protocol" is literally a serialized Java consumer.
-public void postMessage(SerializableConsumer<U> message) throws Exception {
-    executor.submit((Callable<Void>) () -> {
-        out.writeObject(message);
-        return null;
-    });
-}
-```
+Both directions use buffered socket streams.
 
-This is the point where the transport boundary disappears into Java object
-serialization.
+~~~java
+new BufferedOutputStream(
+        socket.getOutputStream(),
+        options.ioBufferBytes())
+~~~
 
-The server's synchronous request form uses a repository as a correlation table:
+and:
 
-```java
-int msgId = repository.lock();
-callOnClient(clientid, (ThreadPoolClient context) -> {
-    T t = target.get();
-    context.callOnServer((ThreadPoolServer ctx) -> {
-        ctx.repository.setValue(msgId, t);
-    });
+~~~java
+new BufferedInputStream(
+        socket.getInputStream(),
+        options.ioBufferBytes())
+~~~
+
+The default is 64 KiB.
+
+ObjectOutputStream is created first and its stream header is flushed before ObjectInputStream is created.
+
+Both peers follow the same construction order, avoiding the classic object-stream header deadlock.
+
+## TCP_NODELAY
+
+Low-latency RPC behavior and batched throughput prefer different network policies.
+
+Transport options therefore expose TCP_NODELAY.
+
+~~~java
+socket.setTcpNoDelay(options.tcpNoDelay());
+~~~
+
+It defaults to true because this experiment primarily measures request/response latency.
+
+The performance matrix includes a TCP_NODELAY-disabled scenario so the effect can be measured rather than assumed.
+
+## Virtual versus platform transport threads
+
+Reader and writer thread models are independently configurable.
+
+~~~java
+Options.defaults()
+        .withVirtualReader(true)
+        .withVirtualWriter(true)
+~~~
+
+Blocking socket I/O is a natural virtual-thread workload.
+
+The option remains explicit because one reader and one writer per connection are not a high-cardinality workload by themselves.
+
+The performance harness can therefore compare thread models rather than treating virtual threads as automatically faster.
+
+## Callback isolation
+
+Completing a CompletableFuture may run non-async dependent actions inline on the completing thread.
+
+Completing remote futures directly from the socket reader would therefore allow arbitrary caller code to stall all further inbound network processing.
+
+Responses are instead handed to a separate virtual-thread-per-task response executor.
+
+~~~java
+responseExecutor.execute(() -> {
+    if (response.failure() == null) {
+        repository.complete(
+                response.requestId(),
+                response.value());
+    } else {
+        repository.fail(
+                response.requestId(),
+                response.failure().toException());
+    }
 });
-return (T) repository.getValue(msgId);
-```
+~~~
 
-`lock()` creates a latch keyed by id. The remote side runs the supplier and then
-sends a callback that stores the value under the same id. `getValue` blocks
-until that callback arrives.
+A slow user continuation can occupy its own virtual thread while the reader continues decoding later responses.
 
-## Important implementation details
+The verification harness contains a blocked-callback test specifically for this property.
 
-The functional interfaces are the glue that makes lambdas eligible for object
-serialization:
+## Explicit client registration
 
-```java
-@FunctionalInterface
-public interface SerializableSupplier<T> extends Serializable {
-    T get() throws Exception;
-}
-```
+Server connections now receive monotonically assigned client ids.
 
-The repository uses `CountDownLatch` to turn asynchronous callbacks into
-blocking results:
+The server registers the connection before its transport begins serving calls, then sends:
 
-```java
-public Object getValue(int msgId) throws Exception {
-    locks.get(msgId).await();
-    locks.remove(msgId);
-    return values.remove(msgId);
-}
-```
+~~~java
+new Registration(clientId)
+~~~
 
-That is clear and effective in a toy setup. It is also a place where production
-code would need timeouts, cancellation, error propagation, cleanup after broken
-connections, and defensive handling for missing ids.
+The client exposes:
 
-`FuncUtils.bind` is another important piece. It captures one argument and
-returns a serializable function or consumer that accepts the remaining argument.
-That is what lets the client embed its local id while still building a command
-whose runtime parameter is the remote context.
+~~~java
+CompletableFuture<Integer> clientId()
+~~~
 
-```java
-// Bind one argument locally; receive the remote context later.
-public static <T, U, R> SerializableFunction<U, R> bind(
-        SerializableBiFunction<T, U, R> func, T arg) {
-    return (x) -> {
-        return func.apply(arg, x);
-    };
-}
-```
+and:
 
-The helper is small, but it is what makes callbacks feel like partially applied
-remote commands.
+~~~java
+int awaitClientId(Duration timeout)
+~~~
 
-The code uses generic type parameters throughout the public methods, but the
-transport erases most of that safety at runtime. Casts such as
-`(SerializableConsumer<T>) readObject` and `(T) repository.getValue(msgId)` are
-unchecked. That is typical when object serialization is used as a generic
-message bus: the compiler can check the local call site, but it cannot prove
-that the remote peer sent the expected object type.
+Server-to-client calls therefore have a complete routing path instead of relying on the commented-out registration code in the old experiment.
 
-## Runtime behavior and caveats
+## Connection lifecycle
 
-The most important caveat is security. Deserializing arbitrary objects from a
-socket and executing them as `SerializableConsumer` is unsafe unless both peers
-and the network are fully trusted. Modern Java systems generally avoid native
-Java serialization for remote boundaries or use strict serialization filters.
+SocketAccessor implements AutoCloseable.
 
-There are also correctness caveats. `ObjectOutputStream.writeObject` is not
-followed by an explicit `flush()`, so delivery can depend on stream buffering.
-The server assigns ids, but `ServerConnectionThread` contains a commented-out
-block that would send the id to the client, so the client's `id` field remains
-at its default unless set elsewhere. A blocking `getValue` can wait forever if
-the remote side fails. Connections are accepted forever, executors are not shut
-down, and exceptions from submitted tasks are not surfaced to the caller.
+Closing a connection:
 
-Despite those limits, the experiment usefully demonstrates a core RPC pattern:
-ship a command, execute it against a local context, optionally ship a callback,
-and correlate a response. Seeing that pattern without HTTP, JSON, or framework
-abstractions makes the hidden costs easier to discuss.
+1. stops accepting new outbound messages,
+2. fails pending correlated requests,
+3. wakes the writer,
+4. allows already queued writes to drain when possible,
+5. closes the socket,
+6. unblocks the reader,
+7. waits for reader and writer termination,
+8. closes the response completion executor.
 
-It also demonstrates why production RPC systems usually separate transport,
-authorization, serialization, dispatch, and result handling. This module
-collapses those concerns into a few classes, which is excellent for learning
-and risky for reuse. The missing boundaries are not accidental polish items;
-they are the hard parts of distributed execution.
+Unexpected EOF, socket errors, deserialization failures, and writer errors fail the connection and propagate failure to pending request futures.
 
-One practical reading strategy is to trace one request in both directions:
-client supplier to server context, server callback to client context, then
-repository latch release. That path explains nearly every moving part in the
-module.
+ThreadPoolClient and ThreadPoolServer also implement AutoCloseable.
 
-## Suggested next experiments
+The server closes all registered client connections and its accept socket.
 
-Add a small message envelope with `id`, `type`, and `payload` fields instead of
-sending raw consumers. Add timeouts and exceptional responses to
-`DataRepository`. Flush object streams after writes and close sockets on
-failure. Replace Java serialization with a narrow command protocol. Finally,
-make client registration explicit so the server-assigned id is delivered before
-the client sends its first callback-bearing request.
+Default internally-created invocation executors are owned and closed by their client or server.
+
+Executors supplied by a caller remain caller-owned.
+
+## Remote context commands
+
+Some experiments need access to the remote ThreadPoolServer or ThreadPoolClient object rather than a context-free supplier.
+
+TaskMessage remains available for that purpose.
+
+~~~java
+client.executeOnServer(server -> {
+    if (server.clientCount() == 0) {
+        throw new IllegalStateException();
+    }
+});
+~~~
+
+The command is correlated like a normal RPC call, so a remote exception completes the returned future exceptionally.
+
+This is safer to reason about than the original raw SerializableConsumer transport because the protocol can distinguish a command from a response or registration frame.
+
+## Transport statistics
+
+Each connection exposes a Statistics record:
+
+~~~java
+public record Statistics(
+        long sent,
+        long received,
+        long writeFailures,
+        long pendingWrites,
+        long writerBatches,
+        int pendingRequests)
+~~~
+
+These counters make batching, backlog, leaks, and transport failure visible during stress runs.
+
+The verification and soak harnesses assert that pendingRequests returns to zero.
+
+## JFR observability
+
+DistributedThreadPool defines disabled-by-default JFR events for:
+
+- outbound protocol messages,
+- inbound protocol messages,
+- remote execution duration and failure state,
+- writer batch size.
+
+The profiling task is:
+
+~~~text
+./gradlew :distributedthreadpool:profileDistributedPool
+~~~
+
+The recording is written under build/jfr/.
+
+This makes it possible to correlate RPC latency with GC, socket stalls, virtual-thread behavior, task execution, and writer batching without permanently enabling verbose logging.
+
+## Deterministic verification
+
+DistributedThreadPoolVerification runs everything on loopback sockets and covers:
+
+- client registration,
+- basic client-to-server request/response,
+- hundreds of concurrent pipelined requests,
+- remote exception propagation,
+- rejection of non-serializable results,
+- server-to-client calls,
+- context-aware commands in both directions,
+- slow CompletableFuture callback isolation,
+- multiple-client routing,
+- pending-future failure when a client closes.
+
+No fixed external port is required.
+
+The server binds to port zero and exposes the selected local port.
+
+## Lightweight benchmark
+
+DistributedThreadPoolBenchmark reports two basic metrics.
+
+Sequential RTT measures one complete request/response at a time.
+
+Pipelined throughput submits many requests before joining them.
+
+The benchmark validates response values while measuring the transport.
+
+It is useful as a fast regression harness but not a substitute for JMH.
+
+## Performance matrix
+
+DistributedThreadPoolPerformanceMatrix measures:
+
+- fixed versus virtual invocation executors,
+- writer batch sizes 1, 16, and 64,
+- request concurrency 1, 8, and 64,
+- TCP_NODELAY on versus off,
+- throughput,
+- p50 latency,
+- p99 latency,
+- p99.9 latency,
+- observed writer batch count.
+
+The matrix uses the real loopback socket protocol.
+
+It therefore includes serialization, queueing, context switching, TCP, remote execution, response routing, and future completion.
+
+## JMH
+
+DistributedThreadPoolJmhBenchmark creates a real loopback server/client pair and measures complete round trips.
+
+Parameters include:
+
+~~~text
+batchSize = 1, 16, 64
+tcpNoDelay = true, false
+workerModel = fixed, virtual
+~~~
+
+The benchmark uses SampleTime because tail latency is more important for RPC than one average throughput number.
+
+For contention testing, JMH thread count can be increased externally.
+
+## jcstress
+
+The module includes jcstress races for the correlation repository.
+
+RepositoryCompleteCloseStress races request completion against repository shutdown and verifies that the request ends either successfully or exceptionally, never leaked.
+
+RepositoryRequestIdStress races two request registrations and verifies that ids remain unique.
+
+These tests target the shared-memory coordination layer separately from loopback network tests.
+
+## Soak test
+
+DistributedThreadPoolSoak runs multiple virtual-thread producers against one loopback connection for a configurable duration.
+
+Requests include deterministic synthetic failures.
+
+At the end it checks:
+
+- no pending correlated requests remain,
+- no transport write failures occurred,
+- all producer tasks completed.
+
+This is aimed at lifecycle leaks and long-run queue growth rather than microbenchmark timing.
+
+## Java 27 tasks
+
+The module targets Java 27 with:
+
+~~~text
+-Xlint:all
+-Werror
+~~~
+
+Available tasks include:
+
+~~~text
+:distributedthreadpool:runExperiment
+:distributedthreadpool:verifyExperiment
+:distributedthreadpool:benchmarkExperiment
+:distributedthreadpool:performanceMatrix
+:distributedthreadpool:soakExperiment
+:distributedthreadpool:jmh
+:distributedthreadpool:jmhSmoke
+:distributedthreadpool:jcstress
+:distributedthreadpool:profileDistributedPool
+~~~
+
+The module-specific GitHub Actions workflow runs verification, JMH smoke, jcstress sanity mode, and a small performance matrix.
+
+## Security boundary
+
+This experiment still deserializes Java objects from a network peer and then executes received serializable code.
+
+That is dangerous.
+
+Do not expose this transport to untrusted clients or an untrusted network.
+
+Transport Options accept an ObjectInputFilter:
+
+~~~java
+Options.defaults()
+        .withInputFilter(filter)
+~~~
+
+No restrictive default filter is installed because generic serialized lambdas and arbitrary serializable result types make a universal allow-list impossible.
+
+Production systems should use an explicit schema, authenticated peers, authorization, bounded message sizes, and a serialization format that does not instantiate arbitrary Java object graphs.
+
+The absence of those controls is not a minor deployment detail.
+
+It is the main reason this remains an experiment rather than an RPC library.
+
+## Remaining limitations
+
+Strict request deadlines are not propagated to the remote peer.
+
+Cancelling a CompletableFuture does not cancel already-running remote code.
+
+There is no transport-level flow-control limit on pending RPCs.
+
+One connection still has one serialized ObjectOutputStream writer, so all messages share a single TCP ordering domain.
+
+A permanently blocked remote task can still consume remote executor resources indefinitely.
+
+Java serialized lambdas require compatible capturing classes and implementation methods on both peers.
+
+Cross-version protocol compatibility remains tied to Java serialization compatibility.
+
+Those are useful directions for further experiments, but the current design now makes them explicit instead of hiding them inside callback chains.
