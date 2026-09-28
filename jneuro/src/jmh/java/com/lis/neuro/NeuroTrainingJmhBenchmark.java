@@ -42,25 +42,25 @@ public class NeuroTrainingJmhBenchmark {
     @Benchmark
     public double scalarTenEpochs() {
         scalar.train(10);
-        return scalar.trainingError();
+        return scalar.statistics().lastTrainingError();
     }
 
     @Benchmark
     public double vectorTenEpochs() {
         vector.train(10);
-        return vector.trainingError();
+        return vector.statistics().lastTrainingError();
     }
 
     @Benchmark
     public double vectorMiniBatchTenEpochs() {
         miniBatch.trainMiniBatch(10, 16);
-        return miniBatch.trainingError();
+        return miniBatch.statistics().lastTrainingError();
     }
 
     @Benchmark
     public double parallelMiniBatchTenEpochs() {
         parallelMiniBatch.trainMiniBatch(10, 16, 2);
-        return parallelMiniBatch.trainingError();
+        return parallelMiniBatch.statistics().lastTrainingError();
     }
 
     private Neuro prepared(Neuro.Kernel kernel) {
