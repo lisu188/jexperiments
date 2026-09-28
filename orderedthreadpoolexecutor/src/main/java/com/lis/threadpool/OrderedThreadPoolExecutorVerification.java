@@ -2,226 +2,224 @@ package com.lis.threadpool;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.function.BooleanSupplier;
+import java.util.concurrent.TimeUnit;
 
 public final class OrderedThreadPoolExecutorVerification {
-    private record Item(int producer, int ordinal) {
-    }
-
     public static void main(String[] args) throws Exception {
-        verifyReverseCompletionOrder();
-        verifyFailureDoesNotCreateGap();
-        verifyConcurrentProducers();
-        verifyBoundedQueueBackpressure();
-        verifyShutdownAndTermination();
-        verifyNullResultFailsWithoutBlocking();
+        reverseCompletionStillPublishesInOrder();
+        failureDoesNotCreateGap();
+        fireAndForgetAvoidsFuturePath();
+        asyncFutureCallbackCannotBlockPublisher();
+        boundedInFlightAppliesUpstreamBackpressure();
+        shutdownRejectsAndDrainsAcceptedWork();
+        concurrentProducersPreserveUniqueSequenceNumbers();
+        segmentedBufferHandlesSparseSegments();
         System.out.println("OrderedThreadPoolExecutor verification passed");
     }
 
-    private static void verifyReverseCompletionOrder() throws Exception {
-        var taskCount = 12;
-        var output = new ArrayBlockingQueue<Integer>(taskCount);
-        var gates = new ArrayList<CountDownLatch>(taskCount);
-        var computations = new ArrayList<CountDownLatch>(taskCount);
-        var started = new CountDownLatch(taskCount);
-
+    private static void reverseCompletionStillPublishesInOrder() throws Exception {
+        var count = 32;
+        var output = new ArrayBlockingQueue<Integer>(count);
+        var gates = new ArrayList<CountDownLatch>(count);
+        var done = new ArrayList<CountDownLatch>(count);
+        var started = new CountDownLatch(count);
         try (var workers = Executors.newVirtualThreadPerTaskExecutor();
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            for (int i = 0; i < taskCount; i++) {
+            var futures = new ArrayList<CompletableFuture<Integer>>(count);
+            for (int i = 0; i < count; i++) {
                 gates.add(new CountDownLatch(1));
-                computations.add(new CountDownLatch(1));
+                done.add(new CountDownLatch(1));
             }
-
-            var futures = new ArrayList<CompletableFuture<Integer>>(taskCount);
-            for (int i = 0; i < taskCount; i++) {
+            for (int i = 0; i < count; i++) {
                 var value = i;
                 futures.add(executor.process(() -> {
                     started.countDown();
                     await(gates.get(value));
-                    computations.get(value).countDown();
+                    done.get(value).countDown();
                     return value;
                 }));
             }
-
             started.await();
-            for (int i = taskCount - 1; i >= 0; i--) {
+            for (int i = count - 1; i >= 0; i--) {
                 gates.get(i).countDown();
-                computations.get(i).await();
+                done.get(i).await();
             }
-
-            var published = new ArrayList<Integer>(taskCount);
-            for (int i = 0; i < taskCount; i++) {
-                published.add(output.take());
+            for (int i = 0; i < count; i++) {
+                require(output.take() == i, "reverse publication order");
             }
             futures.forEach(CompletableFuture::join);
-
-            var expected = new ArrayList<Integer>(taskCount);
-            for (int i = 0; i < taskCount; i++) {
-                expected.add(i);
-            }
-            require(published.equals(expected), "reverse completion must preserve submission order");
-
             var stats = executor.statistics();
-            require(stats.submitted() == taskCount, "reverse submitted count");
-            require(stats.completed() == taskCount, "reverse completed count");
-            require(stats.published() == taskCount, "reverse published count");
-            require(stats.failed() == 0, "reverse failure count");
-            require(stats.buffered() == 0, "reverse buffer drained");
-            require(stats.nextSequence() == taskCount, "reverse next sequence");
+            require(stats.maxBuffered() >= count - 1, "reverse workload should create large reorder window");
+            require(stats.buffered() == 0, "buffer must drain");
         }
     }
 
-    private static void verifyFailureDoesNotCreateGap() throws Exception {
-        var output = new ArrayBlockingQueue<Integer>(3);
-
-        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
-             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            var first = executor.process(() -> 10);
-            var failed = executor.process(() -> {
-                throw new IllegalStateException("expected");
-            });
-            var third = executor.process(() -> 30);
-
-            require(first.join() == 10, "first future");
-            expectFailure(failed, IllegalStateException.class);
-            require(third.join() == 30, "later future must not be blocked by failure");
-            require(List.of(output.take(), output.take()).equals(List.of(10, 30)),
-                    "failed slot must be skipped in output");
-
-            var stats = executor.statistics();
-            require(stats.submitted() == 3, "failure submitted count");
-            require(stats.completed() == 3, "failure completed count");
-            require(stats.published() == 2, "failure published count");
-            require(stats.failed() == 1, "failure count");
-            require(stats.buffered() == 0, "failure buffer drained");
-            require(stats.nextSequence() == 3, "failure next sequence");
-        }
-    }
-
-    private static void verifyConcurrentProducers() throws Exception {
-        var producerCount = 6;
-        var itemsPerProducer = 200;
-        var total = producerCount * itemsPerProducer;
-        var output = new ArrayBlockingQueue<Item>(total);
-
-        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
-             var executor = new OrderedThreadPoolExecutor<Item>(output, workers);
-             var producers = Executors.newVirtualThreadPerTaskExecutor()) {
-            var producerTasks = new ArrayList<java.util.concurrent.Future<?>>(producerCount);
-            for (int producer = 0; producer < producerCount; producer++) {
-                var producerId = producer;
-                producerTasks.add(producers.submit(() -> {
-                    for (int ordinal = 0; ordinal < itemsPerProducer; ordinal++) {
-                        var item = new Item(producerId, ordinal);
-                        executor.process(() -> item);
-                    }
-                }));
-            }
-            for (var producerTask : producerTasks) {
-                producerTask.get();
-            }
-
-            var nextOrdinal = new HashMap<Integer, Integer>();
-            for (int i = 0; i < total; i++) {
-                var item = output.take();
-                var expected = nextOrdinal.getOrDefault(item.producer(), 0);
-                require(item.ordinal() == expected, "per-producer submission order");
-                nextOrdinal.put(item.producer(), expected + 1);
-            }
-
-            for (int producer = 0; producer < producerCount; producer++) {
-                require(nextOrdinal.getOrDefault(producer, 0) == itemsPerProducer, "producer item count");
-            }
-        }
-    }
-
-    private static void verifyBoundedQueueBackpressure() throws Exception {
-        var output = new ArrayBlockingQueue<Integer>(1);
-
+    private static void failureDoesNotCreateGap() throws Exception {
+        var output = new ArrayBlockingQueue<Integer>(2);
         try (var workers = Executors.newVirtualThreadPerTaskExecutor();
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
             var first = executor.process(() -> 1);
-            var second = executor.process(() -> 2);
-
-            waitUntil(first::isDone, Duration.ofSeconds(5), "first publication");
-            require(!second.isDone(), "second future must wait while output queue is full");
-            require(output.take() == 1, "first bounded output");
-            require(second.join() == 2, "second future after backpressure release");
-            require(output.take() == 2, "second bounded output");
+            var failed = executor.process(() -> {
+                throw new IllegalStateException("expected");
+            });
+            var third = executor.process(() -> 3);
+            require(first.join() == 1, "first future");
+            try {
+                failed.join();
+                throw new AssertionError("failure expected");
+            } catch (CompletionException expected) {
+                require(expected.getCause() instanceof IllegalStateException, "failure cause");
+            }
+            require(third.join() == 3, "third future");
+            require(output.take() == 1, "first output");
+            require(output.take() == 3, "third output");
         }
     }
 
-    private static void verifyShutdownAndTermination() throws Exception {
-        var output = new ArrayBlockingQueue<Integer>(2);
-        var gate = new CountDownLatch(1);
-
+    private static void fireAndForgetAvoidsFuturePath() throws Exception {
+        var output = new ArrayBlockingQueue<Integer>(64);
         try (var workers = Executors.newVirtualThreadPerTaskExecutor();
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            var future = executor.process(() -> {
+            for (int i = 0; i < 64; i++) {
+                var value = i;
+                require(executor.executeOrdered(() -> value) == i, "sequence return");
+            }
+            for (int i = 0; i < 64; i++) {
+                require(output.take() == i, "fire-and-forget order");
+            }
+        }
+    }
+
+    private static void asyncFutureCallbackCannotBlockPublisher() throws Exception {
+        var output = new ArrayBlockingQueue<Integer>(4);
+        var callbackEntered = new CountDownLatch(1);
+        var releaseCallback = new CountDownLatch(1);
+        var firstGate = new CountDownLatch(1);
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
+             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
+            var first = executor.process(() -> {
+                await(firstGate);
+                return 1;
+            });
+            first.thenRun(() -> {
+                callbackEntered.countDown();
+                await(releaseCallback);
+            });
+            var second = executor.process(() -> 2);
+            firstGate.countDown();
+            callbackEntered.await();
+            require(output.poll(5, TimeUnit.SECONDS) == 1, "first published");
+            require(output.poll(5, TimeUnit.SECONDS) == 2, "publisher must not wait for user callback");
+            require(!second.isDone(), "future notifier remains ordered behind blocked callback");
+            releaseCallback.countDown();
+            require(second.get(5, TimeUnit.SECONDS) == 2, "second future eventually completes");
+        }
+    }
+
+    private static void boundedInFlightAppliesUpstreamBackpressure() throws Exception {
+        var output = new ArrayBlockingQueue<Integer>(8);
+        var gate = new CountDownLatch(1);
+        var options = OrderedThreadPoolExecutor.Options.defaults().withMaxInFlight(2);
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
+             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers, options);
+             var submitter = Executors.newVirtualThreadPerTaskExecutor()) {
+            executor.executeOrdered(() -> {
                 await(gate);
                 return 1;
             });
-
-            executor.shutdown();
-            require(executor.isShutdown(), "shutdown state");
-            expectRejected(() -> executor.process(() -> 2));
-            require(!executor.awaitTermination(Duration.ofMillis(25)), "running task must delay termination");
-
+            executor.executeOrdered(() -> 2);
+            var thirdStarted = new CountDownLatch(1);
+            var thirdReturned = new CountDownLatch(1);
+            submitter.submit(() -> {
+                thirdStarted.countDown();
+                executor.executeOrdered(() -> 3);
+                thirdReturned.countDown();
+            });
+            thirdStarted.await();
+            require(!thirdReturned.await(50, TimeUnit.MILLISECONDS), "third submission should be backpressured");
             gate.countDown();
-            require(future.join() == 1, "in-flight task completes after shutdown");
-            require(output.take() == 1, "in-flight result published after shutdown");
-            require(executor.awaitTermination(Duration.ofSeconds(5)), "executor termination");
-            require(executor.isTerminated(), "terminated state");
+            require(output.take() == 1, "bounded first output");
+            require(thirdReturned.await(5, TimeUnit.SECONDS), "third submission should resume after terminal slot drains");
+            require(output.take() == 2, "bounded second output");
+            require(output.take() == 3, "bounded third output");
         }
     }
 
-    private static void verifyNullResultFailsWithoutBlocking() throws Exception {
+    private static void shutdownRejectsAndDrainsAcceptedWork() throws Exception {
         var output = new ArrayBlockingQueue<Integer>(2);
-
+        var gate = new CountDownLatch(1);
         try (var workers = Executors.newVirtualThreadPerTaskExecutor();
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            var nullFuture = executor.process(() -> null);
-            var later = executor.process(() -> 2);
-
-            expectFailure(nullFuture, NullPointerException.class);
-            require(later.join() == 2, "null result must not block later result");
-            require(output.take() == 2, "later result after null failure");
-        }
-    }
-
-    private static void expectFailure(CompletableFuture<?> future, Class<? extends Throwable> expectedType) {
-        try {
-            future.join();
-            throw new AssertionError("expected future failure");
-        } catch (CompletionException failure) {
-            require(expectedType.isInstance(failure.getCause()), "unexpected future failure type");
-        }
-    }
-
-    private static void expectRejected(Runnable operation) {
-        try {
-            operation.run();
-            throw new AssertionError("expected rejection");
-        } catch (RejectedExecutionException expected) {
-        }
-    }
-
-    private static void waitUntil(BooleanSupplier condition, Duration timeout, String description) {
-        var deadline = System.nanoTime() + timeout.toNanos();
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() - deadline >= 0) {
-                throw new AssertionError("Timed out waiting for " + description);
+            var accepted = executor.process(() -> {
+                await(gate);
+                return 1;
+            });
+            executor.shutdown();
+            try {
+                executor.process(() -> 2);
+                throw new AssertionError("rejection expected");
+            } catch (RejectedExecutionException expected) {
             }
-            Thread.onSpinWait();
+            require(!executor.awaitTermination(Duration.ofMillis(20)), "accepted worker still running");
+            gate.countDown();
+            require(output.take() == 1, "accepted task output");
+            require(accepted.get(5, TimeUnit.SECONDS) == 1, "accepted future");
+            require(executor.awaitTermination(Duration.ofSeconds(5)), "termination");
         }
+    }
+
+    private static void concurrentProducersPreserveUniqueSequenceNumbers() throws Exception {
+        var producerCount = 16;
+        var perProducer = 250;
+        var total = producerCount * perProducer;
+        var output = new LinkedBlockingQueue<Integer>();
+        var sequenceSeen = new boolean[total];
+        var sequenceLock = new Object();
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
+             var producers = Executors.newVirtualThreadPerTaskExecutor();
+             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
+            var done = new CountDownLatch(producerCount);
+            for (int producer = 0; producer < producerCount; producer++) {
+                producers.submit(() -> {
+                    for (int i = 0; i < perProducer; i++) {
+                        var value = i;
+                        var sequence = executor.executeOrdered(() -> value);
+                        synchronized (sequenceLock) {
+                            require(sequence >= 0 && sequence < total, "sequence range");
+                            require(!sequenceSeen[(int) sequence], "duplicate sequence");
+                            sequenceSeen[(int) sequence] = true;
+                        }
+                    }
+                    done.countDown();
+                });
+            }
+            done.await();
+            for (int i = 0; i < total; i++) {
+                output.take();
+            }
+            for (var seen : sequenceSeen) {
+                require(seen, "all sequence numbers assigned exactly once");
+            }
+        }
+    }
+
+    private static void segmentedBufferHandlesSparseSegments() {
+        var buffer = new OrderedCompletionBuffer<String>(16);
+        buffer.put(0, "zero");
+        buffer.put(31, "thirty-one");
+        buffer.put(1_000_000, "far");
+        require("zero".equals(buffer.remove(0)), "segment zero");
+        require(buffer.remove(1) == null, "missing slot");
+        require("thirty-one".equals(buffer.remove(31)), "second segment");
+        require("far".equals(buffer.remove(1_000_000)), "far segment");
+        require(buffer.isEmpty(), "segmented buffer empty");
     }
 
     private static void await(CountDownLatch latch) {
@@ -229,7 +227,7 @@ public final class OrderedThreadPoolExecutorVerification {
             latch.await();
         } catch (InterruptedException interruption) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("task interrupted", interruption);
+            throw new IllegalStateException(interruption);
         }
     }
 

@@ -19,11 +19,9 @@ public final class OrderedThreadPoolExecutorBenchmark {
         var repetitions = args.length > 1 ? Integer.parseInt(args[1]) : DEFAULT_REPETITIONS;
         var reverseOrder = reverseOrder(taskCount);
         var shuffledOrder = shuffledOrder(taskCount, 0x5eedL);
-
         for (int i = 0; i < 2; i++) {
             run(taskCount, reverseOrder, shuffledOrder, false);
         }
-
         var samples = new LinkedHashMap<String, double[]>();
         for (int i = 0; i < repetitions; i++) {
             var result = run(taskCount, reverseOrder, shuffledOrder, true);
@@ -31,32 +29,26 @@ public final class OrderedThreadPoolExecutorBenchmark {
             result.forEach((name, value) ->
                     samples.computeIfAbsent(name, ignored -> new double[repetitions])[index] = value);
         }
-
-        System.out.printf(
-                "OrderedThreadPoolExecutor benchmark: %,d completions, %d measured runs%n",
-                taskCount,
-                repetitions);
+        System.out.printf("OrderedThreadPoolExecutor benchmark: %,d completions, %d measured runs%n", taskCount, repetitions);
         for (var entry : samples.entrySet()) {
             var values = entry.getValue().clone();
             Arrays.sort(values);
-            var median = values[values.length / 2];
-            System.out.printf("%-24s %9.3f ms median%n", entry.getKey(), median);
+            System.out.printf("%-26s %9.3f ms median%n", entry.getKey(), values[values.length / 2]);
         }
         System.out.println("blackhole=" + blackhole);
     }
 
-    private static Map<String, Double> run(
-            int taskCount,
-            int[] reverseOrder,
-            int[] shuffledOrder,
-            boolean measured) throws Exception {
+    private static Map<String, Double> run(int taskCount, int[] reverseOrder, int[] shuffledOrder, boolean measured)
+            throws Exception {
         var result = new LinkedHashMap<String, Double>();
         result.put("tree-map-reverse", millis(() -> blackhole += drainTreeMap(reverseOrder)));
         result.put("hash-map-reverse", millis(() -> blackhole += drainHashMap(reverseOrder)));
+        result.put("segmented-reverse", millis(() -> blackhole += drainSegmented(reverseOrder)));
         result.put("tree-map-shuffled", millis(() -> blackhole += drainTreeMap(shuffledOrder)));
         result.put("hash-map-shuffled", millis(() -> blackhole += drainHashMap(shuffledOrder)));
-        result.put("executor-throughput", millis(() -> blackhole += runExecutor(taskCount)));
-
+        result.put("segmented-shuffled", millis(() -> blackhole += drainSegmented(shuffledOrder)));
+        result.put("executor-future", millis(() -> blackhole += runExecutor(taskCount, true)));
+        result.put("executor-fire-forget", millis(() -> blackhole += runExecutor(taskCount, false)));
         if (!measured) {
             result.clear();
         }
@@ -74,9 +66,7 @@ public final class OrderedThreadPoolExecutorBenchmark {
                 next++;
             }
         }
-        if (!buffer.isEmpty() || next != completionOrder.length) {
-            throw new AssertionError("TreeMap reorder buffer did not drain");
-        }
+        requireDrained(buffer.isEmpty(), next, completionOrder.length, "TreeMap");
         return sum;
     }
 
@@ -92,22 +82,39 @@ public final class OrderedThreadPoolExecutorBenchmark {
                 next++;
             }
         }
-        if (!buffer.isEmpty() || next != completionOrder.length) {
-            throw new AssertionError("HashMap reorder buffer did not drain");
-        }
+        requireDrained(buffer.isEmpty(), next, completionOrder.length, "HashMap");
         return sum;
     }
 
-    private static long runExecutor(int taskCount) throws Exception {
+    private static long drainSegmented(int[] completionOrder) {
+        var buffer = new OrderedCompletionBuffer<Integer>(1024);
+        long next = 0;
+        long sum = 0;
+        for (var sequence : completionOrder) {
+            buffer.put(sequence, sequence);
+            Integer value;
+            while ((value = buffer.remove(next)) != null) {
+                sum += value;
+                next++;
+            }
+        }
+        requireDrained(buffer.isEmpty(), next, completionOrder.length, "segmented");
+        return sum;
+    }
+
+    private static long runExecutor(int taskCount, boolean futures) throws Exception {
         var output = new LinkedBlockingQueue<Integer>();
         var parallelism = Math.max(2, Math.min(Runtime.getRuntime().availableProcessors(), 16));
         try (var workers = Executors.newFixedThreadPool(parallelism);
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
             for (int i = 0; i < taskCount; i++) {
                 var value = i;
-                executor.process(() -> value);
+                if (futures) {
+                    executor.process(() -> value);
+                } else {
+                    executor.executeOrdered(() -> value);
+                }
             }
-
             long sum = 0;
             for (int expected = 0; expected < taskCount; expected++) {
                 var actual = output.take();
@@ -141,6 +148,12 @@ public final class OrderedThreadPoolExecutorBenchmark {
             order[swapWith] = value;
         }
         return order;
+    }
+
+    private static void requireDrained(boolean empty, long next, int expected, String name) {
+        if (!empty || next != expected) {
+            throw new AssertionError(name + " reorder buffer did not drain");
+        }
     }
 
     private static double millis(ThrowingRunnable runnable) throws Exception {
