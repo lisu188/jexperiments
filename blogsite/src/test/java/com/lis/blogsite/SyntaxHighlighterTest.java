@@ -34,22 +34,23 @@ class SyntaxHighlighterTest {
     void highlightsShellAndVariables() {
         String html = highlighter.highlightCodeBlocks("""
                 <pre><code class="language-bash">export HOME=/tmp
+                echo $HOME
                 echo "$HOME"
                 # literal</code></pre>
                 """);
 
         assertThat(html)
                 .contains("tok-keyword")
-                .contains("tok-string")
-                .contains("$HOME");
+                .contains("tok-variable")
+                .contains("tok-string");
     }
 
     @Test
     void handlesCommentsTripleQuotesEscapesAndUnknownLanguages() {
         String kotlin = highlighter.highlightCodeBlocks(
-                "<pre><code class=\"language-kotlin\">/* block */\n"
-                        + "val text = \"\"\"triple\"\"\"\n"
-                        + "val quote = '\\''\n"
+                "<pre><code class=\"language-kotlin\">/* block */\\n"
+                        + "val text = \\\"\\\"\\\"triple\\\"\\\"\\\"\\n"
+                        + "val quote = '\\\\''\\n"
                         + "</code></pre>");
         String unknown = highlighter.highlightCodeBlocks(
                 "<pre><code class=\"language-text\">&lt;raw&gt; &amp; value</code></pre>");
@@ -62,10 +63,8 @@ class SyntaxHighlighterTest {
 
     @Test
     void unterminatedTokensDoNotBreakHighlighting() {
-        String html = highlighter.highlightCodeBlocks("""
-                <pre><code class="language-java">String x = "unterminated
-                /* open</code></pre>
-                """);
+        String html = highlighter.highlightCodeBlocks(
+                "<pre><code class=\"language-java\">String x = \"unterminated\n/* open</code></pre>");
 
         assertThat(html).contains("tok-string");
     }
