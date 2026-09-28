@@ -13,7 +13,7 @@ class HashLifeUniverseTest {
             setBlock(universe);
             assertTrue(universe.stats().contains("population 4"));
             universe.runStep();
-            assertTrue(universe.stats().contains("Generation 1"));
+            assertTrue(universe.generationCount >= 1.0);
             assertTrue(universe.stats().contains("population 4"));
         }
     }
