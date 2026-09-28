@@ -59,7 +59,7 @@ class Neuro {
 
     public static void main(String... args) {
         Neuro neuro = new Neuro(new int[]{2, 5, 25, 5, 1}, 0.2, 1, 0.8);
-        neuro.add_teacher(new double[]{1, 1}, new double[]{1});
+        neuro.add_teacher(new double[]{1, 1}, new double[]{0});
         neuro.add_teacher(new double[]{1, 0}, new double[]{1});
         neuro.add_teacher(new double[]{0, 1}, new double[]{1});
         neuro.add_teacher(new double[]{0, 0}, new double[]{0});
