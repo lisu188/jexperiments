@@ -6,58 +6,136 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class NeuroTest {
     @Test
-    void trainingAndEvaluationPathsRun() throws Exception {
-        var constructor = Neuro.class.getDeclaredConstructor(
-                int[].class, double.class, double.class, double.class);
-        constructor.setAccessible(true);
-        Neuro neuro = constructor.newInstance(new int[]{2, 3, 1}, 0.2, 1.0, 0.8);
+    void trainsPredictsAndTracksStatistics() {
+        var parameters = Neuro.HyperParameters.defaults()
+                .withLearningRate(0.6)
+                .withMomentum(0.1)
+                .withBeta(1.2)
+                .withSeed(42L);
+        var neuro = new Neuro(new int[]{2, 4, 1}, parameters);
 
-        var addTeacher = Neuro.class.getDeclaredMethod("add_teacher", double[].class, double[].class);
-        addTeacher.setAccessible(true);
-        addTeacher.invoke(neuro, new double[]{0.0, 0.0}, new double[]{0.0});
-        addTeacher.invoke(neuro, new double[]{0.0, 1.0}, new double[]{1.0});
-        addTeacher.invoke(neuro, new double[]{1.0, 0.0}, new double[]{1.0});
-        addTeacher.invoke(neuro, new double[]{1.0, 1.0}, new double[]{0.0});
+        assertArrayEquals(new int[]{2, 4, 1}, neuro.topology());
+        assertEquals(parameters, neuro.hyperParameters());
+        assertEquals(17, neuro.parameterCount());
+        assertEquals(0, neuro.trainingSampleCount());
+        assertEquals(0, neuro.testSampleCount());
+        assertTrue(Double.isNaN(neuro.trainingError()));
+        assertTrue(Double.isNaN(neuro.testError()));
 
-        var fcn = Neuro.class.getDeclaredMethod("fcn", double.class, double.class);
-        var dfcn = Neuro.class.getDeclaredMethod("dfcn", double.class);
-        var output = Neuro.class.getDeclaredMethod("o", double[].class);
-        var error = Neuro.class.getDeclaredMethod("e", double[].class, double[].class);
-        var teachIterations = Neuro.class.getDeclaredMethod("teach", int.class);
-        var teachThresholdStep = Neuro.class.getDeclaredMethod("teach", double.class, int.class);
-        var teachThreshold = Neuro.class.getDeclaredMethod("teach", double.class);
-        var erms = Neuro.class.getDeclaredMethod("erms");
+        neuro.addTrainingSample(new double[]{0, 0}, new double[]{0})
+                .addTrainingSample(new double[]{0, 1}, new double[]{1})
+                .addTrainingSample(new double[]{1, 0}, new double[]{1})
+                .addTrainingSample(new double[]{1, 1}, new double[]{0})
+                .addTestSample(new double[]{0, 1}, new double[]{1});
 
-        for (var method : new java.lang.reflect.Method[]{
-                fcn, dfcn, output, error, teachIterations, teachThresholdStep, teachThreshold, erms}) {
-            method.setAccessible(true);
-        }
+        assertEquals(4, neuro.trainingSampleCount());
+        assertEquals(1, neuro.testSampleCount());
 
-        assertEquals(0.5, (double) fcn.invoke(neuro, 0.0, 1.0), 0.000001);
-        assertEquals(0.25, (double) dfcn.invoke(neuro, 0.5), 0.000001);
-        output.invoke(neuro, (Object) new double[]{1.0, 0.0});
-        error.invoke(neuro, new double[]{1.0, 0.0}, new double[]{1.0});
-        teachIterations.invoke(neuro, 2);
-        assertTrue((double) erms.invoke(neuro) >= 0.0);
-        assertEquals(0, teachThresholdStep.invoke(neuro, 10.0, 1));
-        assertEquals(0, teachThreshold.invoke(neuro, 10.0));
+        var before = neuro.predict(new double[]{0, 1});
+        assertEquals(1, before.length);
+        assertTrue(before[0] > 0.0 && before[0] < 1.0);
 
-        neuro.add_test(new double[]{0.0, 0.0}, new double[]{0.0});
-        neuro.add_test(new double[]{1.0, 0.0}, new double[]{1.0});
-        assertTrue(Double.isFinite(neuro.test()));
+        var output = new double[1];
+        neuro.predictInto(new double[]{1, 0}, output);
+        assertTrue(output[0] > 0.0 && output[0] < 1.0);
+
+        var firstError = neuro.trainEpoch();
+        assertTrue(Double.isFinite(firstError));
+        neuro.train(2);
+
+        var statistics = neuro.statistics();
+        assertEquals(3, statistics.epochsTrained());
+        assertEquals(12, statistics.samplesSeen());
+        assertEquals(neuro.trainingError(), statistics.lastTrainingError(), 1.0e-12);
+        assertTrue(Double.isFinite(neuro.testError()));
+
+        var result = neuro.trainUntil(0.0, 1);
+        assertEquals(1, result.epochs());
+        assertFalse(result.converged());
+        assertTrue(Double.isFinite(result.error()));
+
+        var alreadyGood = neuro.trainUntil(1.0, 10);
+        assertEquals(0, alreadyGood.epochs());
+        assertTrue(alreadyGood.converged());
     }
 
     @Test
-    void teachingWithoutSamplesIsANoOp() throws Exception {
-        var constructor = Neuro.class.getDeclaredConstructor(
-                int[].class, double.class, double.class, double.class);
-        constructor.setAccessible(true);
-        Neuro neuro = constructor.newInstance(new int[]{1, 1}, 0.1, 1.0, 0.1);
+    void constructorsAndHyperParameterValidationAreCovered() {
+        var defaults = Neuro.HyperParameters.defaults();
+        assertEquals(0.5, defaults.learningRate());
+        assertEquals(0.2, defaults.momentum());
+        assertEquals(1.0, defaults.beta());
 
-        var teach = Neuro.class.getDeclaredMethod("teach", int.class);
-        teach.setAccessible(true);
-        teach.invoke(neuro, 1);
+        var first = new Neuro(new int[]{1, 1});
+        var second = new Neuro(new int[]{1, 2, 1}, 0.1, 1.0, 0.4);
+        assertEquals(2, first.parameterCount());
+        assertEquals(7, second.parameterCount());
 
-        assertTrue(Double.isNaN(neuro.test()));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Neuro.HyperParameters(0.0, 0.1, 1.0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Neuro.HyperParameters(Double.NaN, 0.1, 1.0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Neuro.HyperParameters(0.1, -0.1, 1.0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Neuro.HyperParameters(0.1, 1.0, 1.0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Neuro.HyperParameters(0.1, Double.NaN, 1.0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Neuro.HyperParameters(0.1, 0.1, 0.0, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new Neuro.HyperParameters(0.1, 0.1, Double.NaN, 1));
+    }
+
+    @Test
+    void rejectsInvalidTopologySamplesTrainingAndPredictionArguments() {
+        assertThrows(NullPointerException.class, () -> new Neuro(null));
+        assertThrows(IllegalArgumentException.class, () -> new Neuro(new int[]{1}));
+        assertThrows(IllegalArgumentException.class, () -> new Neuro(new int[]{1, 0}));
+        assertThrows(NullPointerException.class,
+                () -> new Neuro(new int[]{1, 1}, (Neuro.HyperParameters) null));
+
+        var neuro = new Neuro(new int[]{2, 1});
+
+        assertThrows(NullPointerException.class,
+                () -> neuro.addTrainingSample(null, new double[]{0}));
+        assertThrows(NullPointerException.class,
+                () -> neuro.addTrainingSample(new double[]{0, 0}, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> neuro.addTrainingSample(new double[]{0}, new double[]{0}));
+        assertThrows(IllegalArgumentException.class,
+                () -> neuro.addTrainingSample(new double[]{0, 0}, new double[]{0, 1}));
+        assertThrows(IllegalArgumentException.class,
+                () -> neuro.addTrainingSample(new double[]{Double.NaN, 0}, new double[]{0}));
+        assertThrows(IllegalArgumentException.class,
+                () -> neuro.addTrainingSample(new double[]{0, 0}, new double[]{Double.POSITIVE_INFINITY}));
+
+        assertThrows(NullPointerException.class, () -> neuro.predict(null));
+        assertThrows(NullPointerException.class,
+                () -> neuro.predictInto(new double[]{0, 0}, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> neuro.predictInto(new double[]{0, 0}, new double[2]));
+        assertThrows(IllegalArgumentException.class,
+                () -> neuro.predict(new double[]{0}));
+
+        assertThrows(IllegalStateException.class, neuro::trainEpoch);
+        assertThrows(IllegalArgumentException.class, () -> neuro.train(-1));
+        neuro.train(0);
+        assertThrows(IllegalArgumentException.class, () -> neuro.trainUntil(-1.0, 1));
+        assertThrows(IllegalArgumentException.class, () -> neuro.trainUntil(Double.NaN, 1));
+        assertThrows(IllegalArgumentException.class, () -> neuro.trainUntil(0.1, -1));
+        assertThrows(IllegalStateException.class, () -> neuro.trainUntil(0.1, 1));
+    }
+
+    @Test
+    void sigmoidCoversPositiveAndNegativeNumericalBranches() throws Exception {
+        var sigmoid = Neuro.class.getDeclaredMethod("sigmoid", double.class);
+        sigmoid.setAccessible(true);
+
+        var positive = (double) sigmoid.invoke(null, 2.0);
+        var negative = (double) sigmoid.invoke(null, -2.0);
+
+        assertEquals(1.0 - negative, positive, 1.0e-12);
+        assertEquals(0.5, (double) sigmoid.invoke(null, 0.0), 1.0e-12);
     }
 }

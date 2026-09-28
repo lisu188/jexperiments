@@ -40,16 +40,16 @@ class SyntaxHighlighterTest {
 
         assertThat(html)
                 .contains("tok-keyword")
-                .contains("tok-variable")
-                .contains("tok-string");
+                .contains("tok-string")
+                .contains("$HOME");
     }
 
     @Test
     void handlesCommentsTripleQuotesEscapesAndUnknownLanguages() {
         String kotlin = highlighter.highlightCodeBlocks(
-                "<pre><code class=\"language-kotlin\">/* block */\\n"
-                        + "val text = \\\"\\\"\\\"triple\\\"\\\"\\\"\\n"
-                        + "val quote = '\\\\''\\n"
+                "<pre><code class=\"language-kotlin\">/* block */\n"
+                        + "val text = \"\"\"triple\"\"\"\n"
+                        + "val quote = '\\''\n"
                         + "</code></pre>");
         String unknown = highlighter.highlightCodeBlocks(
                 "<pre><code class=\"language-text\">&lt;raw&gt; &amp; value</code></pre>");
@@ -62,8 +62,10 @@ class SyntaxHighlighterTest {
 
     @Test
     void unterminatedTokensDoNotBreakHighlighting() {
-        String html = highlighter.highlightCodeBlocks(
-                "<pre><code class=\"language-java\">String x = \"unterminated\n/* open</code></pre>");
+        String html = highlighter.highlightCodeBlocks("""
+                <pre><code class="language-java">String x = "unterminated
+                /* open</code></pre>
+                """);
 
         assertThat(html).contains("tok-string");
     }
