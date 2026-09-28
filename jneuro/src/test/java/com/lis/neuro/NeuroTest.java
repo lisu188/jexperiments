@@ -117,8 +117,13 @@ class NeuroTest {
         }
         var batch = new double[8 * batchSize];
         var parallel = new double[8 * batchSize];
+        var reusableParallel = new double[8 * batchSize];
         vector.predictBatch(batchInputs, batchSize, batch);
         vector.predictBatchParallel(batchInputs, batchSize, parallel, 2);
+        try (var parallelSession = vector.newParallelInferenceSession(2)) {
+            parallelSession.predictBatch(batchInputs, batchSize, reusableParallel);
+            assertArrayEquals(batch, reusableParallel, 0.0);
+        }
         assertArrayEquals(batch, parallel, 0.0);
         for (int sample = 0; sample < batchSize; sample++) {
             assertArrayEquals(vectorOutput, Arrays.copyOfRange(batch, sample * 8, sample * 8 + 8), 0.0);
@@ -152,6 +157,7 @@ class NeuroTest {
         assertThrows(IllegalArgumentException.class, () -> vector.predictBatch(batchInputs, -1, batch));
         assertThrows(IllegalArgumentException.class, () -> vector.predictBatch(batchInputs, 1, new double[1]));
         assertThrows(IllegalArgumentException.class, () -> vector.predictBatchParallel(batchInputs, 1, batch, 0));
+        assertThrows(IllegalArgumentException.class, () -> vector.newParallelInferenceSession(0));
         assertDoesNotThrow(() -> vector.predictBatchParallel(new double[0], 0, new double[0], 1));
 
         assertThrows(IllegalArgumentException.class, () -> floatModel.predictInto(new float[1], new float[8]));
