@@ -602,11 +602,19 @@ project(':jneuro') {
 
     tasks.withType(JavaCompile).configureEach {
         options.release = 27
-        options.compilerArgs += ['-Xlint:all', '-Werror']
+        options.compilerArgs += ['--add-modules', 'jdk.incubator.vector', '-Xlint:all,-incubating', '-Werror']
     }
 
     def java27 = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(27)
+    }
+
+    tasks.withType(JavaExec).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
+    }
+
+    tasks.withType(Test).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
     }
 
     tasks.register('runExperiment', JavaExec) {
@@ -652,7 +660,7 @@ project(':jneuro') {
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
         javaLauncher = java27
-        args 'com.lis.neuro.*JmhBenchmark.*'
+        args 'com.lis.neuro.*JmhBenchmark.*', '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
     }
 
     tasks.register('jmhSmoke', JavaExec) {
@@ -666,7 +674,8 @@ project(':jneuro') {
                 '-wi', '1',
                 '-i', '1',
                 '-f', '1',
-                '-p', 'topology=small'
+                '-p', 'topology=small',
+                '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
     }
 
     tasks.register('profileNeuro', JavaExec) {
