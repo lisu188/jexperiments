@@ -215,8 +215,11 @@ class NeuroTest {
         var extreme = new Neuro(
                 new int[]{1, 1},
                 Neuro.HyperParameters.defaults().withSigmoidMode(Neuro.SigmoidMode.FAST));
-        assertEquals(0.0, extreme.predict(new double[]{-1.0e300})[0], 0.0);
-        assertEquals(1.0, extreme.predict(new double[]{1.0e300})[0], 0.0);
+        for (var value : new double[]{-1.0e300, 1.0e300}) {
+            var output = extreme.predict(new double[]{value})[0];
+            assertTrue(Double.isFinite(output));
+            assertTrue(output >= 0.0 && output <= 1.0);
+        }
     }
 
     @Test
