@@ -41,6 +41,11 @@ public final class DistributedThreadPoolSoak {
                             successes.increment();
                         } catch (java.util.concurrent.ExecutionException expected) {
                             failures.increment();
+                        } catch (java.util.concurrent.TimeoutException timeout) {
+                            throw new java.util.concurrent.CompletionException(timeout);
+                        } catch (InterruptedException interruption) {
+                            Thread.currentThread().interrupt();
+                            return;
                         }
                     }
                 }));
