@@ -1,10 +1,3 @@
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serial;
-import java.io.Serializable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,9 +9,10 @@ import java.util.Objects;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public final class ObservableConcurrentTree<K extends Serializable, V extends Serializable> implements Serializable {
-    @Serial
-    private static final long serialVersionUID = 2L;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public final class ObservableConcurrentTree<K, V> {
 
     private static final Observer<?, ?>[] NO_OBSERVERS = new Observer<?, ?>[0];
 
@@ -32,225 +26,93 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         STATE_LOADED
     }
 
-    public enum EventType {
-        ADD,
-        UPDATE,
-        MOVE,
-        REMOVE
-    }
 
     @FunctionalInterface
-    public interface Observer<K extends Serializable, V extends Serializable> {
+    public interface Observer<K, V> {
         void onChange(Change<K, V> change);
     }
 
-    public static final class NodeState<K extends Serializable, V extends Serializable> implements Serializable {
-        @Serial
-        private static final long serialVersionUID = 1L;
-
-        private final K id;
-        private final K parentId;
-        private final V value;
-
-        public NodeState(K id, K parentId, V value) {
-            this.id = Objects.requireNonNull(id, "id");
-            this.parentId = parentId;
-            this.value = value;
-        }
-
-        public K getId() {
-            return id;
-        }
-
-        public K getParentId() {
-            return parentId;
-        }
-
-        public V getValue() {
-            return value;
+    public record NodeState<K, V>(K id, K parentId, V value) {
+        public NodeState {
+            Objects.requireNonNull(id, "id");
         }
     }
 
-    @SuppressWarnings("serial")
-    public static final class Entry<K extends Serializable, V extends Serializable> implements Serializable {
-        @Serial
-        private static final long serialVersionUID = 1L;
-
-        private final K id;
-        private final K parentId;
-        private final V value;
-        private final List<K> children;
-
-        private Entry(K id, K parentId, V value, List<K> children) {
-            this.id = id;
-            this.parentId = parentId;
-            this.value = value;
-            this.children = children;
-        }
-
-        public K getId() {
-            return id;
-        }
-
-        public K getParentId() {
-            return parentId;
-        }
-
-        public V getValue() {
-            return value;
-        }
-
-        public List<K> getChildren() {
-            return children;
+    public record Entry<K, V>(K id, K parentId, V value, List<K> children) {
+        public Entry {
+            Objects.requireNonNull(id, "id");
+            children = List.copyOf(children);
         }
     }
 
-    @SuppressWarnings("serial")
-    public static final class Snapshot<K extends Serializable, V extends Serializable> implements Serializable {
-        @Serial
-        private static final long serialVersionUID = 1L;
-
-        private final K rootId;
-        private final long version;
-        private final List<Entry<K, V>> entries;
-
-        private Snapshot(K rootId, long version, List<Entry<K, V>> entries) {
-            this.rootId = rootId;
-            this.version = version;
-            this.entries = entries;
-        }
-
-        public K getRootId() {
-            return rootId;
-        }
-
-        public long getVersion() {
-            return version;
-        }
-
-        public List<Entry<K, V>> getEntries() {
-            return entries;
+    public record Snapshot<K, V>(K rootId, long version, List<Entry<K, V>> entries) {
+        public Snapshot {
+            entries = List.copyOf(entries);
         }
     }
 
-    @SuppressWarnings("serial")
-    public static final class Change<K extends Serializable, V extends Serializable> implements Serializable {
-        @Serial
-        private static final long serialVersionUID = 1L;
-
-        private final ChangeType type;
-        private final long version;
-        private final K nodeId;
-        private final K oldParentId;
-        private final K newParentId;
-        private final V oldValue;
-        private final V newValue;
-        private final List<K> affectedNodeIds;
-
-        private Change(
-                ChangeType type,
-                long version,
-                K nodeId,
-                K oldParentId,
-                K newParentId,
-                V oldValue,
-                V newValue,
-                List<K> affectedNodeIds) {
-            this.type = type;
-            this.version = version;
-            this.nodeId = nodeId;
-            this.oldParentId = oldParentId;
-            this.newParentId = newParentId;
-            this.oldValue = oldValue;
-            this.newValue = newValue;
-            this.affectedNodeIds = affectedNodeIds;
-        }
-
-        public ChangeType getType() {
-            return type;
-        }
-
-        public long getVersion() {
-            return version;
-        }
-
-        public K getNodeId() {
-            return nodeId;
-        }
-
-        public K getOldParentId() {
-            return oldParentId;
-        }
-
-        public K getNewParentId() {
-            return newParentId;
-        }
-
-        public V getOldValue() {
-            return oldValue;
-        }
-
-        public V getNewValue() {
-            return newValue;
-        }
-
-        public List<K> getAffectedNodeIds() {
-            return affectedNodeIds;
+    public record Change<K, V>(
+            ChangeType type,
+            long version,
+            K nodeId,
+            K oldParentId,
+            K newParentId,
+            V oldValue,
+            V newValue,
+            List<K> affectedNodeIds) {
+        public Change {
+            Objects.requireNonNull(type, "type");
+            affectedNodeIds = List.copyOf(affectedNodeIds);
         }
     }
 
-    public static final class TreeEvent<K extends Serializable, V extends Serializable> implements Serializable {
-        @Serial
-        private static final long serialVersionUID = 1L;
+    public sealed interface TreeEvent<K, V> permits Add, Update, Move, Remove {
+        K nodeId();
 
-        private final EventType type;
-        private final K nodeId;
-        private final K parentId;
-        private final V value;
-
-        private TreeEvent(EventType type, K nodeId, K parentId, V value) {
-            this.type = Objects.requireNonNull(type, "type");
-            this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
-            this.parentId = parentId;
-            this.value = value;
+        static <K, V> Add<K, V> add(K parentId, K nodeId, V value) {
+            return new Add<>(parentId, nodeId, value);
         }
 
-        public static <K extends Serializable, V extends Serializable> TreeEvent<K, V> add(K parentId, K nodeId, V value) {
-            return new TreeEvent<>(EventType.ADD, nodeId, Objects.requireNonNull(parentId, "parentId"), value);
+        static <K, V> Update<K, V> update(K nodeId, V value) {
+            return new Update<>(nodeId, value);
         }
 
-        public static <K extends Serializable, V extends Serializable> TreeEvent<K, V> update(K nodeId, V value) {
-            return new TreeEvent<>(EventType.UPDATE, nodeId, null, value);
+        static <K, V> Move<K, V> move(K nodeId, K newParentId) {
+            return new Move<>(nodeId, newParentId);
         }
 
-        public static <K extends Serializable, V extends Serializable> TreeEvent<K, V> move(K nodeId, K newParentId) {
-            return new TreeEvent<>(EventType.MOVE, nodeId, Objects.requireNonNull(newParentId, "newParentId"), null);
-        }
-
-        public static <K extends Serializable, V extends Serializable> TreeEvent<K, V> remove(K nodeId) {
-            return new TreeEvent<>(EventType.REMOVE, nodeId, null, null);
-        }
-
-        public EventType getType() {
-            return type;
-        }
-
-        public K getNodeId() {
-            return nodeId;
-        }
-
-        public K getParentId() {
-            return parentId;
-        }
-
-        public V getValue() {
-            return value;
+        static <K, V> Remove<K, V> remove(K nodeId) {
+            return new Remove<>(nodeId);
         }
     }
 
-    private static final class Node<K extends Serializable, V extends Serializable> implements Serializable {
-        @Serial
-        private static final long serialVersionUID = 2L;
+    public record Add<K, V>(K parentId, K nodeId, V value) implements TreeEvent<K, V> {
+        public Add {
+            Objects.requireNonNull(parentId, "parentId");
+            Objects.requireNonNull(nodeId, "nodeId");
+        }
+    }
+
+    public record Update<K, V>(K nodeId, V value) implements TreeEvent<K, V> {
+        public Update {
+            Objects.requireNonNull(nodeId, "nodeId");
+        }
+    }
+
+    public record Move<K, V>(K nodeId, K parentId) implements TreeEvent<K, V> {
+        public Move {
+            Objects.requireNonNull(nodeId, "nodeId");
+            Objects.requireNonNull(parentId, "parentId");
+        }
+    }
+
+    public record Remove<K, V>(K nodeId) implements TreeEvent<K, V> {
+        public Remove {
+            Objects.requireNonNull(nodeId, "nodeId");
+        }
+    }
+
+    private static final class Node<K, V> {
 
         private final K id;
         private Node<K, V> parent;
@@ -264,7 +126,7 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         }
     }
 
-    private record RebuiltTree<K extends Serializable, V extends Serializable>(
+    private record RebuiltTree<K, V>(
             HashMap<K, Node<K, V>> nodes,
             Node<K, V> root) {
     }
@@ -589,11 +451,11 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
 
     public void apply(TreeEvent<K, V> event) {
         Objects.requireNonNull(event, "event");
-        switch (event.getType()) {
-            case ADD -> add(event.getParentId(), event.getNodeId(), event.getValue());
-            case UPDATE -> update(event.getNodeId(), event.getValue());
-            case MOVE -> move(event.getNodeId(), event.getParentId());
-            case REMOVE -> removeSubtree(event.getNodeId());
+        switch (event) {
+            case Add<K, V>(var parentId, var nodeId, var value) -> add(parentId, nodeId, value);
+            case Update<K, V>(var nodeId, var value) -> update(nodeId, value);
+            case Move<K, V>(var nodeId, var parentId) -> move(nodeId, parentId);
+            case Remove<K, V>(var nodeId) -> removeSubtree(nodeId);
         }
     }
 
@@ -707,24 +569,80 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         return size == 0;
     }
 
-    public byte[] toByteArray() throws IOException {
-        try (var bytes = new ByteArrayOutputStream(); var out = new ObjectOutputStream(bytes)) {
-            out.writeObject(this);
-            out.flush();
-            return bytes.toByteArray();
+    private static final ObjectMapper DEFAULT_JSON_MAPPER = new ObjectMapper();
+
+    private record JsonState<K, V>(long version, List<NodeState<K, V>> nodes) {
+        private JsonState {
+            if (version < 0) {
+                throw new IllegalArgumentException("version must be non-negative");
+            }
+            nodes = List.copyOf(nodes);
         }
     }
 
-    @SuppressWarnings("unchecked")
-    public static <K extends Serializable, V extends Serializable> ObservableConcurrentTree<K, V> fromByteArray(byte[] bytes)
-            throws IOException, ClassNotFoundException {
-        Objects.requireNonNull(bytes, "bytes");
-        try (var in = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
-            var value = in.readObject();
-            if (!(value instanceof ObservableConcurrentTree<?, ?> tree)) {
-                throw new IOException("Serialized value is not an ObservableConcurrentTree");
+    public String toJson() throws JsonProcessingException {
+        return toJson(DEFAULT_JSON_MAPPER);
+    }
+
+    public String toJson(ObjectMapper mapper) throws JsonProcessingException {
+        Objects.requireNonNull(mapper, "mapper");
+        return mapper.writeValueAsString(jsonState());
+    }
+
+    public static <K, V> ObservableConcurrentTree<K, V> fromJson(
+            String json,
+            Class<K> keyType,
+            Class<V> valueType) throws JsonProcessingException {
+        return fromJson(DEFAULT_JSON_MAPPER, json, keyType, valueType);
+    }
+
+    public static <K, V> ObservableConcurrentTree<K, V> fromJson(
+            ObjectMapper mapper,
+            String json,
+            Class<K> keyType,
+            Class<V> valueType) throws JsonProcessingException {
+        Objects.requireNonNull(mapper, "mapper");
+        Objects.requireNonNull(json, "json");
+        Objects.requireNonNull(keyType, "keyType");
+        Objects.requireNonNull(valueType, "valueType");
+
+        var type = mapper.getTypeFactory().constructParametricType(JsonState.class, keyType, valueType);
+        @SuppressWarnings("unchecked")
+        var state = (JsonState<K, V>) mapper.readValue(json, type);
+
+        var tree = new ObservableConcurrentTree<K, V>();
+        tree.restoreState(state.nodes(), state.version());
+        return tree;
+    }
+
+    private JsonState<K, V> jsonState() {
+        readLock.lock();
+        try {
+            var state = new ArrayList<NodeState<K, V>>(size);
+            var currentRootId = rootId;
+            if (currentRootId != null) {
+                appendStateDepthFirst(nodes.get(currentRootId), state);
             }
-            return (ObservableConcurrentTree<K, V>) tree;
+            return new JsonState<>(version, state);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    private void restoreState(Collection<NodeState<K, V>> state, long restoredVersion) {
+        if (restoredVersion < 0) {
+            throw new IllegalArgumentException("version must be non-negative");
+        }
+        var rebuilt = rebuild(state);
+        writeLock.lock();
+        try {
+            nodes = rebuilt.nodes();
+            var root = rebuilt.root();
+            rootId = root == null ? null : root.id;
+            size = nodes.size();
+            version = restoredVersion;
+        } finally {
+            writeLock.unlock();
         }
     }
 
@@ -761,6 +679,19 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         return result;
     }
 
+    private void appendStateDepthFirst(Node<K, V> root, ArrayList<NodeState<K, V>> target) {
+        var stack = new ArrayDeque<Node<K, V>>();
+        stack.push(root);
+        while (!stack.isEmpty()) {
+            var current = stack.pop();
+            target.add(new NodeState<>(
+                    current.id,
+                    current.parent == null ? null : current.parent.id,
+                    current.value));
+            pushChildrenReverse(current, stack);
+        }
+    }
+
     private void appendDepthFirst(Node<K, V> root, ArrayList<Entry<K, V>> target) {
         var stack = new ArrayDeque<Node<K, V>>();
         stack.push(root);
@@ -771,7 +702,7 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         }
     }
 
-    private static <K extends Serializable, V extends Serializable> void pushChildrenReverse(
+    private static <K, V> void pushChildrenReverse(
             Node<K, V> node,
             ArrayDeque<Node<K, V>> stack) {
         var children = node.children;
@@ -822,11 +753,11 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
 
         for (var item : state) {
             Objects.requireNonNull(item, "state contains null");
-            var id = item.getId();
-            if (rebuilt.putIfAbsent(id, new Node<>(id, item.getValue())) != null) {
+            var id = item.id();
+            if (rebuilt.putIfAbsent(id, new Node<>(id, item.value())) != null) {
                 throw new IllegalArgumentException("Duplicate node id: " + id);
             }
-            if (item.getParentId() == null) {
+            if (item.parentId() == null) {
                 if (root != null) {
                     throw new IllegalArgumentException("State contains more than one root");
                 }
@@ -839,18 +770,18 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         }
 
         for (var item : state) {
-            var parentId = item.getParentId();
+            var parentId = item.parentId();
             if (parentId == null) {
                 continue;
             }
-            if (item.getId().equals(parentId)) {
-                throw new IllegalArgumentException("Node cannot be its own parent: " + item.getId());
+            if (item.id().equals(parentId)) {
+                throw new IllegalArgumentException("Node cannot be its own parent: " + item.id());
             }
             var parent = rebuilt.get(parentId);
             if (parent == null) {
-                throw new IllegalArgumentException("Missing parent " + parentId + " for node " + item.getId());
+                throw new IllegalArgumentException("Missing parent " + parentId + " for node " + item.id());
             }
-            var node = rebuilt.get(item.getId());
+            var node = rebuilt.get(item.id());
             node.parent = parent;
             parent.children.add(node);
         }
@@ -862,7 +793,7 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         return new RebuiltTree<>(rebuilt, root);
     }
 
-    private static <K extends Serializable, V extends Serializable> int countReachable(Node<K, V> root) {
+    private static <K, V> int countReachable(Node<K, V> root) {
         var count = 0;
         var stack = new ArrayDeque<Node<K, V>>();
         stack.push(root);
@@ -907,19 +838,4 @@ public final class ObservableConcurrentTree<K extends Serializable, V extends Se
         size = nodes.size();
     }
 
-    @Serial
-    private void writeObject(ObjectOutputStream out) throws IOException {
-        readLock.lock();
-        try {
-            out.defaultWriteObject();
-        } finally {
-            readLock.unlock();
-        }
-    }
-
-    @Serial
-    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-        in.defaultReadObject();
-        initializeTransients();
-    }
 }
