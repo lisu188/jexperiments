@@ -1,25 +1,22 @@
 package com.lis.distributed.thread.pool.func;
 
-public abstract class FuncUtils {
-    public static <U, V> SerializableSupplier<V> bind(
-            SerializableFunction<U, V> func, U arg) {
-        return () -> {
-            return func.apply(arg);
-        };
+public final class FuncUtils {
+    private FuncUtils() {
+    }
+
+    public static <U, V> SerializableSupplier<V> bind(SerializableFunction<U, V> function, U argument) {
+        return () -> function.apply(argument);
     }
 
     public static <T, U, R> SerializableFunction<U, R> bind(
-            SerializableBiFunction<T, U, R> func, T arg) {
-        return (x) -> {
-            return func.apply(arg, x);
-        };
+            SerializableBiFunction<T, U, R> function,
+            T argument) {
+        return value -> function.apply(argument, value);
     }
 
     public static <U, V> SerializableConsumer<V> bind(
-            SerializableBiConsumer<U, V> func, U arg) {
-        return (x) -> {
-            func.accept(arg, x);
-        };
+            SerializableBiConsumer<U, V> consumer,
+            U argument) {
+        return value -> consumer.accept(argument, value);
     }
-
 }

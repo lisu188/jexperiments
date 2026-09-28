@@ -1,28 +1,38 @@
 package com.lis.distributed.thread.pool.server;
 
-import com.lis.distributed.thread.pool.SocketAccesor;
+import com.lis.distributed.thread.pool.SocketAccessor;
 import com.lis.distributed.thread.pool.client.ThreadPoolClient;
 
+import java.io.IOException;
 import java.net.Socket;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ExecutorService;
 
-public class ServerConnectionThread extends
-        SocketAccesor<ThreadPoolServer, ThreadPoolClient> {
+final class ServerConnectionThread extends SocketAccessor<ThreadPoolServer> {
+    private final int id;
 
-    private static AtomicInteger ID_GEN = new AtomicInteger();
-    private int id;
-
-    public ServerConnectionThread(ThreadPoolServer context, Socket accept)
-            throws Exception {
-        super(context, accept);
-        this.id = ID_GEN.incrementAndGet();
+    ServerConnectionThread(
+            ThreadPoolServer context,
+            Socket socket,
+            int id,
+            ExecutorService invocationExecutor,
+            Options options) throws IOException {
+        super(context, socket, invocationExecutor, options);
+        this.id = id;
         context.registerClient(id, this);
-        //// FIXME: 2015-12-17 
-//		context.callOnClient(id,
-//				FuncUtils.bind((Integer id, ThreadPoolClient ctx) -> {
-//					ctx.setId(id);
-//					return true;
-//				}, id));
+        startTransport();
+        sendRegistration(id).whenComplete((ignored, failure) -> {
+            if (failure != null) {
+                close();
+            }
+        });
     }
 
+    int id() {
+        return id;
+    }
+
+    @Override
+    protected void onClosed(Throwable failure) {
+        context().unregisterClient(id, this);
+    }
 }

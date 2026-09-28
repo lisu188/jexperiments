@@ -1,11 +1,14 @@
 package com.lis.distributed.thread.pool;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
-public abstract class Numbers {
-    private final static AtomicInteger ID_GEN = new AtomicInteger();
+public final class Numbers {
+    private static final AtomicLong ID_GEN = new AtomicLong();
 
-    public static int getId() {
+    private Numbers() {
+    }
+
+    public static long getId() {
         return ID_GEN.incrementAndGet();
     }
 }
