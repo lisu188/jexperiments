@@ -1,189 +1,512 @@
-# A Small Backpropagation Neural Network
+# JNeuro: A Small Feed-Forward Network in Plain Java
 
 ## Why this experiment exists
 
-This experiment implements a feed-forward neural network and training loop
-using plain Java arrays. There is no machine-learning framework, no tensor
-library, and no matrix abstraction. Layers, weights, outputs, errors, previous
-weights, and momentum deltas are all stored in primitive arrays and updated by
-nested loops.
+JNeuro is a deliberately small neural-network implementation built directly on primitive Java arrays.
 
-That makes the module useful for developers who want to see the mechanics of
-backpropagation without API indirection. Every index expresses part of the
-network topology. `_neuro[layer][neuron][input]` is the weight from an input in
-one layer to a neuron in the next. `_o[layer][neuron]` stores activations.
-`_e[layer][neuron]` stores error terms. The structure is old-school, but it
-makes data movement explicit.
+There is no tensor framework, no matrix library, no automatic differentiation, and no optimizer abstraction. Forward propagation, backpropagation, momentum, bias updates, error measurement, initialization, and inference buffers are all visible in normal Java code.
 
-The demo trains a network shaped `{2, 5, 25, 5, 1}` on a small boolean-style
-truth table: `00` maps to `0`, and the other three two-input combinations map
-to `1`. In other words, the example is closer to an OR function than XOR. The
-network is intentionally much larger than needed for that task, which makes it
-more about algorithm shape than model minimalism.
+The original implementation was useful as a sketch, but it mixed educational simplicity with several correctness and engineering problems:
 
-## Execution path
+- the output-layer delta applied the sigmoid derivative to target-minus-output rather than to the activation,
+- neurons had no bias parameters,
+- initialization and training order were nondeterministic,
+- training-until-error had no maximum epoch limit,
+- test error divided by the number of training samples instead of test samples,
+- public inference API was effectively missing,
+- the model stored weights in nested three-dimensional arrays with poor locality,
+- every optimization decision was hard to measure,
+- there were no deterministic correctness tests.
 
-The entrypoint constructs the network, adds four training examples, and trains
-until the root-mean-square error falls below a threshold:
+The modern version keeps the explicit array-level implementation while making the algorithm mathematically conventional, deterministic, measurable, and reusable.
 
-```java
-Neuro neuro = new Neuro(new int[]{2, 5, 25, 5, 1}, 0.2, 1, 0.8);
-neuro.add_teacher(new double[]{1, 1}, new double[]{1});
-neuro.add_teacher(new double[]{1, 0}, new double[]{1});
-neuro.add_teacher(new double[]{0, 1}, new double[]{1});
-neuro.add_teacher(new double[]{0, 0}, new double[]{0});
-System.out.println(neuro.teach(0.001));
-```
+## Model shape
 
-The constructor parameters are topology, momentum coefficient `_alfa`, sigmoid
-steepness `_beta`, and learning rate `_eta`. The printed value is the number of
-training iterations performed before the error condition is met.
+A network is created from a topology:
 
-Weights are allocated per adjacent layer pair:
+~~~java
+var network = new Neuro(
+        new int[]{2, 6, 1},
+        Neuro.HyperParameters.defaults()
+                .withLearningRate(0.6)
+                .withMomentum(0.2)
+                .withSeed(42));
+~~~
 
-```java
-_neuro = new double[_nw - 1][][];
-_prev = new double[_nw - 1][][];
-_diff = new double[_nw - 1][][];
-for (int i = 0; i < _nw - 1; i++) {
-    _neuro[i] = new double[_str[i + 1]][];
-```
+The topology is defensively copied and validated.
 
-The arrays `_prev` and `_diff` support a momentum-style update. The code keeps
-the previous weight values so it can add a fraction of the prior change after
-the gradient update.
+Every adjacent pair of layer sizes creates one internal Layer.
 
-The topology array `_str` is used everywhere instead of deriving dimensions
-from the allocated arrays. That makes the intended network shape clear, but it
-also means constructor correctness is critical. A mismatch between `_str` and
-the arrays would corrupt many loops. In this code, the constructor is the single
-place where the structure is created, so later methods can assume consistent
-dimensions.
+A layer owns:
 
-```java
-// Outputs are allocated separately from weights so each layer can cache activations.
-_o = new double[_nw][];
-for (int i = 0; i < _nw; i++) {
-    _o[i] = new double[_str[i]];
+~~~java
+double[] weights;
+double[] biases;
+double[] weightVelocity;
+double[] biasVelocity;
+~~~
+
+Weights are flat rather than double[][][].
+
+For an output neuron o and input i:
+
+~~~text
+weightIndex = o * inputs + i
+~~~
+
+That removes one level of object indirection from the hot loops and gives every neuron's incoming weights one contiguous region.
+
+## Xavier initialization
+
+Weights use a deterministic SplittableRandom seed.
+
+For a layer with fan-in and fan-out:
+
+~~~java
+var limit = Math.sqrt(
+        6.0 / (inputs + outputs));
+~~~
+
+Each weight is sampled uniformly from:
+
+~~~text
+[-limit, +limit)
+~~~
+
+Biases start at zero.
+
+This is a simple Xavier/Glorot-style initialization suitable for a sigmoid experiment and is substantially better than a fixed Math.random() - 0.5 range for every topology.
+
+The seed is part of HyperParameters, so verification and performance experiments can reproduce exactly the same starting model.
+
+## Correct forward propagation
+
+Input is copied into the first activation buffer.
+
+Each following layer computes:
+
+~~~text
+z = bias + sum(input[i] * weight[i])
+activation = sigmoid(beta * z)
+~~~
+
+The implementation stores one activation array per layer in a reusable Workspace.
+
+The innermost dot product uses Math.fma and a four-element unroll:
+
+~~~java
+sum = Math.fma(
+        source[inputIndex],
+        layer.weights[offset + inputIndex],
+        sum);
+~~~
+
+The remainder loop handles input counts not divisible by four.
+
+This keeps the implementation explicit while reducing loop overhead and giving the JVM a simple contiguous numeric kernel to optimize.
+
+## Stable sigmoid
+
+The logistic function is implemented in two branches:
+
+~~~java
+if (value >= 0.0) {
+    return 1.0 / (1.0 + Math.exp(-value));
 }
-```
 
-That cache is what later lets the backward pass reuse previous-layer outputs
-when updating weights.
+var exp = Math.exp(value);
+return exp / (1.0 + exp);
+~~~
 
-## Core code walkthrough
+The negative branch avoids computing exp(-value) for a very large negative number.
 
-The forward pass copies input into the first output layer and then propagates
-activations through each following layer:
+That prevents unnecessary overflow while preserving the usual sigmoid result.
 
-```java
-private void o(double[] t) {
-    System.arraycopy(t, 0, _o[0], 0, _str[0]);
-    for (int i = 1; i < _nw; i++) {
-        for (int j = 0; j < _str[i]; j++) {
-            _o[i][j] = 0;
-            for (int k = 0; k < _str[i - 1]; k++) {
-                _o[i][j] += _o[i - 1][k] * _neuro[i - 1][j][k];
-            }
-            _o[i][j] = fcn(_o[i][j], _beta);
-```
+## Correct output delta
 
-Inside the loops, every neuron accumulates weighted outputs from the previous
-layer, then applies the sigmoid.
+The original code contained its most important mathematical bug here.
 
-The activation function is logistic:
+It effectively calculated a derivative from:
 
-```java
-private double fcn(double x, double beta) {
-    return 1.0 / (1.0 + Math.exp(-beta * x));
-}
+~~~text
+target - output
+~~~
 
-private double dfcn(double x) {
-    return (1.0 - x) * x;
-}
-```
+But the helper derivative formula:
 
-`dfcn` is the derivative expressed in terms of an activation value, which is a
-common optimization for sigmoid networks because the output of the sigmoid is
-already available.
+~~~text
+a * (1 - a)
+~~~
 
-There is no bias term in the accumulation. Every neuron computes only a weighted
-sum of previous activations. Biases are normally modeled as an additional
-constant input or separate weight, and they let activation thresholds shift away
-from the origin. Their absence is one reason this code should be read as a
-mechanical sketch rather than a reference architecture.
+expects the sigmoid activation a.
 
-## Important implementation details
+The corrected output delta is:
 
-Training begins each iteration by recording momentum state, then applies the
-gradient update and later adds momentum:
+~~~java
+var activation =
+        outputActivation[output];
 
-```java
-_diff[i][j][k] = _neuro[i][j][k] - _prev[i][j][k];
-_prev[i][j][k] = _neuro[i][j][k];
+outputDelta[output] =
+        (target[output] - activation)
+        * sigmoidDerivativeFromActivation(
+                activation);
+~~~
 
-_neuro[j][k][l] += (_eta * _e[j][k] * _o[j][l]) / teachers.size();
+With configurable sigmoid steepness beta:
 
-_neuro[i][j][k] += _alfa * _diff[i][j][k];
-```
+~~~java
+return beta
+        * activation
+        * (1.0 - activation);
+~~~
 
-The teacher list is shuffled before updates, and the gradient line uses the
-current layer's error term, the previous layer's output, the learning rate, and
-the number of teachers. This two-phase structure is easy to inspect, but it
-also highlights how manual array code can hide conceptual mistakes. The
-output-layer error calculation in `e` uses `dfcn(out[i] - _o[_nw - 1][i])`,
-while the derivative helper expects a sigmoid activation. A conventional
-implementation would keep the target-minus-output factor separate from the
-derivative evaluated at the output activation. That makes this module
-educational rather than numerically authoritative.
+That keeps the error term and activation derivative conceptually separate.
 
-`teach(erms)` keeps training until the average per-teacher RMS error is below
-the requested threshold.
+## Hidden-layer backpropagation
 
-```java
-// RMS-style error over the output layer.
-tmp += Math.pow(out_t[k] - _o[_nw - 1][k], 2);
-erms += Math.sqrt(tmp / _str[_nw - 1]);
-```
+For each hidden unit, the implementation accumulates the weighted deltas of the next layer:
 
-The metric is simple enough to inspect directly, which is useful because the
-training loop otherwise has no progress reporting.
+~~~text
+delta_hidden =
+    sigmoidDerivative(hiddenActivation)
+    * sum(delta_next * weight_to_next)
+~~~
 
-## Runtime behavior and caveats
+The current delta buffer is reused each sample.
 
-Running the module trains with random initial weights and prints the number of
-iterations. Because weights are initialized with `Math.random() - 0.5`, two
-runs can take different paths and may converge in different numbers of steps.
-There is no maximum-iteration guard, so a bad configuration can run for a long
-time.
+There is no allocation of temporary vectors during backpropagation.
 
-There are no bias weights. That limits what the network can represent cleanly
-and makes the large hidden topology compensate for missing terms. The test
-method also divides by `teachers.size()` instead of `tests.size()`, which is a
-bug if test data is ever added separately. The class itself has package-private
-visibility and most methods are private, so it is written as an executable
-experiment rather than as a reusable API.
+The algorithm walks layers from output toward input and uses the already-computed forward activations.
 
-The main strength of the code is transparency. If you want to discuss the
-memory layout and loop structure of a neural network, every update is visible.
-If you want reliable training behavior, gradient checking, batching, numeric
-stability, or model serialization, those would need to be added.
+## Biases
 
-The training set is also tiny and reused in full every iteration. That makes
-the algorithm closer to online or small-batch teaching than to large dataset
-training. `Collections.shuffle(teachers)` changes example order, but there is
-no train/validation split in `main`, no normalization layer, and no reporting of
-intermediate error values.
+Every non-input neuron now has a bias.
 
-## Suggested next experiments
+The forward pass starts each output accumulator with:
 
-Add bias weights and update the forward and backward passes accordingly. Split
-the output error into target-minus-output and activation-derivative terms, then
-compare convergence. Add a maximum iteration count and deterministic random
-seed. Introduce tests for OR and XOR with known tolerances. Finally, replace the
-raw three-dimensional arrays with a tiny matrix helper and measure whether the
-code becomes clearer or merely more abstract.
+~~~java
+var sum = layer.biases[output];
+~~~
 
-Recording the error after each epoch would make those comparisons much easier.
-Even a simple CSV output of iteration and error would turn the current single
-number into a useful convergence curve.
+The backward pass updates bias velocity exactly like weight momentum, except without multiplying by an input activation.
+
+Adding biases is not cosmetic.
+
+Without them, every neuron's decision surface is forced through the origin. Even simple boolean functions become unnecessarily difficult or impossible for small topologies.
+
+## Momentum
+
+Momentum is represented as velocity rather than as a copy of the previous complete weight matrix.
+
+For one weight:
+
+~~~java
+var velocity = Math.fma(
+        momentum,
+        layer.weightVelocity[weightIndex],
+        learningRate
+                * outputDelta
+                * source[input]);
+
+layer.weightVelocity[weightIndex] =
+        velocity;
+
+layer.weights[weightIndex] += velocity;
+~~~
+
+This is both clearer and cheaper than preserving full previous weights only to subtract them at the next epoch.
+
+Biases use the same rule.
+
+## Deterministic online SGD
+
+Training samples are copied into the model when added:
+
+~~~java
+network.addTrainingSample(
+        new double[]{0, 1},
+        new double[]{1});
+~~~
+
+Each epoch creates no shuffled List copy.
+
+Instead JNeuro keeps a reusable int[] containing sample indices and shuffles that primitive array in place with a deterministic SplittableRandom.
+
+The training order therefore changes each epoch while remaining reproducible for a fixed model seed.
+
+Each sample is still applied immediately, so this is online/stochastic gradient descent rather than accumulated mini-batch training.
+
+## Reused workspaces
+
+Training owns one Workspace.
+
+Inference uses:
+
+~~~java
+ThreadLocal<Workspace>
+~~~
+
+A Workspace contains activation arrays and delta arrays sized exactly for the topology.
+
+This removes per-inference intermediate array allocation.
+
+The normal convenience method:
+
+~~~java
+double[] predict(double[] input)
+~~~
+
+allocates only the returned output array.
+
+For high-throughput code, callers can provide the destination:
+
+~~~java
+network.predictInto(input, output);
+~~~
+
+That path performs no result allocation and reuses the calling thread's Workspace.
+
+Concurrent inference is therefore supported across threads.
+
+Training mutates weights and is intentionally not concurrent with training or inference. JNeuro does not pretend to provide a synchronized model-update protocol.
+
+## Training API
+
+One epoch:
+
+~~~java
+double error = network.trainEpoch();
+~~~
+
+A fixed number of epochs:
+
+~~~java
+network.train(100);
+~~~
+
+Training to a target with a hard limit:
+
+~~~java
+var result =
+        network.trainUntil(
+                0.05,
+                10_000);
+~~~
+
+TrainingResult reports:
+
+~~~java
+record TrainingResult(
+        int epochs,
+        double error,
+        boolean converged)
+~~~
+
+A bad topology or hyperparameter configuration can no longer trap the caller in an unbounded while loop.
+
+## Error metric
+
+Both trainingError() and testError() use one global root-mean-square error:
+
+~~~text
+sqrt(
+    sum((target - output)^2)
+    / (sampleCount * outputCount)
+)
+~~~
+
+The test-set calculation uses the number of test samples.
+
+That fixes the original test() bug, which divided test error by teachers.size().
+
+An empty dataset returns NaN rather than inventing a meaningful score.
+
+## OR and XOR verification
+
+The deterministic verification harness trains small models on both OR and XOR.
+
+OR verifies that:
+
+~~~text
+00 -> 0
+01 -> 1
+10 -> 1
+11 -> 1
+~~~
+
+XOR verifies:
+
+~~~text
+00 -> 0
+01 -> 1
+10 -> 1
+11 -> 0
+~~~
+
+The tests require actual convergence below a fixed RMSE and also check the resulting predictions against low/high thresholds.
+
+This catches algorithm errors that a compilation test or one decreasing loss value would miss.
+
+The verification suite also covers:
+
+- invalid topologies,
+- sample dimension validation,
+- NaN rejection,
+- deterministic seed behavior,
+- defensive copies,
+- predict versus predictInto equivalence,
+- parameter counting including biases,
+- test-set error calculation,
+- maximum epoch enforcement,
+- finite sigmoid output for extreme finite inputs.
+
+## Statistics
+
+The model exposes a lightweight state snapshot:
+
+~~~java
+record Statistics(
+        long epochsTrained,
+        long samplesSeen,
+        double lastTrainingError)
+~~~
+
+This is useful for experiments and profiling without adding logging to the inner loops.
+
+## Performance layout
+
+The main hot-path design choices are:
+
+- flat weights per layer,
+- contiguous incoming weights per neuron,
+- reusable activation/delta arrays,
+- primitive shuffled indices,
+- no temporary hidden vectors,
+- Math.fma dot products,
+- four-way inner-loop unrolling,
+- reusable predictInto output,
+- no copied previous-weight tensor.
+
+The model still uses one Layer object per edge between topology levels because that keeps dimension metadata explicit without putting object indirection inside individual weight accesses.
+
+## Lightweight benchmark
+
+NeuroBenchmark compares:
+
+~~~text
+predict() allocating an output
+predictInto() reusing output
+100 training epochs
+~~~
+
+using a representative 32-64-32-8 network.
+
+The benchmark validates a checksum to keep inference results observable.
+
+It is useful for fast local regression detection.
+
+It is not a replacement for JMH.
+
+## Performance matrix
+
+NeuroPerformanceMatrix runs several topology shapes:
+
+~~~text
+tiny    2-6-1
+small   32-64-32-8
+medium  128-256-128-32
+deep    64-128-128-64-32-8
+~~~
+
+For each it reports:
+
+- total parameter count,
+- predictInto nanoseconds per operation,
+- training milliseconds per epoch,
+- final training RMSE,
+- prediction checksum.
+
+That exposes both width and depth effects rather than reporting one synthetic network size.
+
+## JMH
+
+Two JMH surfaces are included.
+
+NeuroInferenceJmhBenchmark compares:
+
+~~~text
+predictAllocating
+predictInto
+~~~
+
+across small, medium, and deep networks.
+
+NeuroTrainingJmhBenchmark measures one training epoch across small and medium topologies.
+
+The normal JMH configuration uses multiple warmup iterations, measured iterations, and forks.
+
+The CI workflow runs only a bounded prediction smoke benchmark.
+
+Full JMH should be run on a quiet, stable machine when making performance claims.
+
+## JFR
+
+JNeuro defines disabled-by-default JFR events for:
+
+- individual training epochs,
+- complete trainUntil runs.
+
+They record duration plus RMSE/convergence metadata.
+
+The profiling task is:
+
+~~~text
+./gradlew :jneuro:profileNeuro
+~~~
+
+The recording is written below build/jfr/.
+
+That makes it possible to correlate training time with allocation, GC, compilation, CPU sampling, and the topology matrix without putting timing calls inside every numeric loop.
+
+## Java 27 build
+
+The module targets Java 27 and compiles with:
+
+~~~text
+-Xlint:all
+-Werror
+~~~
+
+Available tasks include:
+
+~~~text
+:jneuro:runExperiment
+:jneuro:verifyExperiment
+:jneuro:benchmarkExperiment
+:jneuro:performanceMatrix
+:jneuro:jmh
+:jneuro:jmhSmoke
+:jneuro:profileNeuro
+~~~
+
+The module-specific GitHub Actions workflow runs deterministic verification, JMH smoke, the performance matrix smoke run, and the full example.
+
+## Remaining limitations
+
+JNeuro remains an educational feed-forward network rather than a general machine-learning system.
+
+It currently has:
+
+- only sigmoid activations,
+- only dense fully-connected layers,
+- no softmax,
+- no cross-entropy objective,
+- no mini-batch gradient accumulation,
+- no regularization,
+- no model persistence,
+- no SIMD Vector API kernel,
+- no explicit parallelism inside one model,
+- no gradient-check utility,
+- no adaptive optimizer such as Adam.
+
+Those are useful future experiments only if they preserve the main value of this module: the entire training algorithm remains understandable by reading a few ordinary Java loops.
