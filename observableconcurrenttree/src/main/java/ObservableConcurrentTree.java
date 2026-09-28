@@ -370,7 +370,6 @@ public final class ObservableConcurrentTree<K, V> {
                 removed = removeSubtreeNodes(node);
                 size -= removed.size();
             }
-            removedView = Collections.unmodifiableList(removed);
             var newVersion = ++version;
             listeners = observers;
             if (listeners.length != 0) {
@@ -382,7 +381,10 @@ public final class ObservableConcurrentTree<K, V> {
                         null,
                         oldValue,
                         null,
-                        removedView);
+                        removed);
+                removedView = change.affectedNodeIds();
+            } else {
+                removedView = List.copyOf(removed);
             }
         } finally {
             writeLock.unlock();
@@ -415,7 +417,7 @@ public final class ObservableConcurrentTree<K, V> {
                         null,
                         null,
                         null,
-                        Collections.unmodifiableList(removed));
+                        removed);
             }
         } finally {
             writeLock.unlock();
@@ -438,7 +440,7 @@ public final class ObservableConcurrentTree<K, V> {
             var newVersion = ++version;
             listeners = observers;
             if (listeners.length != 0) {
-                var affected = root == null ? List.<K>of() : Collections.unmodifiableList(collectSubtreeIds(root));
+                var affected = root == null ? List.<K>of() : collectSubtreeIds(root);
                 change = new Change<>(
                         ChangeType.STATE_LOADED,
                         newVersion,
