@@ -11,6 +11,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 public final class DistributedThreadPoolVerification {
+    private static volatile CountDownLatch callbackInvocationEntered;
+    private static volatile CountDownLatch callbackInvocationRelease;
+
     public static void main(String[] args) throws Exception {
         verifyRoundTrip();
         verifyConcurrentPipeline();
@@ -118,17 +121,32 @@ public final class DistributedThreadPoolVerification {
             client.awaitClientId(Duration.ofSeconds(5));
             var callbackEntered = new CountDownLatch(1);
             var releaseCallback = new CountDownLatch(1);
+            callbackInvocationEntered = new CountDownLatch(1);
+            callbackInvocationRelease = new CountDownLatch(1);
 
-            var first = client.callOnServer(() -> 1);
-            first.thenRun(() -> {
-                callbackEntered.countDown();
-                await(releaseCallback);
-            });
-            callbackEntered.await();
+            try {
+                var first = client.callOnServer(() -> {
+                    callbackInvocationEntered.countDown();
+                    await(callbackInvocationRelease);
+                    return 1;
+                });
+                require(callbackInvocationEntered.await(5, TimeUnit.SECONDS), "first invocation entered");
 
-            var second = client.callOnServer(() -> 2);
-            require(second.get(5, TimeUnit.SECONDS) == 2, "blocked callback must not block reader");
-            releaseCallback.countDown();
+                var callback = first.thenRun(() -> {
+                    callbackEntered.countDown();
+                    await(releaseCallback);
+                });
+                callbackInvocationRelease.countDown();
+                require(callbackEntered.await(5, TimeUnit.SECONDS), "callback entered");
+
+                var second = client.callOnServer(() -> 2);
+                require(second.get(5, TimeUnit.SECONDS) == 2, "blocked callback must not block reader");
+                releaseCallback.countDown();
+                callback.get(5, TimeUnit.SECONDS);
+            } finally {
+                callbackInvocationRelease.countDown();
+                releaseCallback.countDown();
+            }
         }
     }
 
