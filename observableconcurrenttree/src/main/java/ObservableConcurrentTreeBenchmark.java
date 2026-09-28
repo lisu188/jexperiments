@@ -81,7 +81,7 @@ public final class ObservableConcurrentTreeBenchmark {
         result.put("snapshot", millis(() -> {
             long value = 0;
             for (int i = 0; i < 40; i++) {
-                value += tree.snapshot().getEntries().size();
+                value += tree.snapshot().entries().size();
             }
             blackhole += value;
         }));
