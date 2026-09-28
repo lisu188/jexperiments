@@ -34,6 +34,7 @@ class SyntaxHighlighterTest {
     void highlightsShellAndVariables() {
         String html = highlighter.highlightCodeBlocks("""
                 <pre><code class="language-bash">export HOME=/tmp
+                echo $HOME
                 echo "$HOME"
                 # literal</code></pre>
                 """);

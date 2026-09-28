@@ -396,6 +396,17 @@ public final class OrderedThreadPoolExecutor<T> implements AutoCloseable {
         return completionInbox.take();
     }
 
+    private void putUninterruptibly(T value) {
+        while (true) {
+            try {
+                outputQueue.put(value);
+                return;
+            } catch (InterruptedException interruption) {
+                publisherInterrupted = true;
+            }
+        }
+    }
+
     private void acceptCompletion(Submission submission) {
         completionBuffer.put(submission.sequence, submission);
         bufferedCount++;
@@ -422,15 +433,10 @@ public final class OrderedThreadPoolExecutor<T> implements AutoCloseable {
                     if (blocked != null) {
                         blocked.begin();
                     }
-                    outputQueue.put(submission.value);
+                    putUninterruptibly(submission.value);
                     OrderedThreadPoolJfr.commitPublisherBlocked(blocked);
                     publishedCount++;
                     OrderedThreadPoolJfr.publication(submission.sequence, false);
-                } catch (InterruptedException interruption) {
-                    publisherInterrupted = true;
-                    submission.fail(interruption);
-                    failedCount++;
-                    OrderedThreadPoolJfr.publication(submission.sequence, true);
                 } catch (RuntimeException publicationFailure) {
                     submission.fail(publicationFailure);
                     failedCount++;
