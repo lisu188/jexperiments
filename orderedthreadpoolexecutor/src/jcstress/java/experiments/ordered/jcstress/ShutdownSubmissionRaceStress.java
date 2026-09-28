@@ -7,6 +7,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jcstress.annotations.Actor;
+import org.openjdk.jcstress.annotations.Arbiter;
 import org.openjdk.jcstress.annotations.Expect;
 import org.openjdk.jcstress.annotations.JCStressTest;
 import org.openjdk.jcstress.annotations.Outcome;
@@ -34,6 +35,11 @@ public class ShutdownSubmissionRaceStress {
     public void shutdown(II_Result result) {
         executor.shutdown();
         result.r2 = executor.isShutdown() ? 1 : 0;
+    }
+
+    @Arbiter
+    public void cleanup() {
+        executor.close();
     }
 
     private static final class InlineExecutor extends AbstractExecutorService {
