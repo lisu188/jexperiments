@@ -688,6 +688,121 @@ project(':jneuro') {
     }
 }
 
+project(':evolution') {
+    sourceSets {
+        jmh {
+            java.srcDir 'src/jmh/java'
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += output + compileClasspath
+        }
+    }
+
+    configurations {
+        jmhImplementation.extendsFrom implementation
+        jmhRuntimeOnly.extendsFrom runtimeOnly
+    }
+
+    dependencies {
+        jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
+        jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(27)
+        }
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 27
+        options.compilerArgs += ['-Xlint:all', '-Werror']
+    }
+
+    def java27 = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
+
+    tasks.register('runExperiment', JavaExec) {
+        group = 'application'
+        description = 'Runs the Evolution usage example.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.EvolutionExample'
+        javaLauncher = java27
+    }
+
+    tasks.register('verifyExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs deterministic Evolution correctness verification.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.EvolutionVerification'
+        javaLauncher = java27
+    }
+
+    tasks.register('benchmarkExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs the lightweight Evolution benchmark harness.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.EvolutionBenchmark'
+        javaLauncher = java27
+        jvmArgs = ['-Xms1g', '-Xmx1g']
+    }
+
+    tasks.register('performanceMatrix', JavaExec) {
+        group = 'verification'
+        description = 'Runs Evolution population and genome performance matrix.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.EvolutionPerformanceMatrix'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('evolutionMatrixGenerations').orElse('500').get()
+    }
+
+    tasks.register('jmh', JavaExec) {
+        group = 'verification'
+        description = 'Runs JMH benchmarks for Evolution.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.*EvolutionJmhBenchmark.*'
+    }
+
+    tasks.register('jmhSmoke', JavaExec) {
+        group = 'verification'
+        description = 'Runs a bounded Evolution JMH smoke benchmark.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.EvolutionJmhBenchmark.evolveGeneration',
+                '-wi', '1',
+                '-i', '1',
+                '-f', '1',
+                '-p', 'populationSize=64',
+                '-p', 'geneCount=16'
+    }
+
+    tasks.register('profileEvolution', JavaExec) {
+        group = 'verification'
+        description = 'Runs the Evolution performance matrix with JFR enabled.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.EvolutionPerformanceMatrix'
+        javaLauncher = java27
+        args providers.gradleProperty('evolutionProfileGenerations').orElse('1000').get()
+        doFirst {
+            def recording = layout.buildDirectory.file('jfr/evolution.jfr').get().asFile
+            recording.parentFile.mkdirs()
+            jvmArgs "-XX:StartFlightRecording=filename=${recording.absolutePath},settings=profile,dumponexit=true"
+        }
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('verifyExperiment')
+    }
+}
+
 project(':bcel') {
     dependencies {
         implementation 'org.apache.bcel:bcel:5.2'
