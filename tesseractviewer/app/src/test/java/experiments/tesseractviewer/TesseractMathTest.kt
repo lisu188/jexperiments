@@ -33,4 +33,23 @@ class TesseractMathTest {
         assertEquals(2f, projected[1], 0f)
         assertEquals(3f, projected[2], 0f)
     }
+
+    @Test
+    fun zeroRotationPerspectiveAndInvalidInputAreCovered() {
+        val point = TesseractMath.Vec4(1f, -2f, 3f, 1f)
+        val unchanged = TesseractMath.rotate(point, FloatArray(6))
+        assertEquals(point, unchanged)
+
+        val projected = TesseractMath.project4D(point, true, 4f)
+        assertEquals(4f / 3f, projected[0], 0.0001f)
+        assertEquals(-8f / 3f, projected[1], 0.0001f)
+        assertEquals(4f, projected[2], 0.0001f)
+
+        try {
+            TesseractMath.rotate(point, FloatArray(5))
+            throw AssertionError("Expected invalid rotation array to fail")
+        } catch (_: IllegalArgumentException) {
+        }
+    }
+
 }
