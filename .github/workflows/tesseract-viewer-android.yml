@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "27"
       - uses: android-actions/setup-android@v4
         with:
           packages: "platform-tools"
@@ -31,7 +31,7 @@ jobs:
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "9.5.0"
+          gradle-version: "9.8.0"
       - name: Test, lint and build release APK
         run: gradle -p tesseractviewer :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon
       - name: Verify and package release APK
@@ -56,10 +56,10 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "27"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "9.5.0"
+          gradle-version: "9.8.0"
       - name: Prepare main worktree
         run: |
           git fetch origin main
