@@ -411,6 +411,52 @@ class DistributedThreadPoolTest {
     }
 
     @Test
+    void transportLifecycleHelpersCoverInterruptedWaitAndOpenConnectionFailure() throws Exception {
+        try (var server = new ThreadPoolServer(0).start();
+             var client = new ThreadPoolClient("127.0.0.1", server.port())) {
+            client.awaitClientId(Duration.ofSeconds(5));
+            var connection = connectionOf(client);
+
+            var closedException = SocketAccessor.class.getDeclaredMethod("connectionClosedException");
+            closedException.setAccessible(true);
+            var notClosedYet = (RejectedExecutionException) closedException.invoke(connection);
+            assertEquals("connection is closed", notClosedYet.getMessage());
+            assertNull(notClosedYet.getCause());
+
+            var unwrap = SocketAccessor.class.getDeclaredMethod("unwrapCompletionFailure", Throwable.class);
+            unwrap.setAccessible(true);
+            var cause = new IOException("cause");
+            assertSame(cause, unwrap.invoke(null, new CompletionException(cause)));
+            assertSame(cause, unwrap.invoke(null, cause));
+        }
+
+        var awaitUninterruptibly = SocketAccessor.class.getDeclaredMethod(
+                "awaitUninterruptibly",
+                CountDownLatch.class);
+        awaitUninterruptibly.setAccessible(true);
+        var latch = new CountDownLatch(1);
+        var started = new CountDownLatch(1);
+        var interruptRestored = new java.util.concurrent.atomic.AtomicBoolean();
+        var waiter = Thread.ofPlatform().start(() -> {
+            started.countDown();
+            try {
+                awaitUninterruptibly.invoke(null, latch);
+                interruptRestored.set(Thread.currentThread().isInterrupted());
+                Thread.interrupted();
+            } catch (ReflectiveOperationException failure) {
+                throw new AssertionError(failure);
+            }
+        });
+
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        waiter.interrupt();
+        Thread.sleep(10);
+        latch.countDown();
+        waiter.join();
+        assertTrue(interruptRestored.get());
+    }
+
+    @Test
     void clientConnectionFailureAndCloseAreReported() throws Exception {
         var server = new ThreadPoolServer(0).start();
         var port = server.port();
