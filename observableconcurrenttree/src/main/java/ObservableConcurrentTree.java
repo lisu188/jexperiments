@@ -122,13 +122,8 @@ public final class ObservableConcurrentTree<K, V> {
         private transient volatile Entry<K, V> entry;
 
         private Node(K id, V value) {
-            this(id, value, 0);
-        }
-
-        private Node(K id, V value, int expectedChildren) {
             this.id = id;
             this.value = value;
-            this.children = expectedChildren == 0 ? null : new ArrayList<>(expectedChildren);
         }
     }
 
@@ -793,41 +788,9 @@ public final class ObservableConcurrentTree<K, V> {
         return node;
     }
 
-    private static <K, V> boolean shouldPreSizeChildren(Collection<NodeState<K, V>> state) {
-        if (state.size() < 64) {
-            return false;
-        }
-
-        var sampleCounts = new HashMap<K, Integer>();
-        var sampled = 0;
-        for (var item : state) {
-            Objects.requireNonNull(item, "state contains null");
-            var parentId = item.parentId();
-            if (parentId != null && sampleCounts.merge(parentId, 1, Integer::sum) >= 32) {
-                return true;
-            }
-            if (++sampled == 1_024) {
-                break;
-            }
-        }
-        return false;
-    }
-
     private RebuiltTree<K, V> rebuild(Collection<NodeState<K, V>> state) {
         if (state.isEmpty()) {
             return new RebuiltTree<>(new HashMap<>(), null);
-        }
-
-        HashMap<K, Integer> childCounts = null;
-        if (shouldPreSizeChildren(state)) {
-            childCounts = new HashMap<>();
-            for (var item : state) {
-                Objects.requireNonNull(item, "state contains null");
-                var parentId = item.parentId();
-                if (parentId != null) {
-                    childCounts.merge(parentId, 1, Integer::sum);
-                }
-            }
         }
 
         var rebuilt = HashMap.<K, Node<K, V>>newHashMap(state.size());
@@ -836,8 +799,7 @@ public final class ObservableConcurrentTree<K, V> {
         for (var item : state) {
             Objects.requireNonNull(item, "state contains null");
             var id = item.id();
-            var expectedChildren = childCounts == null ? 0 : childCounts.getOrDefault(id, 0);
-            if (rebuilt.putIfAbsent(id, new Node<>(id, item.value(), expectedChildren)) != null) {
+            if (rebuilt.putIfAbsent(id, new Node<>(id, item.value())) != null) {
                 throw new IllegalArgumentException("Duplicate node id: " + id);
             }
             if (item.parentId() == null) {
