@@ -1,4 +1,5 @@
 name: Stage1 allocation benchmark comparison
+# comparison revision: no-presize
 
 on:
   push:
