@@ -265,12 +265,12 @@ class DistributedThreadPoolTest {
 
     @Test
     void clientConnectionFailureAndCloseAreReported() throws Exception {
-        try (var server = new ThreadPoolServer(0).start()) {
-            var port = server.port();
-            server.close();
+        var server = new ThreadPoolServer(0).start();
+        var port = server.port();
+        server.close();
+        server.close();
 
-            assertThrows(IOException.class, () -> new ThreadPoolClient("127.0.0.1", port));
-            assertThrows(NullPointerException.class, () -> new ThreadPoolClient(null, port));
-        }
+        assertThrows(IOException.class, () -> new ThreadPoolClient("127.0.0.1", port));
+        assertThrows(NullPointerException.class, () -> new ThreadPoolClient(null, port));
     }
 }
