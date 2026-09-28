@@ -106,11 +106,11 @@ public class SocketAccessor<C> implements AutoCloseable {
     private volatile Thread readerThread;
     private volatile Thread writerThread;
 
-    public SocketAccessor(C context, Socket socket, ExecutorService invocationExecutor) throws IOException {
+    protected SocketAccessor(C context, Socket socket, ExecutorService invocationExecutor) throws IOException {
         this(context, socket, invocationExecutor, Options.defaults());
     }
 
-    public SocketAccessor(
+    protected SocketAccessor(
             C context,
             Socket socket,
             ExecutorService invocationExecutor,
@@ -156,7 +156,7 @@ public class SocketAccessor<C> implements AutoCloseable {
         return pending.future();
     }
 
-    public final CompletableFuture<Void> execute(TaskMessage<C> task) {
+    public final CompletableFuture<Void> execute(TaskMessage<?> task) {
         Objects.requireNonNull(task, "task");
         var pending = repository.<Void>register();
         var message = new WireMessage.Command(pending.id(), task);
