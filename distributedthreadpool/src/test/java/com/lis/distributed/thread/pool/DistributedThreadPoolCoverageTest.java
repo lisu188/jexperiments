@@ -112,7 +112,8 @@ class DistributedThreadPoolCoverageTest {
         assertEquals(6, FuncUtils.bind((Integer value) -> value * 2, 3).get());
         assertEquals(7, FuncUtils.bind((Integer left, Integer right) -> left + right, 3).apply(4));
         var captured = new int[1];
-        FuncUtils.bind((int[] target, Integer value) -> target[0] = value, captured).accept(9);
+        FuncUtils.bind((com.lis.distributed.thread.pool.func.SerializableBiConsumer<int[], Integer>)
+                ((target, value) -> target[0] = value), captured).accept(9);
         assertEquals(9, captured[0]);
 
         long first = Numbers.getId();
