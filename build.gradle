@@ -157,7 +157,15 @@ project(':observableconcurrenttree') {
 
     tasks.withType(JavaCompile).configureEach {
         options.release = 27
-        options.compilerArgs += ['-Xlint:all', '-Werror']
+        options.compilerArgs += ['-Xlint:all', '-Xlint:-incubating', '-Werror', '--add-modules', 'jdk.incubator.vector']
+    }
+
+    tasks.withType(Test).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
+    }
+
+    tasks.withType(JavaExec).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
     }
 
     def java27 = javaToolchains.launcherFor {
@@ -717,15 +725,7 @@ project(':evolution') {
 
     tasks.withType(JavaCompile).configureEach {
         options.release = 27
-        options.compilerArgs += ['-Xlint:all', '-Xlint:-incubating', '-Werror', '--add-modules', 'jdk.incubator.vector']
-    }
-
-    tasks.withType(Test).configureEach {
-        jvmArgs '--add-modules', 'jdk.incubator.vector'
-    }
-
-    tasks.withType(JavaExec).configureEach {
-        jvmArgs '--add-modules', 'jdk.incubator.vector'
+        options.compilerArgs += ['-Xlint:all', '-Werror']
     }
 
     def java27 = javaToolchains.launcherFor {
@@ -940,7 +940,6 @@ def coverageExcludes = [
         '**/EvolutionJfr*',
         '**/EvolutionPerformanceMatrix*'
     ],
-
     distributedthreadpool: [
         '**/DistributedThreadPoolBenchmark*',
         '**/DistributedThreadPoolExample*',
@@ -951,6 +950,13 @@ def coverageExcludes = [
     ],
     hashlife: [
         '**/Driver*'
+    ],
+    jneuro: [
+        '**/NeuroBenchmark*',
+        '**/NeuroExample*',
+        '**/NeuroJfr*',
+        '**/NeuroPerformanceMatrix*',
+        '**/NeuroVerification*'
     ],
     observableconcurrenttree: [
         '**/ObservableConcurrentTreeBenchmark*',
