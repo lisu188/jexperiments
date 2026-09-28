@@ -528,7 +528,7 @@ public final class ObservableConcurrentTree<K, V> {
             for (var child : children) {
                 result.add(toEntry(child));
             }
-            return List.copyOf(result);
+            return Collections.unmodifiableList(result);
         } finally {
             readLock.unlock();
         }
@@ -675,7 +675,7 @@ public final class ObservableConcurrentTree<K, V> {
     private static <K, V> void addChild(Node<K, V> parent, Node<K, V> child) {
         var children = parent.children;
         if (children == null) {
-            children = new ArrayList<>();
+            children = new ArrayList<>(4);
             parent.children = children;
         }
         children.add(child);
@@ -796,7 +796,7 @@ public final class ObservableConcurrentTree<K, V> {
             return new RebuiltTree<>(new HashMap<>(), null);
         }
 
-        var childCounts = HashMap.<K, Integer>newHashMap(state.size());
+        var childCounts = new HashMap<K, Integer>();
         for (var item : state) {
             Objects.requireNonNull(item, "state contains null");
             var parentId = item.parentId();
