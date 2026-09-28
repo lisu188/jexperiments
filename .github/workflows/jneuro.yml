@@ -28,6 +28,14 @@ jobs:
         run: ./gradlew --no-daemon :jneuro:check
       - name: JMH smoke
         run: ./gradlew --no-daemon :jneuro:jmhSmoke
+      - name: JMH inference comparison
+        run: ./gradlew --no-daemon :jneuro:jmhCompare
+      - name: JMH batch comparison
+        run: ./gradlew --no-daemon :jneuro:jmhBatchCompare
+      - name: JMH training comparison
+        run: ./gradlew --no-daemon :jneuro:jmhTrainingCompare
+      - name: Native BLAS comparison
+        run: ./gradlew --no-daemon :jneuro:nativeBlasBenchmark
       - name: Performance matrix smoke
         run: ./gradlew --no-daemon :jneuro:performanceMatrix -PneuroMatrixIterations=1000 -PneuroMatrixEpochs=2
       - name: Run example
