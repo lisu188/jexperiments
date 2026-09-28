@@ -1,115 +1,124 @@
 package com.lis.threadpool;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public final class OrderedThreadPoolExecutorExample {
     public static void main(String[] args) throws Exception {
-        reverseCompletionStillPublishesInOrder();
-        failuresDoNotBlockLaterResults();
-        boundedQueueAppliesBackpressure();
-        printStatistics();
+        reverseCompletion();
+        failureGap();
+        fireAndForget();
+        callbackIsolation();
+        boundedInFlight();
     }
 
-    private static void reverseCompletionStillPublishesInOrder() throws Exception {
-        section("1. Reverse completion, ordered publication");
-        var taskCount = 6;
-        var output = new ArrayBlockingQueue<Integer>(taskCount);
-        var gates = new ArrayList<CountDownLatch>(taskCount);
-        var completed = new ArrayList<CountDownLatch>(taskCount);
-        var started = new CountDownLatch(taskCount);
-
+    private static void reverseCompletion() throws Exception {
+        section("Reverse worker completion, ordered publication");
+        var output = new ArrayBlockingQueue<Integer>(8);
+        var gates = new ArrayList<CountDownLatch>();
+        var completed = new ArrayList<CountDownLatch>();
         try (var workers = Executors.newVirtualThreadPerTaskExecutor();
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            for (int i = 0; i < taskCount; i++) {
+            for (int i = 0; i < 8; i++) {
                 gates.add(new CountDownLatch(1));
                 completed.add(new CountDownLatch(1));
             }
-
-            var futures = new ArrayList<CompletableFuture<Integer>>(taskCount);
-            for (int i = 0; i < taskCount; i++) {
+            for (int i = 0; i < 8; i++) {
                 var value = i;
-                futures.add(executor.process(() -> {
-                    started.countDown();
+                executor.process(() -> {
                     await(gates.get(value));
                     completed.get(value).countDown();
                     return value;
-                }));
+                });
             }
-
-            started.await();
-            for (int i = taskCount - 1; i >= 0; i--) {
+            for (int i = 7; i >= 0; i--) {
                 gates.get(i).countDown();
                 completed.get(i).await();
             }
-
-            var published = new ArrayList<Integer>(taskCount);
-            for (int i = 0; i < taskCount; i++) {
-                published.add(output.take());
+            for (int i = 0; i < 8; i++) {
+                System.out.print(output.take() + (i == 7 ? "\n" : " "));
             }
-            futures.forEach(CompletableFuture::join);
-
-            System.out.println("worker completion order = reverse submission order");
-            System.out.println("published order = " + published);
+            System.out.println("statistics = " + executor.statistics());
         }
     }
 
-    private static void failuresDoNotBlockLaterResults() throws Exception {
-        section("2. Failure is an ordered terminal slot, not a permanent gap");
-        var output = new ArrayBlockingQueue<Integer>(3);
-
+    private static void failureGap() throws Exception {
+        section("Failure consumes its sequence slot");
+        var output = new ArrayBlockingQueue<Integer>(2);
         try (var workers = Executors.newVirtualThreadPerTaskExecutor();
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            var first = executor.process(() -> 10);
+            var first = executor.process(() -> 1);
             var failed = executor.process(() -> {
                 throw new IllegalStateException("expected failure");
             });
-            var third = executor.process(() -> 30);
-
-            System.out.println("published successes = " + List.of(output.take(), output.take()));
-            System.out.println("first future = " + first.join());
+            var third = executor.process(() -> 3);
+            System.out.println("queue = " + output.take() + ", " + output.take());
+            System.out.println("first = " + first.join());
             try {
                 failed.join();
-            } catch (RuntimeException failure) {
-                System.out.println("failed future cause = " + failure.getCause().getMessage());
+            } catch (RuntimeException expected) {
+                System.out.println("middle future failed = " + expected.getCause());
             }
-            System.out.println("third future = " + third.join());
+            System.out.println("third = " + third.join());
         }
     }
 
-    private static void boundedQueueAppliesBackpressure() throws Exception {
-        section("3. BlockingQueue capacity applies publication backpressure");
-        var output = new ArrayBlockingQueue<Integer>(1);
-
-        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
-             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            var first = executor.process(() -> 1);
-            var second = executor.process(() -> 2);
-
-            System.out.println("first published = " + output.take());
-            System.out.println("first future = " + first.join());
-            System.out.println("second published after capacity is released = " + output.take());
-            System.out.println("second future = " + second.join());
-        }
-    }
-
-    private static void printStatistics() throws Exception {
-        section("4. Statistics and lifecycle");
+    private static void fireAndForget() throws Exception {
+        section("Fire-and-forget avoids CompletableFuture allocation");
         var output = new ArrayBlockingQueue<Integer>(4);
-
         try (var workers = Executors.newVirtualThreadPerTaskExecutor();
              var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
-            var first = executor.process(() -> 1);
+            for (int i = 0; i < 4; i++) {
+                var value = i;
+                System.out.println("sequence = " + executor.executeOrdered(() -> value));
+            }
+            while (!output.isEmpty() || executor.statistics().published() < 4) {
+                var value = output.poll(1, TimeUnit.SECONDS);
+                if (value != null) {
+                    System.out.println("published = " + value);
+                }
+            }
+        }
+    }
+
+    private static void callbackIsolation() throws Exception {
+        section("Slow future callback does not block publication");
+        var output = new ArrayBlockingQueue<Integer>(4);
+        var taskGate = new CountDownLatch(1);
+        var callbackEntered = new CountDownLatch(1);
+        var callbackGate = new CountDownLatch(1);
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
+             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers)) {
+            var first = executor.process(() -> {
+                await(taskGate);
+                return 1;
+            });
+            first.thenRun(() -> {
+                callbackEntered.countDown();
+                await(callbackGate);
+            });
             var second = executor.process(() -> 2);
-            first.join();
-            second.join();
-            System.out.println("statistics = " + executor.statistics());
-            executor.shutdown();
-            System.out.println("isShutdown = " + executor.isShutdown());
+            taskGate.countDown();
+            callbackEntered.await();
+            System.out.println("published while callback is blocked = " + output.take() + ", " + output.take());
+            callbackGate.countDown();
+            System.out.println("second future = " + second.get(5, TimeUnit.SECONDS));
+        }
+    }
+
+    private static void boundedInFlight() throws Exception {
+        section("maxInFlight bounds outstanding ordered work");
+        var options = OrderedThreadPoolExecutor.Options.defaults().withMaxInFlight(1024);
+        var output = new ArrayBlockingQueue<Integer>(4);
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor();
+             var executor = new OrderedThreadPoolExecutor<Integer>(output, workers, options)) {
+            executor.executeOrdered(() -> 1);
+            executor.executeOrdered(() -> 2);
+            System.out.println("configured maxInFlight = " + options.maxInFlight());
+            System.out.println("outputs = " + output.take() + ", " + output.take());
         }
     }
 
@@ -118,7 +127,7 @@ public final class OrderedThreadPoolExecutorExample {
             latch.await();
         } catch (InterruptedException interruption) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("task interrupted", interruption);
+            throw new IllegalStateException(interruption);
         }
     }
 
