@@ -263,10 +263,7 @@ public final class EvolutionVerification {
                 1, 1, (g, o, l, d, p) -> {}, compactConfig(111)));
 
         EvolutionFitness bad = (genome, offset, length) -> Double.NaN;
-        expectIllegalState(() -> {
-            try (var ignored = new Evolution(2, bad, compactConfig(112))) {
-            }
-        });
+        expectIllegalState(() -> new Evolution(2, bad, compactConfig(112)).close());
     }
 
     private static Evolution.Config compactConfig(long seed) {
