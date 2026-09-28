@@ -11,7 +11,7 @@ sealed interface WireMessage extends Serializable
         permits WireMessage.Invocation, WireMessage.Command, WireMessage.Response, WireMessage.Registration {
 
     record Invocation(long requestId, SerializableSupplier<?> task) implements WireMessage {
-        Invocation {
+        public Invocation {
             if (requestId < 0) {
                 throw new IllegalArgumentException("requestId must be non-negative");
             }
@@ -20,7 +20,7 @@ sealed interface WireMessage extends Serializable
     }
 
     record Command(long requestId, TaskMessage<?> task) implements WireMessage {
-        Command {
+        public Command {
             if (requestId < 0) {
                 throw new IllegalArgumentException("requestId must be non-negative");
             }
@@ -29,7 +29,7 @@ sealed interface WireMessage extends Serializable
     }
 
     record Response(long requestId, Object value, RemoteFailure failure) implements WireMessage {
-        Response {
+        public Response {
             if (requestId < 0) {
                 throw new IllegalArgumentException("requestId must be non-negative");
             }
@@ -48,7 +48,7 @@ sealed interface WireMessage extends Serializable
     }
 
     record Registration(int clientId) implements WireMessage {
-        Registration {
+        public Registration {
             if (clientId <= 0) {
                 throw new IllegalArgumentException("clientId must be positive");
             }
@@ -56,7 +56,7 @@ sealed interface WireMessage extends Serializable
     }
 
     record RemoteFailure(String type, String message, String stackTrace) implements Serializable {
-        RemoteFailure {
+        public RemoteFailure {
             Objects.requireNonNull(type, "type");
             Objects.requireNonNull(stackTrace, "stackTrace");
         }
