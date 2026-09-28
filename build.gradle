@@ -788,3 +788,143 @@ project(':blogsite') {
         from(blogContentDir)
     }
 }
+
+def coverageExcludes = [
+    distributedthreadpool: [
+        '**/DistributedThreadPoolBenchmark*',
+        '**/DistributedThreadPoolExample*',
+        '**/DistributedThreadPoolJfr*',
+        '**/DistributedThreadPoolPerformanceMatrix*',
+        '**/DistributedThreadPoolSoak*',
+        '**/DistributedThreadPoolVerification*'
+    ],
+    hashlife: [
+        '**/Driver*'
+    ],
+    observableconcurrenttree: [
+        '**/ObservableConcurrentTreeBenchmark*',
+        '**/ObservableConcurrentTreeExample*',
+        '**/ObservableConcurrentTreePerformanceMatrix*',
+        '**/ObservableConcurrentTreeVerification*'
+    ],
+    orderedthreadpoolexecutor: [
+        '**/OrderedThreadPoolExecutorBenchmark*',
+        '**/OrderedThreadPoolExecutorExample*',
+        '**/OrderedThreadPoolExecutorHeadOfLineBenchmark*',
+        '**/OrderedThreadPoolExecutorPerformanceMatrix*',
+        '**/OrderedThreadPoolExecutorSoak*',
+        '**/OrderedThreadPoolExecutorVerification*',
+        '**/OrderedThreadPoolJfr*'
+    ],
+    picontroller: [
+        '**/MainClass*',
+        '**/TomcatManager*',
+        '**/monitor/LightMonitor*',
+        '**/monitor/MemMonitor*',
+        '**/monitor/Monitor*',
+        '**/monitor/TempMonitor*',
+        '**/servlet/**',
+        '**/web/**',
+        '**/websocket/**'
+    ],
+    slickproject: [
+        '**/WizardGame*'
+    ],
+    soapserver: [
+        '**/json/**',
+        '**/hrab/SoapWeatherClient*',
+        '**/hrab/WeatherClientProxy*',
+        '**/hrab/WeatherServlet*'
+    ],
+    webaspect: [
+        '**/HelloServlet*'
+    ]
+]
+
+def coverageSmokeMains = [
+    bcel: 'com.company.Main',
+    completeablefuture: 'Main',
+    distributedthreadpool: 'com.lis.distributed.thread.pool.DistributedThreadPoolVerification',
+    flowpublisher: 'com.lis.flow.FlowPublisherExperiment',
+    javakotlinbridges: 'experiments.kotlin.bridges.BridgeExperimentKt',
+    kotlindatasynthetic: 'experiments.kotlin.datasynthetic.DataSyntheticExperimentKt',
+    kotlindefaultargs: 'experiments.kotlin.defaultargs.DefaultArgsExperimentKt',
+    kotlindelegation: 'experiments.kotlin.delegation.DelegationExperimentKt',
+    kotlininlinecapture: 'experiments.kotlin.inlinecapture.InlineCaptureExperimentKt',
+    kotlinmetadatareader: 'experiments.kotlin.metadatareader.MetadataReaderExperiment',
+    kotlinpropertyrefs: 'experiments.kotlin.propertyrefs.PropertyRefsExperimentKt',
+    kotlinsamfuninterface: 'experiments.kotlin.samfuninterface.SamFunInterfaceExperimentKt',
+    kotlinsealedwhen: 'experiments.kotlin.sealedwhen.SealedWhenExperimentKt',
+    kotlinsuspendstate: 'experiments.kotlin.suspendstate.SuspendStateExperimentKt',
+    kotlinvalueclassboxing: 'experiments.kotlin.valueclassboxing.ValueClassBoxingExperimentKt',
+    lambdabytecode: 'com.company.ConstructorReferenceLambda,com.company.ExpressionLambda,com.company.MemberMethodReferenceLambda,com.company.StaticMethodReferenceLambda',
+    observableconcurrenttree: 'ObservableConcurrentTreeVerification',
+    orderedthreadpoolexecutor: 'com.lis.threadpool.OrderedThreadPoolExecutorVerification'
+]
+
+configure(javaModules + [project(':blogsite')]) {
+    apply plugin: 'jacoco'
+
+    jacoco {
+        toolVersion = '0.8.15'
+    }
+
+    dependencies {
+        testImplementation platform('org.junit:junit-bom:6.1.2')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    sourceSets {
+        test {
+            java.srcDir rootProject.file('test-support/src/test/java')
+        }
+    }
+
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+        systemProperty 'coverage.smokeMains', coverageSmokeMains.get(project.name, '')
+    }
+
+    def exclusions = coverageExcludes.get(project.name, [])
+
+    tasks.named('jacocoTestReport') {
+        dependsOn tasks.named('test')
+        reports {
+            xml.required = true
+            html.required = true
+        }
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: exclusions)
+        }))
+    }
+
+    tasks.named('jacocoTestCoverageVerification') {
+        dependsOn tasks.named('test')
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: exclusions)
+        }))
+        violationRules {
+            rule {
+                limit {
+                    counter = 'LINE'
+                    value = 'COVEREDRATIO'
+                    minimum = 0.90
+                }
+            }
+        }
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('jacocoTestCoverageVerification')
+    }
+}
+
+tasks.register('coverageVerification') {
+    group = 'verification'
+    description = 'Verifies at least 90% line coverage independently in every Gradle module.'
+    dependsOn (javaModules + [project(':blogsite')]).collect {
+        it.tasks.named('jacocoTestCoverageVerification')
+    }
+}
+

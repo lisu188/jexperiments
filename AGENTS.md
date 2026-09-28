@@ -27,6 +27,14 @@
 - Keep Markdown rendering in mind: use stable headings, fenced code blocks, and plain Markdown that will render cleanly through the blogsite templates.
 - After post updates, run `./gradlew --gradle-user-home /tmp/jexperiments-gradle-home --no-daemon :blogsite:build` and `./gradlew --gradle-user-home /tmp/jexperiments-gradle-home --no-daemon clean build` when available.
 
+## Test coverage
+- Every Gradle module in this repository must maintain at least 90% line coverage from automated tests.
+- Coverage is enforced per module, never only as a repository-wide aggregate.
+- New or changed production code must include tests that keep its module at or above the 90% line-coverage threshold.
+- Do not lower, bypass, or broadly exclude production code from the threshold to make CI pass. Exclusions are allowed only for generated code, third-party/vendored code, and environment-bound entrypoints that cannot execute meaningfully in automated unit tests; keep exclusions narrow and documented in the build.
+- Run the module's coverage verification task for focused changes and the repository-wide coverage verification as part of the full build.
+- The standalone Android project under `tesseractviewer` follows the same 90% requirement for JVM-testable production logic.
+
 ## Safety rules
 - Do not merge pull requests.
 - Do not delete branches unless explicitly asked.
