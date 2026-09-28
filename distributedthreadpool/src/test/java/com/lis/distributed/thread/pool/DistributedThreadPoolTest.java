@@ -10,10 +10,18 @@ import com.lis.distributed.thread.pool.server.ThreadPoolServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.EOFException;
 import java.io.ObjectInputFilter;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -264,6 +272,115 @@ class DistributedThreadPoolTest {
     }
 
     @Test
+    void rejectedInvocationExecutorReturnsRemoteFailures() throws Exception {
+        var rejected = Executors.newSingleThreadExecutor();
+        rejected.shutdown();
+
+        try (var server = new ThreadPoolServer(0, rejected, SocketAccessor.Options.defaults()).start();
+             var client = new ThreadPoolClient("127.0.0.1", server.port())) {
+            client.awaitClientId(Duration.ofSeconds(5));
+
+            var call = client.callOnServer(() -> 1);
+            var callFailure = assertThrows(CompletionException.class, call::join);
+            assertInstanceOf(RemoteExecutionException.class, callFailure.getCause());
+            assertEquals(
+                    RejectedExecutionException.class.getName(),
+                    ((RemoteExecutionException) callFailure.getCause()).remoteType());
+
+            var command = client.executeOnServer(ignored -> {});
+            var commandFailure = assertThrows(CompletionException.class, command::join);
+            assertInstanceOf(RemoteExecutionException.class, commandFailure.getCause());
+        }
+    }
+
+    @Test
+    void rejectedResponseExecutorFailsPendingRequest() throws Exception {
+        try (var server = new ThreadPoolServer(0).start();
+             var client = new ThreadPoolClient("127.0.0.1", server.port())) {
+            client.awaitClientId(Duration.ofSeconds(5));
+
+            var connection = connectionOf(client);
+            var responseExecutor = responseExecutorOf(connection);
+            responseExecutor.close();
+
+            var future = client.callOnServer(() -> 123);
+            var failure = assertThrows(CompletionException.class, future::join);
+            assertInstanceOf(RejectedExecutionException.class, failure.getCause());
+            assertEquals(0, client.statistics().pendingRequests());
+        }
+    }
+
+    @Test
+    void closeBeforeRegistrationFailsClientIdFuture() throws Exception {
+        try (var serverSocket = new ServerSocket(0)) {
+            var handshake = new CountDownLatch(1);
+            var peer = Thread.ofVirtual().start(() -> {
+                try (var socket = serverSocket.accept();
+                     var out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+                     var in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()))) {
+                    out.flush();
+                    handshake.countDown();
+                    try {
+                        in.readObject();
+                    } catch (EOFException ignored) {
+                    }
+                } catch (Exception ignored) {
+                    handshake.countDown();
+                }
+            });
+
+            var client = new ThreadPoolClient("127.0.0.1", serverSocket.getLocalPort());
+            assertTrue(handshake.await(5, TimeUnit.SECONDS));
+            assertFalse(client.clientId().isDone());
+
+            client.close();
+            peer.join();
+
+            assertTrue(client.clientId().isCompletedExceptionally());
+            assertThrows(CompletionException.class, client.clientId()::join);
+        }
+    }
+
+    @Test
+    void malformedWireObjectClosesTransportAndExposesTermination() throws Exception {
+        try (var serverSocket = new ServerSocket(0)) {
+            var sent = new CountDownLatch(1);
+            var peer = Thread.ofVirtual().start(() -> {
+                try (var socket = serverSocket.accept();
+                     var out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+                     var in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()))) {
+                    out.flush();
+                    out.writeObject("not a wire message");
+                    out.flush();
+                    sent.countDown();
+                    try {
+                        in.readObject();
+                    } catch (Exception ignored) {
+                    }
+                } catch (Exception ignored) {
+                    sent.countDown();
+                }
+            });
+
+            var client = new ThreadPoolClient("127.0.0.1", serverSocket.getLocalPort());
+            var connection = connectionOf(client);
+            try {
+                assertTrue(sent.await(5, TimeUnit.SECONDS));
+                var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                while (!connection.isClosed() && System.nanoTime() < deadline) {
+                    Thread.sleep(5);
+                }
+                assertTrue(connection.isClosed());
+                assertTrue(connection.awaitTermination(5, TimeUnit.SECONDS));
+                assertThrows(RejectedExecutionException.class, () -> client.callOnServer(() -> 1));
+            } finally {
+                client.close();
+            }
+            peer.join();
+        }
+    }
+
+    @Test
     void clientConnectionFailureAndCloseAreReported() throws Exception {
         var server = new ThreadPoolServer(0).start();
         var port = server.port();
@@ -272,5 +389,17 @@ class DistributedThreadPoolTest {
 
         assertThrows(IOException.class, () -> new ThreadPoolClient("127.0.0.1", port));
         assertThrows(NullPointerException.class, () -> new ThreadPoolClient(null, port));
+    }
+
+    private static SocketAccessor<?> connectionOf(ThreadPoolClient client) throws Exception {
+        var field = ThreadPoolClient.class.getDeclaredField("connection");
+        field.setAccessible(true);
+        return (SocketAccessor<?>) field.get(client);
+    }
+
+    private static ExecutorService responseExecutorOf(SocketAccessor<?> connection) throws Exception {
+        var field = SocketAccessor.class.getDeclaredField("responseExecutor");
+        field.setAccessible(true);
+        return (ExecutorService) field.get(connection);
     }
 }
