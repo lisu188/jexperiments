@@ -32,8 +32,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.8.0"
-      - name: Test, lint and build release APK
-        run: gradle -p tesseractviewer :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon
+      - name: Test, coverage, lint and build release APK
+        run: gradle -p tesseractviewer :app:createDebugUnitTestCoverageReport :app:lintRelease :app:assembleRelease --no-daemon
+      - name: Verify 90% JVM-testable line coverage
+        run: python tesseractviewer/verify_coverage.py tesseractviewer/app/build/reports/coverage/test/debug/report.xml experiments/tesseractviewer TesseractMath.kt 0.90
       - name: Verify and package release APK
         run: |
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose tesseractviewer/app/build/outputs/apk/release/app-release.apk
