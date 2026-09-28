@@ -1009,17 +1009,28 @@ public final class Neuro {
     }
 
     private static double fastSigmoid(double value) {
-        if (value <= -8.0) {
+        if (value >= 0.0) {
+            var exp = fastExpNegative(-value);
+            return 1.0 / (1.0 + exp);
+        }
+        var exp = fastExpNegative(value);
+        return exp / (1.0 + exp);
+    }
+
+    private static double fastExpNegative(double value) {
+        if (value <= -745.0) {
             return 0.0;
         }
-        if (value >= 8.0) {
-            return 1.0;
-        }
-        var x = value * 0.5;
-        var square = x * x;
-        var tanh = x * (27.0 + square) / (27.0 + 9.0 * square);
-        tanh = Math.max(-1.0, Math.min(1.0, tanh));
-        return 0.5 * (tanh + 1.0);
+        var exponent = (int) (value * 1.4426950408889634);
+        var remainder = value - exponent * 0.6931471805599453;
+        var square = remainder * remainder;
+        var polynomial = 1.0
+                + remainder
+                + square * (0.5
+                + remainder * (0.16666666666666666
+                + remainder * (0.041666666666666664
+                + remainder * 0.008333333333333333)));
+        return Math.scalb(polynomial, exponent);
     }
 
     private void validatePrediction(double[] input, double[] output) {
