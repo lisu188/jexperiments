@@ -92,6 +92,95 @@ final class SyntaxHighlighter {
                 int end = numberEnd(source, index);
                 appendToken(html, "number", source.substring(index, end));
                 index = end;
+            } else if (!markTypes && source.charAt(index) == '            } else {
+                html.append(escapeHtml(source.substring(index, index + 1)));
+                index++;
+            }
+        }
+        return html.toString();
+    }
+
+    private int quotedEnd(String source, int start, char quote) {
+        int index = start + 1;
+        while (index < source.length()) {
+            char current = source.charAt(index++);
+            if (current == '\\' && index < source.length()) {
+                index++;
+            } else if (current == quote) {
+                break;
+            }
+        }
+        return index;
+    }
+
+    private int identifierEnd(String source, int start) {
+        int index = start;
+        while (index < source.length() && isIdentifierPart(source.charAt(index))) {
+            index++;
+        }
+        return index;
+    }
+
+    private int numberEnd(String source, int start) {
+        int index = start;
+        while (index < source.length()) {
+            char current = source.charAt(index);
+            if (Character.isLetterOrDigit(current) || current == '_' || current == '.' || current == '-') {
+                index++;
+            } else {
+                break;
+            }
+        }
+        return index;
+    }
+
+    private boolean nextNonWhitespaceIs(String source, int start, char expected) {
+        int index = start;
+        while (index < source.length() && Character.isWhitespace(source.charAt(index))) {
+            index++;
+        }
+        return index < source.length() && source.charAt(index) == expected;
+    }
+
+    private boolean startsWith(String source, int index, String needle) {
+        return source.regionMatches(index, needle, 0, needle.length());
+    }
+
+    private boolean isIdentifierStart(char current) {
+        return Character.isLetter(current) || current == '_' || current == '$';
+    }
+
+    private boolean isIdentifierPart(char current) {
+        return Character.isLetterOrDigit(current) || current == '_' || current == '$';
+    }
+
+    private void appendToken(StringBuilder html, String token, String text) {
+        html.append("<span class=\"tok tok-")
+                .append(token)
+                .append("\">")
+                .append(escapeHtml(text))
+                .append("</span>");
+    }
+
+    private String decodeCodeText(String text) {
+        return text.replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&amp;", "&");
+    }
+
+    private String escapeHtml(String text) {
+        return text.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+    }
+}
+ && index + 1 < source.length()
+                    && isIdentifierStart(source.charAt(index + 1))) {
+                int end = identifierEnd(source, index + 1);
+                appendToken(html, "variable", source.substring(index, end));
+                index = end;
             } else if (isIdentifierStart(source.charAt(index))) {
                 int end = identifierEnd(source, index);
                 String word = source.substring(index, end);
@@ -104,11 +193,6 @@ final class SyntaxHighlighter {
                 } else {
                     html.append(escapeHtml(word));
                 }
-                index = end;
-            } else if (source.charAt(index) == '$' && index + 1 < source.length()
-                    && isIdentifierStart(source.charAt(index + 1))) {
-                int end = identifierEnd(source, index + 1);
-                appendToken(html, "variable", source.substring(index, end));
                 index = end;
             } else {
                 html.append(escapeHtml(source.substring(index, index + 1)));
