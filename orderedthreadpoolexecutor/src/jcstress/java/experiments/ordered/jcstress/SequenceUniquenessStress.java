@@ -6,6 +6,7 @@ import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import org.openjdk.jcstress.annotations.Actor;
+import org.openjdk.jcstress.annotations.Arbiter;
 import org.openjdk.jcstress.annotations.Expect;
 import org.openjdk.jcstress.annotations.JCStressTest;
 import org.openjdk.jcstress.annotations.Outcome;
@@ -27,6 +28,11 @@ public class SequenceUniquenessStress {
     @Actor
     public void actor2(JJ_Result result) {
         result.r2 = executor.executeOrdered(() -> 2);
+    }
+
+    @Arbiter
+    public void cleanup() {
+        executor.close();
     }
 
     private static final class InlineExecutor extends AbstractExecutorService {
