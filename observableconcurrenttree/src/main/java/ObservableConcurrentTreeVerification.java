@@ -9,6 +9,7 @@ public final class ObservableConcurrentTreeVerification {
         verifyObserverSemantics();
         verifyBulkLoadValidation();
         verifySealedEvents();
+        verifyStreamApi();
         verifyJsonSerialization();
         verifyConcurrentAccess();
         System.out.println("ObservableConcurrentTree verification passed");
@@ -80,6 +81,43 @@ public final class ObservableConcurrentTreeVerification {
         require(tree.getParentId(1) == 2, "sealed move event");
         tree.apply(ObservableConcurrentTree.TreeEvent.remove(1));
         require(!tree.contains(1), "sealed remove event");
+    }
+
+    private static void verifyStreamApi() {
+        var tree = new ObservableConcurrentTree<Integer, String>(0, "root");
+        tree.add(0, 1, "one");
+        tree.add(0, 2, "two");
+        tree.add(1, 3, "three");
+
+        require(
+                tree.stream()
+                        .map(ObservableConcurrentTree.Entry::id)
+                        .toList()
+                        .equals(List.of(0, 1, 3, 2)),
+                "whole-tree stream order");
+
+        require(
+                tree.childrenStream(0)
+                        .map(ObservableConcurrentTree.Entry::id)
+                        .toList()
+                        .equals(List.of(1, 2)),
+                "children stream order");
+
+        require(
+                tree.subtreeStream(1)
+                        .map(ObservableConcurrentTree.Entry::id)
+                        .toList()
+                        .equals(List.of(1, 3)),
+                "subtree stream order");
+
+        var detached = tree.subtreeStream(1);
+        tree.add(1, 4, "four");
+
+        require(
+                detached.map(ObservableConcurrentTree.Entry::id)
+                        .toList()
+                        .equals(List.of(1, 3)),
+                "subtree stream detached from later writes");
     }
 
     private static void verifyJsonSerialization() throws Exception {

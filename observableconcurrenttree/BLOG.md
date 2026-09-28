@@ -281,6 +281,76 @@ List<K> removed = listeners.length == 0
 
 Root-subtree removal still has to produce the public list of removed ids, but it can clear the node index in one operation after collecting that list rather than deleting each map entry individually.
 
+## Snapshot-backed Stream API
+
+The public API now exposes three Stream entry points:
+
+```java
+public Stream<Entry<K, V>> stream()
+
+public Stream<Entry<K, V>> childrenStream(K nodeId)
+
+public Stream<Entry<K, V>> subtreeStream(K nodeId)
+```
+
+These methods deliberately stream **detached read views**, not the live mutable node graph.
+
+The whole-tree stream is created from a coherent snapshot:
+
+```java
+public Stream<Entry<K, V>> stream() {
+    return snapshot().entries().stream();
+}
+```
+
+That means the read lock is held only while the snapshot is built. The caller can then run an arbitrarily long lazy pipeline without blocking writers.
+
+```java
+var serverIds = tree.stream()
+        .filter(entry -> entry.id().startsWith("server-"))
+        .map(Entry::id)
+        .toList();
+```
+
+Direct children use the same principle through the immutable result of `getChildren`:
+
+```java
+public Stream<Entry<K, V>> childrenStream(K nodeId) {
+    return getChildren(nodeId).stream();
+}
+```
+
+For subtree processing, the subtree is materialized under the read lock and the stream is returned only after that lock is released:
+
+```java
+public Stream<Entry<K, V>> subtreeStream(K nodeId) {
+    Objects.requireNonNull(nodeId, "nodeId");
+    readLock.lock();
+    try {
+        var entries = new ArrayList<Entry<K, V>>();
+        appendDepthFirst(requireNode(nodeId), entries);
+        return entries.stream();
+    } finally {
+        readLock.unlock();
+    }
+}
+```
+
+The local list is not exposed anywhere else, so the returned stream has a stable source even though the tree can continue changing concurrently.
+
+For example:
+
+```java
+var dc1Servers = tree.subtreeStream("dc-1")
+        .filter(entry -> entry.id().startsWith("server-"))
+        .map(Entry::value)
+        .toList();
+```
+
+A stream represents the tree state at the moment the stream method is called. Mutations after stream creation are intentionally not reflected in that stream. This is the same consistency philosophy as `snapshot()`.
+
+The internal DFS, child traversal, and mutation hot paths remain imperative. Replacing those loops with Stream API would add abstraction and allocation overhead without improving their stateful algorithms. Streams are therefore used at the public query boundary, where composition is useful, rather than inside the optimized tree machinery.
+
 ## Records and sealed events
 
 The externally visible state carriers are now Java records rather than boilerplate classes.

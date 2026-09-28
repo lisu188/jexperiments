@@ -12,6 +12,7 @@ public final class ObservableConcurrentTreeExample {
         directMutationsAndReads();
         eventDrivenMutations();
         bulkStateLoading();
+        streamApiUsage();
         serializationRoundTrip();
         concurrentReadersAndWriters();
         observerFailureSemantics();
@@ -162,8 +163,42 @@ public final class ObservableConcurrentTreeExample {
         printSnapshot("loaded state", tree.snapshot());
     }
 
+    private static void streamApiUsage() {
+        section("5. Snapshot-backed Stream API");
+
+        var tree = new ObservableConcurrentTree<String, String>("root", "Infrastructure");
+        tree.add("root", "dc-1", "Datacenter 1");
+        tree.add("root", "dc-2", "Datacenter 2");
+        tree.add("dc-1", "server-1", "Server 1");
+        tree.add("dc-1", "server-2", "Server 2");
+        tree.add("dc-2", "server-3", "Server 3");
+
+        var serverIds = tree.stream()
+                .filter(entry -> entry.id().startsWith("server-"))
+                .map(ObservableConcurrentTree.Entry::id)
+                .toList();
+        System.out.println("all servers = " + serverIds);
+
+        var datacenterChildren = tree.childrenStream("root")
+                .map(ObservableConcurrentTree.Entry::id)
+                .toList();
+        System.out.println("root children = " + datacenterChildren);
+
+        var dc1Subtree = tree.subtreeStream("dc-1")
+                .map(ObservableConcurrentTree.Entry::id)
+                .toList();
+        System.out.println("dc-1 subtree = " + dc1Subtree);
+
+        var detachedStream = tree.subtreeStream("dc-2");
+        tree.add("dc-2", "server-4", "Added after stream creation");
+        var detachedIds = detachedStream
+                .map(ObservableConcurrentTree.Entry::id)
+                .toList();
+        System.out.println("stream is detached from later writes = " + detachedIds);
+    }
+
     private static void serializationRoundTrip() throws Exception {
-        section("5. JSON serialization and deserialization");
+        section("6. JSON serialization and deserialization");
 
         var tree = new ObservableConcurrentTree<String, String>("root", "JSON root");
         tree.add("root", "child", "JSON child");
@@ -189,7 +224,7 @@ public final class ObservableConcurrentTreeExample {
     }
 
     private static void concurrentReadersAndWriters() throws Exception {
-        section("6. Concurrent readers and writers");
+        section("7. Concurrent readers and writers");
 
         var tree =
                 new ObservableConcurrentTree<String, String>("root", "Concurrent root");
@@ -238,7 +273,7 @@ public final class ObservableConcurrentTreeExample {
     }
 
     private static void observerFailureSemantics() {
-        section("7. Observer failure happens after mutation commit");
+        section("8. Observer failure happens after mutation commit");
 
         var tree =
                 new ObservableConcurrentTree<String, String>("root", "Root");
@@ -259,7 +294,7 @@ public final class ObservableConcurrentTreeExample {
     }
 
     private static void validationFailures() {
-        section("8. Validation and rejected operations");
+        section("9. Validation and rejected operations");
 
         ObservableConcurrentTree<String, String> tree =
                 new ObservableConcurrentTree<>("root", "Root");
@@ -279,7 +314,7 @@ public final class ObservableConcurrentTreeExample {
     }
 
     private static void clearAndObserverRemoval() {
-        section("9. clear(), empty-state reads, and root subtree removal");
+        section("10. clear(), empty-state reads, and root subtree removal");
 
         ObservableConcurrentTree<String, String> tree =
                 new ObservableConcurrentTree<>("root", "Root");

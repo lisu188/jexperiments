@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Stream;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -523,6 +524,26 @@ public final class ObservableConcurrentTree<K, V> {
                 result.add(toEntry(child));
             }
             return Collections.unmodifiableList(result);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    public Stream<Entry<K, V>> stream() {
+        return snapshot().entries().stream();
+    }
+
+    public Stream<Entry<K, V>> childrenStream(K nodeId) {
+        return getChildren(nodeId).stream();
+    }
+
+    public Stream<Entry<K, V>> subtreeStream(K nodeId) {
+        Objects.requireNonNull(nodeId, "nodeId");
+        readLock.lock();
+        try {
+            var entries = new ArrayList<Entry<K, V>>();
+            appendDepthFirst(requireNode(nodeId), entries);
+            return entries.stream();
         } finally {
             readLock.unlock();
         }
