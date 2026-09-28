@@ -24,20 +24,65 @@ public class NeuroTrainingJmhBenchmark {
     @Param({"small", "medium"})
     public String topology;
 
-    private Neuro network;
+    private int[] shape;
+    private Neuro scalar;
+    private Neuro vector;
+    private Neuro miniBatch;
+    private Neuro parallelMiniBatch;
 
-    @Setup(Level.Iteration)
+    @Setup(Level.Invocation)
     public void setup() {
-        var shape = switch (topology) {
-            case "small" -> new int[]{32, 64, 32, 8};
-            case "medium" -> new int[]{128, 256, 128, 32};
-            default -> throw new IllegalArgumentException(topology);
-        };
-        network = NeuroBenchmark.preparedNetwork(shape);
+        shape = NeuroInferenceJmhBenchmark.shape(topology);
+        scalar = prepared(Neuro.Kernel.SCALAR);
+        vector = prepared(Neuro.Kernel.VECTOR);
+        miniBatch = prepared(Neuro.Kernel.VECTOR);
+        parallelMiniBatch = prepared(Neuro.Kernel.VECTOR);
     }
 
     @Benchmark
-    public double trainEpoch() {
-        return network.trainEpoch();
+    public double scalarTenEpochs() {
+        scalar.train(10);
+        return scalar.trainingError();
+    }
+
+    @Benchmark
+    public double vectorTenEpochs() {
+        vector.train(10);
+        return vector.trainingError();
+    }
+
+    @Benchmark
+    public double vectorMiniBatchTenEpochs() {
+        miniBatch.trainMiniBatch(10, 16);
+        return miniBatch.trainingError();
+    }
+
+    @Benchmark
+    public double parallelMiniBatchTenEpochs() {
+        parallelMiniBatch.trainMiniBatch(10, 16, 2);
+        return parallelMiniBatch.trainingError();
+    }
+
+    private Neuro prepared(Neuro.Kernel kernel) {
+        var network = new Neuro(
+                shape,
+                Neuro.HyperParameters.defaults()
+                        .withLearningRate(0.1)
+                        .withMomentum(0.1)
+                        .withSeed(1234)
+                        .withKernel(kernel));
+        var outputSize = shape[shape.length - 1];
+        for (int sample = 0; sample < 32; sample++) {
+            var input = new double[shape[0]];
+            var target = new double[outputSize];
+            for (int i = 0; i < input.length; i++) {
+                input[i] = ((sample + i) & 7) / 7.0;
+            }
+            for (int i = 0; i < target.length; i++) {
+                target[i] = ((sample + i) & 1);
+            }
+            network.addTrainingSample(input, target);
+        }
+        return network;
     }
 }
