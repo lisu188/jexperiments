@@ -26,6 +26,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            enableUnitTestCoverage = true
+        }
         release {
             isDebuggable = false
             isMinifyEnabled = true
@@ -33,6 +36,10 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
+    }
+
+    testCoverage {
+        jacocoVersion = "0.8.15"
     }
 }
 
