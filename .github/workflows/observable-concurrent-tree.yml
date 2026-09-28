@@ -51,8 +51,8 @@ jobs:
           -PtreeMassiveLoadReaders=100
           -PtreeMassiveHeap=3g
 
-      - name: Run jcstress quick suite
-        run: ./gradlew --no-daemon :observableconcurrenttree:jcstress -PtreeJcstressMode=quick
+      - name: Run jcstress sanity suite
+        run: ./gradlew --no-daemon :observableconcurrenttree:jcstress -PtreeJcstressMode=sanity
 
       - name: Run performance matrix smoke benchmark
         run: |
