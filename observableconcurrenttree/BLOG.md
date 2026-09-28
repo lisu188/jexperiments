@@ -511,14 +511,17 @@ When the final child is detached, the reference returns to `null`. Traversal hel
 
 ### Exact child capacity during bulk rebuild
 
-`loadState` now counts child relationships before allocating nodes. Nodes that will have children receive an `ArrayList` with the exact expected capacity:
+`loadState` now uses adaptive pre-sizing. A bounded sample first detects whether the incoming topology contains a genuinely wide parent. Only then does the rebuild pay for a full child-count pass; chain, balanced, and ordinary random topologies skip that extra work. When enabled, nodes receive an `ArrayList` with the exact expected capacity:
 
 ```java
-var childCounts = new HashMap<K, Integer>();
-for (var item : state) {
-    var parentId = item.parentId();
-    if (parentId != null) {
-        childCounts.merge(parentId, 1, Integer::sum);
+HashMap<K, Integer> childCounts = null;
+if (shouldPreSizeChildren(state)) {
+    childCounts = new HashMap<>();
+    for (var item : state) {
+        var parentId = item.parentId();
+        if (parentId != null) {
+            childCounts.merge(parentId, 1, Integer::sum);
+        }
     }
 }
 ```
@@ -526,11 +529,13 @@ for (var item : state) {
 Node construction then uses that count:
 
 ```java
-var expectedChildren = childCounts.getOrDefault(id, 0);
+var expectedChildren = childCounts == null
+        ? 0
+        : childCounts.getOrDefault(id, 0);
 new Node<>(id, item.value(), expectedChildren);
 ```
 
-This removes repeated backing-array growth for wide parents during state loading.
+This removes repeated backing-array growth for wide parents during state loading without imposing the counting pass on topologies where pre-sizing does not pay for itself.
 
 ### Single immutable-copy boundaries
 
