@@ -498,6 +498,14 @@ public final class Neuro {
         return new FloatModel(this);
     }
 
+    double[] backendWeights(int layer) {
+        return layers[layer].weights.clone();
+    }
+
+    double[] backendBiases(int layer) {
+        return layers[layer].biases.clone();
+    }
+
     public double trainEpoch() {
         requireTrainingSamples();
         return trainOnlineEpoch(trainingData(), true);
