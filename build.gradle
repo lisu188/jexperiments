@@ -256,6 +256,21 @@ project(':observableconcurrenttree') {
     }
 }
 
+project(':orderedthreadpoolexecutor') {
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(27)
+        }
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 27
+        options.compilerArgs += ['-Xlint:all', '-Werror']
+    }
+}
+
 project(':bcel') {
     dependencies {
         implementation 'org.apache.bcel:bcel:5.2'
