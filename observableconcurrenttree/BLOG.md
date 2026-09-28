@@ -12,7 +12,7 @@
 - event-driven mutation,
 - atomic full-state replacement,
 - snapshots and depth-first traversal,
-- Java serialization.
+- JSON persistence.
 
 The first reconstructed implementation deliberately favored obvious correctness. Every structural operation used a single `ReentrantReadWriteLock`, nodes referred to parents and children by id, children lived in a `LinkedHashSet`, every read rebuilt immutable `Entry` objects, traversals repeatedly looked nodes up in a `HashMap`, and even unobserved mutations allocated `Change` objects.
 
@@ -159,7 +159,7 @@ The original traversal copied every node's child ids to a temporary `ArrayList` 
 The optimized representation already has random-access children, so it pushes direct references in reverse index order:
 
 ```java
-private static <K extends Serializable, V extends Serializable> void pushChildrenReverse(
+private static <K, V> void pushChildrenReverse(
         Node<K, V> node,
         ArrayDeque<Node<K, V>> stack) {
     var children = node.children;
@@ -281,26 +281,102 @@ List<K> removed = listeners.length == 0
 
 Root-subtree removal still has to produce the public list of removed ids, but it can clear the node index in one operation after collecting that list rather than deleting each map entry individually.
 
-## Serialization
+## Records and sealed events
 
-The tree still supports the existing `toByteArray()` and `fromByteArray()` API and uses try-with-resources.
+The externally visible state carriers are now Java records rather than boilerplate classes.
 
 ```java
-try (var bytes = new ByteArrayOutputStream();
-     var out = new ObjectOutputStream(bytes)) {
-    out.writeObject(this);
-    out.flush();
-    return bytes.toByteArray();
+public record NodeState<K, V>(K id, K parentId, V value) {
+    public NodeState {
+        Objects.requireNonNull(id, "id");
+    }
+}
+
+public record Entry<K, V>(K id, K parentId, V value, List<K> children) {
+    public Entry {
+        Objects.requireNonNull(id, "id");
+        children = List.copyOf(children);
+    }
 }
 ```
 
-The structural read lock is held by the custom `writeObject` method so a serialized graph represents one coherent tree state.
+`Snapshot` and `Change` follow the same pattern. The compact constructors preserve the invariants that previously lived in private constructors while record components provide the canonical `id()`, `value()`, `entries()`, and similar accessors.
 
-Locks, observer arrays, and cached `Entry` instances are transient and are rebuilt lazily or during `readObject`.
+Events are a sealed algebraic data type instead of an enum plus one container with nullable fields.
 
-The optimized node representation changes Java's native serialized form. The outer tree and private node serialization version are therefore explicitly bumped to `2L`. Serialized bytes produced by the earlier reconstructed implementation should be treated as version 1 data and are intentionally rejected rather than being silently interpreted against a different object layout.
+```java
+public sealed interface TreeEvent<K, V> permits Add, Update, Move, Remove {
+    K nodeId();
+}
 
-This is one more reason Java native serialization should not be treated as a long-lived cross-version persistence format.
+public record Add<K, V>(K parentId, K nodeId, V value)
+        implements TreeEvent<K, V> {}
+
+public record Update<K, V>(K nodeId, V value)
+        implements TreeEvent<K, V> {}
+
+public record Move<K, V>(K nodeId, K parentId)
+        implements TreeEvent<K, V> {}
+
+public record Remove<K, V>(K nodeId)
+        implements TreeEvent<K, V> {}
+```
+
+Each event can now only contain fields valid for that operation. `apply` uses an exhaustive record-pattern switch, so adding another permitted event makes the compiler force the dispatch code to be updated.
+
+```java
+switch (event) {
+    case Add<K, V>(var parentId, var nodeId, var value) ->
+            add(parentId, nodeId, value);
+    case Update<K, V>(var nodeId, var value) ->
+            update(nodeId, value);
+    case Move<K, V>(var nodeId, var parentId) ->
+            move(nodeId, parentId);
+    case Remove<K, V>(var nodeId) ->
+            removeSubtree(nodeId);
+}
+```
+
+## Generic model without Serializable bounds
+
+The tree is now a normal generic data structure:
+
+```java
+public final class ObservableConcurrentTree<K, V>
+```
+
+Neither keys nor values need to implement `Serializable`. Persistence is no longer part of the generic type contract, so callers can store records, immutable domain objects, or other application types without inheriting a marker interface solely for the tree.
+
+This also removes Java native object serialization from the internal node graph. The in-memory representation is free to evolve without coupling persistence compatibility to private implementation fields.
+
+## JSON persistence
+
+Persistence is explicit JSON state built from the public `NodeState` records. The tree graph itself, locks, observer registrations, and cached `Entry` objects are not serialized.
+
+```java
+var json = tree.toJson();
+
+var restored = ObservableConcurrentTree.fromJson(
+        json,
+        String.class,
+        MyValue.class);
+```
+
+The serialized document contains the tree version and a depth-first list of node states. Deserialization rebuilds and validates a fresh graph before restoring the saved version.
+
+Jackson is used as the JSON codec. Convenience methods use a shared default `ObjectMapper`, while overloads accept a caller-supplied mapper for applications that need custom modules or configuration.
+
+```java
+public String toJson(ObjectMapper mapper) throws JsonProcessingException
+
+public static <K, V> ObservableConcurrentTree<K, V> fromJson(
+        ObjectMapper mapper,
+        String json,
+        Class<K> keyType,
+        Class<V> valueType)
+```
+
+The default API deliberately requires explicit key and value classes on deserialization. Jackson polymorphic default typing is not enabled, so the JSON format does not embed arbitrary runtime class metadata.
 
 ## Java 27 example code
 
@@ -330,7 +406,7 @@ None of those syntax changes is counted as a performance optimization. They are 
 - observer registration and removal,
 - observer failure after commit,
 - valid and invalid bulk state loading,
-- serialization/deserialization,
+- JSON serialization/deserialization,
 - lock reinitialization after deserialization,
 - concurrent readers and two concurrent writers using virtual threads.
 
@@ -385,7 +461,7 @@ The next useful optimization would be workload-driven rather than automatic:
 - measure deep-chain trees separately from wide trees,
 - quantify retained memory per node with JOL or a profiler,
 - add a move-heavy benchmark for very wide parents,
-- consider an explicit stable serialization proxy instead of Java native serialization,
+- consider an explicit stable JSON schema/versioning strategy instead of Java native serialization,
 - evaluate immutable/persistent snapshots when snapshot frequency dominates all other operations.
 
 Those changes should only be accepted with a benchmark demonstrating that the additional complexity pays for itself.
