@@ -110,8 +110,28 @@ kotlinBytecodeMainClasses.each { moduleName, mainClassName ->
 }
 
 project(':observableconcurrenttree') {
+    sourceSets {
+        jcstress {
+            java.srcDir 'src/jcstress/java'
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += output + compileClasspath
+        }
+    }
+
+    configurations {
+        jcstressImplementation.extendsFrom implementation
+        jcstressRuntimeOnly.extendsFrom runtimeOnly
+    }
+
     dependencies {
         implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
+
+        testImplementation platform('org.junit:junit-bom:6.1.2')
+        testImplementation 'org.junit.jupiter:junit-jupiter'
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+        jcstressImplementation 'org.openjdk.jcstress:jcstress-core:0.16'
+        jcstressAnnotationProcessor 'org.openjdk.jcstress:jcstress-core:0.16'
     }
 
     java {
@@ -147,6 +167,58 @@ project(':observableconcurrenttree') {
         javaLauncher = java27
     }
 
+    tasks.named('test') {
+        useJUnitPlatform {
+            excludeTags 'massive', 'soak'
+        }
+        javaLauncher = java27
+        maxHeapSize = '2g'
+        testLogging {
+            events 'failed'
+            exceptionFormat = 'full'
+        }
+    }
+
+    tasks.register('massiveTest', Test) {
+        group = 'verification'
+        description = 'Runs massive parallel ObservableConcurrentTree stress tests.'
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        javaLauncher = java27
+        maxHeapSize = providers.gradleProperty('treeMassiveHeap').orElse('3g').get()
+        useJUnitPlatform {
+            includeTags 'massive'
+        }
+        systemProperty 'tree.massive.addTasks',
+                providers.gradleProperty('treeMassiveAddTasks').orElse('100000').get()
+        systemProperty 'tree.massive.readerTasks',
+                providers.gradleProperty('treeMassiveReaderTasks').orElse('5000').get()
+        systemProperty 'tree.massive.writerTasks',
+                providers.gradleProperty('treeMassiveWriterTasks').orElse('500').get()
+        systemProperty 'tree.massive.opsPerWriter',
+                providers.gradleProperty('treeMassiveOpsPerWriter').orElse('40').get()
+        systemProperty 'tree.massive.loadReaders',
+                providers.gradleProperty('treeMassiveLoadReaders').orElse('250').get()
+    }
+
+    tasks.register('soakTest', Test) {
+        group = 'verification'
+        description = 'Runs long-running ObservableConcurrentTree soak tests.'
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        javaLauncher = java27
+        maxHeapSize = providers.gradleProperty('treeSoakHeap').orElse('4g').get()
+        useJUnitPlatform {
+            includeTags 'soak'
+        }
+        systemProperty 'tree.soak.seconds',
+                providers.gradleProperty('treeSoakSeconds').orElse('60').get()
+        systemProperty 'tree.soak.workers',
+                providers.gradleProperty('treeSoakWorkers').orElse('2000').get()
+        systemProperty 'tree.soak.initialNodes',
+                providers.gradleProperty('treeSoakInitialNodes').orElse('100000').get()
+    }
+
     tasks.register('benchmarkExperiment', JavaExec) {
         group = 'verification'
         description = 'Runs the ObservableConcurrentTree microbenchmark harness.'
@@ -156,8 +228,31 @@ project(':observableconcurrenttree') {
         jvmArgs = ['-Xms1g', '-Xmx1g']
     }
 
+    tasks.register('benchmarkMatrixExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs topology and operation performance matrix benchmarks.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'ObservableConcurrentTreePerformanceMatrix'
+        javaLauncher = java27
+        jvmArgs = ['-Xms2g', '-Xmx2g']
+        args providers.gradleProperty('treeBenchmarkNodes').orElse('100000').get(),
+                providers.gradleProperty('treeBenchmarkRepetitions').orElse('3').get()
+    }
+
+    tasks.register('jcstress', JavaExec) {
+        group = 'verification'
+        description = 'Runs jcstress Java Memory Model tests for ObservableConcurrentTree.'
+        dependsOn tasks.named('jcstressClasses')
+        classpath = sourceSets.jcstress.runtimeClasspath
+        mainClass = 'org.openjdk.jcstress.Main'
+        javaLauncher = java27
+        args '-m', providers.gradleProperty('treeJcstressMode').orElse('quick').get(),
+                '-t', 'experiments.observable.jcstress.*'
+    }
+
     tasks.named('check') {
         dependsOn tasks.named('verifyExperiment')
+        dependsOn tasks.named('test')
     }
 }
 

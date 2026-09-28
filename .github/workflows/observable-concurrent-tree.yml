@@ -35,8 +35,34 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
+      - name: Run unit, randomized and deterministic concurrency tests
+        run: ./gradlew --no-daemon :observableconcurrenttree:test
+
       - name: Verify optimized tree
         run: ./gradlew --no-daemon :observableconcurrenttree:verifyExperiment
+
+      - name: Run massive virtual-thread stress suite
+        run: >
+          ./gradlew --no-daemon :observableconcurrenttree:massiveTest
+          -PtreeMassiveAddTasks=30000
+          -PtreeMassiveReaderTasks=1500
+          -PtreeMassiveWriterTasks=200
+          -PtreeMassiveOpsPerWriter=25
+          -PtreeMassiveLoadReaders=100
+          -PtreeMassiveHeap=3g
+
+      - name: Run jcstress quick suite
+        run: ./gradlew --no-daemon :observableconcurrenttree:jcstress -PtreeJcstressMode=quick
+
+      - name: Run performance matrix smoke benchmark
+        run: |
+          ./gradlew --no-daemon :observableconcurrenttree:benchmarkMatrixExperiment             -PtreeBenchmarkNodes=20000             -PtreeBenchmarkRepetitions=2 | tee observable-tree-benchmark.txt
+
+      - name: Upload performance matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: observable-tree-performance
+          path: observable-tree-benchmark.txt
 
       - name: Run complete example
         run: ./gradlew --no-daemon :observableconcurrenttree:runExperiment
