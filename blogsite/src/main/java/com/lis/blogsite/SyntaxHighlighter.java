@@ -92,6 +92,11 @@ final class SyntaxHighlighter {
                 int end = numberEnd(source, index);
                 appendToken(html, "number", source.substring(index, end));
                 index = end;
+            } else if (!markTypes && source.charAt(index) == '$' && index + 1 < source.length()
+                    && isIdentifierStart(source.charAt(index + 1))) {
+                int end = identifierEnd(source, index + 1);
+                appendToken(html, "variable", source.substring(index, end));
+                index = end;
             } else if (isIdentifierStart(source.charAt(index))) {
                 int end = identifierEnd(source, index);
                 String word = source.substring(index, end);
@@ -104,11 +109,6 @@ final class SyntaxHighlighter {
                 } else {
                     html.append(escapeHtml(word));
                 }
-                index = end;
-            } else if (source.charAt(index) == '$' && index + 1 < source.length()
-                    && isIdentifierStart(source.charAt(index + 1))) {
-                int end = identifierEnd(source, index + 1);
-                appendToken(html, "variable", source.substring(index, end));
                 index = end;
             } else {
                 html.append(escapeHtml(source.substring(index, index + 1)));
