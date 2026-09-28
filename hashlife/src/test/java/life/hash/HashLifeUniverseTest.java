@@ -61,6 +61,37 @@ class HashLifeUniverseTest {
         assertNotNull(hashLife.nextGeneration());
     }
 
+
+    @Test
+    void nodeEdgeBranchesAndHashLifeCacheAreCovered() {
+        TreeNode root = TreeNode.create()
+                .setBit(-1, -1)
+                .setBit(1, -1)
+                .setBit(-1, 1)
+                .setBit(1, 1);
+        assertEquals(1, root.getBit(-1, -1));
+        assertEquals(1, root.getBit(1, -1));
+        assertEquals(1, root.getBit(-1, 1));
+        assertEquals(1, root.getBit(1, 1));
+
+        TreeNode canonical = CanonicalTreeNode.create();
+        TreeNode live = canonical.create(true);
+        TreeNode dead = canonical.create(false);
+        TreeNode parent = canonical.create(live, dead, dead, live);
+
+        assertEquals(1, live.hashCode());
+        assertEquals(0, dead.hashCode());
+        assertNotEquals(live, dead);
+        assertFalse(parent.equals(live));
+        assertTrue(parent.equals(parent));
+        assertNotEquals(0, parent.hashCode());
+
+        TreeNode hashLife = HashLifeTreeNode.create().setBit(0, 0);
+        TreeNode first = hashLife.nextGeneration();
+        TreeNode second = hashLife.nextGeneration();
+        assertSame(first, second);
+    }
+
     private static List<TreeUniverse> universes() {
         return List.of(
                 new TreeUniverse(),
