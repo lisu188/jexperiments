@@ -1,357 +1,467 @@
-# Observable Concurrent Trees with Snapshot Reads and Change Events
+# ObservableConcurrentTree: a Java 27 concurrent tree optimized for read-heavy workloads
 
 ## Why this experiment exists
 
-This experiment reconstructs an `ObservableConcurrentTree` abstraction from an older architecture note. The interesting combination is not any one feature in isolation. The class combines a mutable rooted tree, concurrent access, immutable read views, observer notifications, bulk state replacement, event application, subtree movement, and Java serialization in one small implementation.
+`ObservableConcurrentTree` is a mutable rooted tree that combines several concerns that are easy to implement separately and harder to keep coherent together:
 
-The design deliberately uses ordinary JDK concurrency primitives rather than a specialized concurrent collection. A `ReentrantReadWriteLock` protects structural state, while a `CopyOnWriteArrayList` stores observers. Mutations happen under the write lock, reads happen under the read lock, and notifications are emitted only after the structural lock has been released.
+- concurrent readers and writers,
+- stable insertion order for children,
+- subtree moves and removals,
+- immutable read views,
+- observers notified after a committed mutation,
+- event-driven mutation,
+- atomic full-state replacement,
+- snapshots and depth-first traversal,
+- JSON persistence.
 
-For experienced Java developers, the useful questions are about boundaries: what state is protected by the tree lock, what is copied before returning to callers, which behavior is atomic, and what happens when observer callbacks fail after a mutation has already committed.
+The first reconstructed implementation deliberately favored obvious correctness. Every structural operation used a single `ReentrantReadWriteLock`, nodes referred to parents and children by id, children lived in a `LinkedHashSet`, every read rebuilt immutable `Entry` objects, traversals repeatedly looked nodes up in a `HashMap`, and even unobserved mutations allocated `Change` objects.
 
-## Running the complete example
+That version was useful as a reference implementation, but those choices leave substantial performance on the table. This revision keeps the public behavior while changing the internal representation around the actual hot paths.
 
-The module includes `ObservableConcurrentTreeExample`, a runnable walkthrough of the complete public API. It can be launched with:
+The experiment now targets Java 27 and Gradle 9.8.0. Java 27 is the current Java SE feature release; Java 25 remains the current LTS release. Gradle 9.8 added official Java 27 runtime and toolchain support.
+
+## Running it
+
+The example program still demonstrates the full public surface:
 
 ```bash
 ./gradlew :observableconcurrenttree:runExperiment
 ```
 
-The example intentionally uses small string ids and values so the topology changes are easy to follow in console output. It covers both construction styles:
+Deterministic verification is wired into the module's `check` task and can also be run directly:
 
-```java
-ObservableConcurrentTree<String, String> emptyTree =
-        new ObservableConcurrentTree<String, String>();
-emptyTree.initialize("root", "Root");
-
-ObservableConcurrentTree<String, String> initializedTree =
-        new ObservableConcurrentTree<String, String>("root", "Root from constructor");
+```bash
+./gradlew :observableconcurrenttree:verifyExperiment
 ```
 
-It registers an observer, performs direct mutations, then removes the observer again:
+The exploratory benchmark harness is separate:
 
-```java
-ObservableConcurrentTree.Observer<String, String> observer =
-        change -> System.out.println(change.getType() + " " + change.getNodeId());
-
-tree.addObserver(observer);
-tree.add("root", "dc-1", "Datacenter 1");
-tree.update("dc-1", "Datacenter 1 updated");
-tree.removeObserver(observer);
+```bash
+./gradlew :observableconcurrenttree:benchmarkExperiment
 ```
 
-The runnable class exercises all read views as well: `contains`, `get`, `getRootId`, `getRoot`, `getParentId`, `getChildren`, `depthFirst`, `snapshot`, `getVersion`, `size`, and `isEmpty`.
+It accepts optional node-count and repetition arguments when invoked directly as a Java main class. It intentionally has no JMH dependency because this repository treats experiments as small self-contained probes. The results below should therefore be read as comparative engineering measurements, not publication-grade microbenchmark numbers.
 
-Event-driven usage is shown separately so it is clear that the event API is only another entrypoint into the same mutation logic:
+## Java 27 build policy
 
-```java
-tree.apply(ObservableConcurrentTree.TreeEvent.add("root", "parent", "Parent"));
-tree.apply(ObservableConcurrentTree.TreeEvent.add("parent", "child", "Child"));
-tree.apply(ObservableConcurrentTree.TreeEvent.update("child", "Updated"));
-tree.apply(ObservableConcurrentTree.TreeEvent.move("child", "root"));
-tree.apply(ObservableConcurrentTree.TreeEvent.remove("parent"));
-```
+Only this experiment is forced to Java 27. Historical modules retain their existing lower bytecode targets.
 
-The example also demonstrates atomic full-state loading:
+```groovy
+project(':observableconcurrenttree') {
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(27)
+        }
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
+    }
 
-```java
-tree.loadState(Arrays.asList(
-        new ObservableConcurrentTree.NodeState<String, String>("root", null, "Root"),
-        new ObservableConcurrentTree.NodeState<String, String>("a", "root", "A"),
-        new ObservableConcurrentTree.NodeState<String, String>("leaf", "a", "Leaf")));
-```
-
-Serialization is exercised as an actual round-trip:
-
-```java
-byte[] bytes = tree.toByteArray();
-ObservableConcurrentTree<String, String> restored =
-        ObservableConcurrentTree.fromByteArray(bytes);
-```
-
-Finally, the program deliberately attempts representative invalid operations: duplicate ids, missing parents, moving the root, self-parenting, introducing a cycle, initializing twice, and loading multiple roots. Those examples document the class's rejection behavior alongside the successful paths rather than leaving validation semantics implicit.
-
-The runnable example also includes real concurrent access. Two writer tasks add distinct nodes while two reader tasks repeatedly call `contains`, `getRoot`, `snapshot`, and `depthFirst` from a shared executor. The final size and observer count are checked through the normal API, demonstrating that callers do not need external synchronization around these operations.
-
-It also demonstrates the observer failure contract explicitly:
-
-```java
-tree.addObserver(change -> {
-    throw new IllegalStateException("observer failed intentionally");
-});
-
-try {
-    tree.add("root", "committed", "value");
-} catch (IllegalStateException expected) {
-    System.out.println(tree.contains("committed")); // true
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 27
+        options.compilerArgs += ['-Xlint:all', '-Werror']
+    }
 }
 ```
 
-The node remains present because notification happens after the structural mutation commits and after the write lock is released. The example also shows that moving a node to its current parent is a no-op and does not advance the version.
+The explicit toolchain keeps the runtime choice local to this module. `-Xlint:all -Werror` turns compiler warnings into build failures so serialization, raw-type, and other accidental regressions do not silently accumulate.
 
-## Data model
+The Gradle wrapper is 9.8.0 because earlier wrapper versions did not officially support running on Java 27.
 
-The tree is generic in both node id and value:
+## Core representation: ids at the boundary, object references inside
 
-```java
-public final class ObservableConcurrentTree<K extends Serializable, V extends Serializable>
-        implements Serializable {
-```
+The most important change is the internal graph.
 
-Both generic types are required to be `Serializable` because the tree supports round-trip Java object serialization. Internally, nodes are mutable and never exposed directly:
+The original representation stored a parent id and child ids:
 
 ```java
-private static final class Node<K extends Serializable, V extends Serializable> implements Serializable {
-    private final K id;
-    private K parentId;
-    private V value;
-    private final LinkedHashSet<K> children;
-}
+private K parentId;
+private final LinkedHashSet<K> children;
 ```
 
-The `LinkedHashSet` prevents duplicate child ids while preserving insertion order. Externally, callers receive immutable `Entry` snapshots instead of references to internal nodes. This separation is important because returning the internal child set would let callers mutate the structure without acquiring the tree lock.
+That is convenient for serialization and debugging, but every traversal step requires another map lookup. A DFS over `n` nodes performs repeated hashing even though the tree already knows the exact adjacent nodes.
 
-The central state is intentionally small:
+The optimized node stores direct references:
 
 ```java
-private final Map<K, Node<K, V>> nodes = new HashMap<K, Node<K, V>>();
-private K rootId;
-private long version;
-private transient ReentrantReadWriteLock lock;
-private transient CopyOnWriteArrayList<Observer<K, V>> observers;
+private final K id;
+private Node<K, V> parent;
+private V value;
+private final ArrayList<Node<K, V>> children = new ArrayList<>();
 ```
 
-`nodes`, `rootId`, and `version` are serialized. The lock and observer list are transient because neither represents persistent tree data.
+The public API still speaks in ids. Internally, topology navigation is pointer chasing rather than map lookup.
 
-## Concurrency model
+The `HashMap<K, Node<K,V>>` remains because point lookup by id is still a primary operation. The map is now an index over the graph rather than the graph itself.
 
-Every structural mutation acquires the write lock. `add`, for example, validates both ids, resolves the parent, links the new node into the parent, increments the version, and builds the corresponding change event while the write lock is still held.
+## Why ArrayList replaced LinkedHashSet
 
-```java
-lock.writeLock().lock();
-try {
-    Node<K, V> parent = nodes.get(parentId);
-    Node<K, V> node = new Node<K, V>(nodeId, parentId, value);
-    nodes.put(nodeId, node);
-    parent.children.add(nodeId);
-    long newVersion = ++version;
-} finally {
-    lock.writeLock().unlock();
-}
-```
-
-Read operations use the read lock. Multiple readers can therefore proceed concurrently while still seeing a structurally consistent state.
-
-```java
-lock.readLock().lock();
-try {
-    Node<K, V> node = nodes.get(nodeId);
-    return node == null ? null : toEntry(node);
-} finally {
-    lock.readLock().unlock();
-}
-```
-
-The returned `Entry` copies the child ids into a new list and wraps the copy with `Collections.unmodifiableList`. A caller never observes the mutable set stored inside a node.
-
-The class does not attempt lock-free updates. Its goal is a clear consistency model for a tree whose updates may touch multiple objects at once. Moving one node requires changing the old parent, the new parent, and the node's own parent id. A single write lock makes that compound mutation atomic relative to other tree operations.
-
-## Observable mutations
-
-Observers implement one callback:
-
-```java
-public interface Observer<K extends Serializable, V extends Serializable> {
-    void onChange(Change<K, V> change);
-}
-```
-
-Each mutation creates a `Change` containing a type, version, affected node, old and new parents, old and new values, and a list of affected node ids where appropriate.
-
-The observer collection is a `CopyOnWriteArrayList`:
-
-```java
-private transient CopyOnWriteArrayList<Observer<K, V>> observers;
-```
-
-That choice favors cheap, stable iteration during notifications over cheap listener registration. It fits a common observer workload where subscriptions are relatively rare and events are more frequent.
-
-Notifications happen after the tree lock is released:
-
-```java
-notifyObservers(change);
-```
-
-This avoids invoking arbitrary user code while holding the structural lock. An observer is therefore free to call back into read methods without deadlocking on the same mutation boundary.
-
-There is an important semantic consequence. The mutation has already committed before observer callbacks run. If an observer throws, `notifyObservers` records the first runtime failure, continues notifying the remaining observers, and rethrows the first failure afterward. Callers must not interpret an observer exception as a transaction rollback.
-
-## Adding, updating, moving, and removing
-
-Adding a node requires an existing parent and a previously unused id:
+A tree invariant already guarantees that each node has exactly one parent. The implementation also rejects duplicate node ids globally before a node is linked. Under those constraints, a per-parent `Set` is doing duplicate-detection work that the global map has already done.
 
 ```java
 if (nodes.containsKey(nodeId)) {
     throw new IllegalArgumentException("Node already exists: " + nodeId);
 }
-Node<K, V> parent = nodes.get(parentId);
-if (parent == null) {
-    throw new IllegalArgumentException("Parent does not exist: " + parentId);
+```
+
+An `ArrayList<Node<K,V>>` gives a substantially denser child representation, cheap append, cache-friendly indexed reverse traversal, and no hash-table allocation for every non-leaf node.
+
+There is a trade-off: removing or moving one child from a very wide parent is linear in that parent's child count rather than expected constant time. The workload measured here is read-heavy and traversal-heavy, so the memory locality and traversal savings dominate. A workload dominated by random moves among parents with millions of direct children would deserve a different representation.
+
+## Cached immutable Entry objects
+
+The public `Entry` view is immutable. That makes it safe to cache.
+
+```java
+private transient volatile Entry<K, V> entry;
+```
+
+A node's external representation changes only when one of three things happens:
+
+- its value changes,
+- its parent changes,
+- its direct child list changes.
+
+Writers invalidate the affected cache entries while holding the write lock.
+
+```java
+node.value = value;
+node.entry = null;
+```
+
+A move invalidates the moved node plus both parents:
+
+```java
+oldParent.children.remove(node);
+oldParent.entry = null;
+newParent.children.add(node);
+newParent.entry = null;
+node.parent = newParent;
+node.entry = null;
+```
+
+Reads reuse the cached object:
+
+```java
+var cached = node.entry;
+if (cached != null) {
+    return cached;
 }
 ```
 
-Updating replaces only the stored value. The node's topology does not change, but the version still advances and observers receive an `UPDATED` event.
+The first read after a relevant mutation constructs the immutable child-id list and `Entry`; subsequent reads, snapshots, and traversals reuse it.
 
-Moving a subtree has stricter invariants. The root cannot be moved, a node cannot become its own parent, and the proposed parent cannot be below the node being moved.
+This removes the largest allocation source in the original `snapshot()` and `depthFirst()` paths.
 
-```java
-if (node.parentId == null) {
-    throw new IllegalArgumentException("Root node cannot be moved");
-}
-if (nodeId.equals(newParentId)) {
-    throw new IllegalArgumentException("Node cannot be its own parent");
-}
-ensureNotDescendant(nodeId, newParentId);
-```
+## Traversal without per-node temporary lists
 
-Cycle rejection walks upward from the candidate parent through parent links until it reaches the root. If the node being moved appears on that path, the move would introduce a cycle and is rejected.
+The original traversal copied every node's child ids to a temporary `ArrayList` before pushing them onto the stack in reverse order.
 
-Removing a node removes its complete subtree. The implementation first performs an iterative depth-first collection of ids, unlinks the subtree root from its parent, and then removes every collected node from the index.
+The optimized representation already has random-access children, so it pushes direct references in reverse index order:
 
 ```java
-removed = collectSubtreeIds(nodeId);
-for (K id : removed) {
-    nodes.remove(id);
+private static <K, V> void pushChildrenReverse(
+        Node<K, V> node,
+        ArrayDeque<Node<K, V>> stack) {
+    var children = node.children;
+    for (int i = children.size() - 1; i >= 0; i--) {
+        stack.push(children.get(i));
+    }
 }
 ```
 
-Using an iterative traversal avoids consuming the Java call stack for deep trees.
+Insertion order therefore remains observable while traversal avoids one temporary collection per visited node.
 
-## Bulk state loading
+The same helper is shared by DFS, snapshots, subtree-id collection, subtree removal, and reachability validation.
 
-`loadState` accepts flat `NodeState` records containing `id`, `parentId`, and `value`. Rebuilding happens before the live tree acquires its write lock.
+## Lock-free scalar reads
+
+`rootId`, `version`, and `size` are maintained as volatile scalar state:
 
 ```java
-RebuiltTree<K, V> rebuilt = rebuild(state);
+private volatile K rootId;
+private volatile long version;
+private volatile int size;
 ```
 
-The rebuild validates the complete candidate state first. It rejects duplicate ids, multiple roots, missing roots, self-parenting nodes, missing parents, cycles, and disconnected components.
-
-Only after the candidate has passed validation does the method acquire the write lock and replace the live state:
+Those values are committed under the tree's write lock, but reading a single scalar does not require acquiring the read lock.
 
 ```java
-nodes.clear();
-nodes.putAll(rebuilt.nodes);
-rootId = rebuilt.rootId;
-long newVersion = ++version;
-```
+public K getRootId() {
+    return rootId;
+}
 
-This makes replacement atomic from the perspective of concurrent tree readers. They see either the previous state or the fully rebuilt new state, not a partially assembled tree.
+public long getVersion() {
+    return version;
+}
 
-Validation outside the lock also reduces write-lock hold time for large imports. The trade-off is temporary memory usage because the old tree and rebuilt tree coexist until the swap completes.
-
-## Event application
-
-The nested `TreeEvent` type is a small command representation for four mutations:
-
-```java
-public enum EventType {
-    ADD,
-    UPDATE,
-    MOVE,
-    REMOVE
+public int size() {
+    return size;
 }
 ```
 
-Factory methods construct valid event shapes, and `apply` routes each event to the normal public mutation method.
+This is deliberately narrow. Operations that dereference the mutable node graph still acquire the read lock. The implementation does not pretend a `HashMap` or `ArrayList` is safe for lock-free structural reads.
+
+This distinction accounts for the large scalar-read benchmark improvement without weakening tree consistency.
+
+## One structural lock, cached Lock handles
+
+A single `ReentrantReadWriteLock` still guards graph consistency.
 
 ```java
-switch (event.getType()) {
-    case ADD:
-        add(event.getParentId(), event.getNodeId(), event.getValue());
-        return;
-    case UPDATE:
-        update(event.getNodeId(), event.getValue());
-        return;
-    case MOVE:
-        move(event.getNodeId(), event.getParentId());
-        return;
-    case REMOVE:
-        removeSubtree(event.getNodeId());
-        return;
+private transient ReentrantReadWriteLock treeLock;
+private transient Lock readLock;
+private transient Lock writeLock;
+```
+
+The read and write lock handles are cached during initialization rather than repeatedly obtained from the enclosing lock object.
+
+A more complicated design could use a `StampedLock`, striped locks, or per-node locking. Those alternatives can improve particular workloads, but they make atomic subtree moves, state replacement, observer semantics, and serialization materially harder to reason about. This version optimizes representation and allocation first, where the measured gains are larger and the consistency model remains straightforward.
+
+## Observers: copy-on-write without CopyOnWriteArrayList overhead
+
+Observer registration is expected to be rare compared with mutations. Notification must iterate a stable listener set without holding the tree lock.
+
+The implementation therefore stores a volatile array:
+
+```java
+private transient volatile Observer<K, V>[] observers;
+```
+
+Registration and removal synchronize only on a dedicated observer mutex and publish a new array. Mutation paths capture the current array while holding the tree write lock.
+
+Most importantly, an unobserved mutation no longer allocates a `Change` object:
+
+```java
+listeners = observers;
+if (listeners.length != 0) {
+    change = new Change<>(...);
 }
 ```
 
-The event layer therefore does not bypass validation, versioning, locking, or observer delivery. There is one mutation path rather than a separate implementation for event-driven updates.
+Notification still occurs after the structural lock is released. If an observer throws, the mutation remains committed, all remaining observers are still called, and the first runtime failure is rethrown afterward.
 
-## Snapshots and traversal
+This preserves the original post-commit observer contract while reducing the common no-observer mutation path.
 
-`depthFirst` returns an immutable list of copied `Entry` objects in depth-first order. Children are pushed onto an explicit stack in reverse order so iteration preserves the insertion ordering held by each `LinkedHashSet`.
+## Atomic state replacement
 
-`snapshot` captures the same traversal plus the root id and current version:
+Bulk loading builds an entirely new graph before touching live state.
 
 ```java
-return new Snapshot<K, V>(rootId, version, entries);
+var rebuilt = rebuild(state);
 ```
 
-Because the complete snapshot is constructed while holding the read lock, the entries and version refer to one consistent structural state. Once returned, the snapshot is detached from future tree changes.
-
-This is useful when a consumer needs to perform expensive processing without holding a tree lock. It can take a snapshot quickly and work from the immutable copy afterward.
-
-## Serialization behavior
-
-The tree can serialize itself to a byte array using normal Java object serialization:
+The rebuild pre-sizes its map:
 
 ```java
-ObjectOutputStream out = new ObjectOutputStream(bytes);
-out.writeObject(this);
+var rebuilt = HashMap.<K, Node<K, V>>newHashMap(state.size());
 ```
 
-The custom `writeObject` acquires the read lock around `defaultWriteObject` so serialization cannot race with a structural mutation.
+It validates duplicate ids, roots, missing parents, self-parenting, and disconnected/cyclic topology. Because every non-root node has exactly one parent, any cycle must be disconnected from the unique root. Counting nodes reachable from the root is therefore sufficient to reject cycles and disconnected components without allocating a separate visited `HashSet`.
+
+Once validation succeeds, the write-side commit is a reference swap:
 
 ```java
-lock.readLock().lock();
-try {
-    out.defaultWriteObject();
-} finally {
-    lock.readLock().unlock();
+nodes = rebuilt.nodes();
+rootId = root == null ? null : root.id;
+size = nodes.size();
+var newVersion = ++version;
+```
+
+Readers see either the old graph or the new graph while holding the structural lock. The write-lock hold time no longer includes rebuilding or copying every new node into the live map.
+
+## Fast clear and root removal
+
+`clear()` is now O(1) when there are no observers. The only reason to traverse the old graph during clear is to populate `affectedNodeIds` for a `Change` event.
+
+```java
+List<K> removed = listeners.length == 0
+        ? List.of()
+        : collectSubtreeIds(nodes.get(oldRootId));
+```
+
+Root-subtree removal still has to produce the public list of removed ids, but it can clear the node index in one operation after collecting that list rather than deleting each map entry individually.
+
+## Records and sealed events
+
+The externally visible state carriers are now Java records rather than boilerplate classes.
+
+```java
+public record NodeState<K, V>(K id, K parentId, V value) {
+    public NodeState {
+        Objects.requireNonNull(id, "id");
+    }
+}
+
+public record Entry<K, V>(K id, K parentId, V value, List<K> children) {
+    public Entry {
+        Objects.requireNonNull(id, "id");
+        children = List.copyOf(children);
+    }
 }
 ```
 
-On deserialization, `readObject` recreates transient concurrency state:
+`Snapshot` and `Change` follow the same pattern. The compact constructors preserve the invariants that previously lived in private constructors while record components provide the canonical `id()`, `value()`, `entries()`, and similar accessors.
+
+Events are a sealed algebraic data type instead of an enum plus one container with nullable fields.
 
 ```java
-in.defaultReadObject();
-initializeTransients();
+public sealed interface TreeEvent<K, V> permits Add, Update, Move, Remove {
+    K nodeId();
+}
+
+public record Add<K, V>(K parentId, K nodeId, V value)
+        implements TreeEvent<K, V> {}
+
+public record Update<K, V>(K nodeId, V value)
+        implements TreeEvent<K, V> {}
+
+public record Move<K, V>(K nodeId, K parentId)
+        implements TreeEvent<K, V> {}
+
+public record Remove<K, V>(K nodeId)
+        implements TreeEvent<K, V> {}
 ```
 
-Observers are intentionally not serialized. A restored tree starts with a fresh empty observer list. That avoids serializing callback object graphs and makes observer registration a runtime concern rather than persisted state.
+Each event can now only contain fields valid for that operation. `apply` uses an exhaustive record-pattern switch, so adding another permitted event makes the compiler force the dispatch code to be updated.
 
-## Version semantics
+```java
+switch (event) {
+    case Add<K, V>(var parentId, var nodeId, var value) ->
+            add(parentId, nodeId, value);
+    case Update<K, V>(var nodeId, var value) ->
+            update(nodeId, value);
+    case Move<K, V>(var nodeId, var parentId) ->
+            move(nodeId, parentId);
+    case Remove<K, V>(var nodeId) ->
+            removeSubtree(nodeId);
+}
+```
 
-`version` increments once for every successful state-changing operation: initialization, add, update, move, subtree removal, clear, and state load.
+## Generic model without Serializable bounds
 
-A no-op move to the node's current parent returns without incrementing the version or notifying observers. Calling `clear` on an already empty tree behaves the same way.
+The tree is now a normal generic data structure:
 
-The version is not a globally unique revision id. It is a monotonic counter inside one serialized tree lineage. A deserialized instance continues with the serialized counter value.
+```java
+public final class ObservableConcurrentTree<K, V>
+```
 
-## Runtime behavior and caveats
+Neither keys nor values need to implement `Serializable`. Persistence is no longer part of the generic type contract, so callers can store records, immutable domain objects, or other application types without inheriting a marker interface solely for the tree.
 
-This module is a library-style experiment and has no external I/O, networking, persistence service, or background executor. The class is safe to instantiate and exercise in-process.
+This also removes Java native object serialization from the internal node graph. The in-memory representation is free to evolve without coupling persistence compatibility to private implementation fields.
 
-The strongest guarantee is structural consistency for operations performed through this class. It does not make the objects stored as keys or values thread-safe. Mutable `K` instances are especially dangerous because changing fields that participate in `equals` or `hashCode` after insertion can corrupt normal `HashMap` lookup behavior.
+## JSON persistence
 
-Observer callbacks are synchronous with the calling thread after the tree mutation is unlocked. A slow observer therefore increases mutation latency even though it does not hold the tree lock. If observers require isolation, a future experiment could publish changes through an executor or `Flow.Publisher` instead.
+Persistence is explicit JSON state built from the public `NodeState` records. The tree graph itself, locks, observer registrations, and cached `Entry` objects are not serialized.
 
-Observer failures are also post-commit failures. If a callback throws, the mutation remains visible. Production code would normally document this explicitly or separate mutation results from notification delivery errors.
+```java
+var json = tree.toJson();
 
-Java native serialization is included because the reconstructed design called for serializable state, not because native serialization is recommended as a long-term wire format. A production system would normally use an explicit versioned format.
+var restored = ObservableConcurrentTree.fromJson(
+        json,
+        String.class,
+        MyValue.class);
+```
 
-Finally, this implementation has one global read-write lock. That keeps invariants simple but means unrelated branches cannot be mutated concurrently. A higher-throughput variant could explore immutable persistent nodes, striped locks, copy-on-write roots, or transactional path locking.
+The serialized document contains the tree version and a depth-first list of node states. Deserialization rebuilds and validates a fresh graph before restoring the saved version.
 
-## Suggested next experiments
+Jackson is used as the JSON codec. Convenience methods use a shared default `ObjectMapper`, while overloads accept a caller-supplied mapper for applications that need custom modules or configuration.
 
-Add deterministic multithreaded tests that coordinate readers and writers with barriers rather than sleeps. Measure how the global write lock behaves for wide trees and deeply nested trees. Compare `CopyOnWriteArrayList` observers with an asynchronous event queue. Add optimistic reads using `StampedLock` and determine whether the added complexity improves real read-heavy workloads.
+```java
+public String toJson(ObjectMapper mapper) throws JsonProcessingException
 
-Another useful extension is conditional mutation by expected version. A method such as `updateIfVersion` could provide a small optimistic-concurrency primitive for clients that build a change from a prior snapshot.
+public static <K, V> ObservableConcurrentTree<K, V> fromJson(
+        ObjectMapper mapper,
+        String json,
+        Class<K> keyType,
+        Class<V> valueType)
+```
 
-A final direction would replace Java serialization with a stable tree snapshot format and test schema migration. That would separate persisted topology from implementation details such as internal node classes and collection choices.
+The default API deliberately requires explicit key and value classes on deserialization. Jackson polymorphic default typing is not enabled, so the JSON format does not embed arbitrary runtime class metadata.
+
+## Java 27 example code
+
+The concurrency example now uses virtual threads:
+
+```java
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    futures.add(executor.submit(() -> {
+        await(start);
+        for (int i = 0; i < 5; i++) {
+            tree.add("root", "writer-" + writerId + "-node-" + i, "value-" + writerId + "-" + i);
+        }
+    }));
+}
+```
+
+The code also uses modern type inference, lambdas, method references, switch expressions/statements with arrow labels, pattern matching for `instanceof`, `List.of`, `@Serial`, and `Objects.requireNonNull`.
+
+None of those syntax changes is counted as a performance optimization. They are separate from the representation and allocation changes.
+
+## Verification
+
+`ObservableConcurrentTreeVerification` is dependency-free and runs as part of this module's Gradle `check` task. It covers:
+
+- add, update, move, no-op move, subtree removal,
+- parent, snapshot, and DFS correctness,
+- observer registration and removal,
+- observer failure after commit,
+- valid and invalid bulk state loading,
+- JSON serialization/deserialization,
+- lock reinitialization after deserialization,
+- concurrent readers and two concurrent writers using virtual threads.
+
+This is intentionally separate from the human-readable example program.
+
+## Exploratory benchmark results
+
+The benchmark below compares the implementation that was on `main` before this optimization with the final optimized implementation.
+
+Environment for these numbers:
+
+- OpenJDK 21.0.11,
+- Linux container,
+- `-Xms1g -Xmx1g`,
+- 25,000 direct children under one root,
+- two warm-up passes per process,
+- five measured process runs,
+- median reported,
+- identical `TreeBench` workload for baseline and optimized code.
+
+These are comparative local measurements, not JMH results and not Java 27 numbers.
+
+| Operation | Baseline median | Optimized median | Speedup |
+| --- | ---: | ---: | ---: |
+| build 25k nodes | 3.716 ms | 2.718 ms | 1.37× |
+| 5M scalar read loops | 91.555 ms | 4.299 ms | 21.30× |
+| 40 × getChildren(root) | 26.472 ms | 4.318 ms | 6.13× |
+| 40 × depthFirst() | 42.989 ms | 10.177 ms | 4.22× |
+| 40 × snapshot() | 46.085 ms | 10.299 ms | 4.47× |
+| 20 × loadState(25k) | 56.471 ms | 21.569 ms | 2.62× |
+| build + remove root subtree | 5.575 ms | 4.092 ms | 1.36× |
+
+The largest scalar gain comes from removing lock acquisition from `size()`, `getVersion()`, and `getRootId()`. The largest collection-read gains come from cached immutable entries, direct node references, and eliminating temporary per-node child-list copies.
+
+A separate observed-mutation probe with one observer also improved rather than regressed, because listener snapshotting is a volatile array read and observer registration is off the mutation hot path.
+
+## What this optimization does not claim
+
+It does not make arbitrary user-supplied keys or values thread-safe. Mutable keys remain unsafe because mutating fields involved in `equals` or `hashCode` after insertion breaks any normal hash-based index.
+
+It does not make a multi-call read transaction atomic. For example, calling `size()` and then `snapshot()` can observe different committed versions if a writer runs between those calls. Use one `Snapshot` when a coherent compound read is required.
+
+It does not guarantee superior performance for every topology. An `ArrayList` is intentionally chosen for compact ordered children. Extremely wide parents with move-heavy workloads may prefer a linked/indexed structure despite its higher memory cost.
+
+It does not replace JMH. The included benchmark is a reproducible experiment harness that makes large regressions visible and supports quick iteration without external dependencies.
+
+## Further experiments
+
+The next useful optimization would be workload-driven rather than automatic:
+
+- compare `ReentrantReadWriteLock` with `StampedLock` under controlled read/write ratios,
+- measure deep-chain trees separately from wide trees,
+- quantify retained memory per node with JOL or a profiler,
+- add a move-heavy benchmark for very wide parents,
+- consider an explicit stable JSON schema/versioning strategy instead of Java native serialization,
+- evaluate immutable/persistent snapshots when snapshot frequency dominates all other operations.
+
+Those changes should only be accepted with a benchmark demonstrating that the additional complexity pays for itself.

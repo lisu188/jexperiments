@@ -110,11 +110,54 @@ kotlinBytecodeMainClasses.each { moduleName, mainClassName ->
 }
 
 project(':observableconcurrenttree') {
+    dependencies {
+        implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
+    }
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(27)
+        }
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 27
+        options.compilerArgs += ['-Xlint:all', '-Werror']
+    }
+
+    def java27 = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
+
     tasks.register('runExperiment', JavaExec) {
         group = 'application'
         description = 'Runs the ObservableConcurrentTree usage examples.'
         classpath = sourceSets.main.runtimeClasspath
         mainClass = 'ObservableConcurrentTreeExample'
+        javaLauncher = java27
+    }
+
+    tasks.register('verifyExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs deterministic ObservableConcurrentTree verification.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'ObservableConcurrentTreeVerification'
+        javaLauncher = java27
+    }
+
+    tasks.register('benchmarkExperiment', JavaExec) {
+        group = 'verification'
+        description = 'Runs the ObservableConcurrentTree microbenchmark harness.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'ObservableConcurrentTreeBenchmark'
+        javaLauncher = java27
+        jvmArgs = ['-Xms1g', '-Xmx1g']
+    }
+
+    tasks.named('check') {
+        dependsOn tasks.named('verifyExperiment')
     }
 }
 

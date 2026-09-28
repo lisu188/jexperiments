@@ -41,8 +41,18 @@ The Gradle build currently includes more than twenty independent modules; see `s
 
 ## Build
 
+The repository uses Gradle 9.8.0. A full build now requires JDK 27 because the `observableconcurrenttree` experiment intentionally targets the latest Java release; older historical modules keep their original lower bytecode targets.
+
 ```bash
 ./gradlew build
+```
+
+For the optimized tree experiment specifically:
+
+```bash
+./gradlew :observableconcurrenttree:runExperiment
+./gradlew :observableconcurrenttree:verifyExperiment
+./gradlew :observableconcurrenttree:benchmarkExperiment
 ```
 
 Several Kotlin/JVM bytecode-focused modules expose a `runExperiment` task. For example:
