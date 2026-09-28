@@ -8,7 +8,8 @@ public final class ObservableConcurrentTreeVerification {
         verifyCoreOperations();
         verifyObserverSemantics();
         verifyBulkLoadValidation();
-        verifySerialization();
+        verifySealedEvents();
+        verifyJsonSerialization();
         verifyConcurrentAccess();
         System.out.println("ObservableConcurrentTree verification passed");
     }
@@ -26,8 +27,8 @@ public final class ObservableConcurrentTreeVerification {
         tree.move(3, 2);
         require(tree.getVersion() == version, "same-parent move must be a no-op");
         tree.update(3, "THREE");
-        require("THREE".equals(tree.get(3).getValue()), "update");
-        require(tree.snapshot().getEntries().size() == 4, "snapshot size");
+        require("THREE".equals(tree.get(3).value()), "update");
+        require(tree.snapshot().entries().size() == 4, "snapshot size");
         require(tree.depthFirst().size() == 4, "dfs size");
         require(tree.removeSubtree(2).equals(List.of(2, 3)), "subtree removal order");
         require(tree.size() == 2, "size after removal");
@@ -70,14 +71,33 @@ public final class ObservableConcurrentTreeVerification {
                 new ObservableConcurrentTree.NodeState<>(2, 1, 2))));
     }
 
-    private static void verifySerialization() throws Exception {
+    private static void verifySealedEvents() {
+        var tree = new ObservableConcurrentTree<Integer, String>(0, "root");
+        tree.apply(ObservableConcurrentTree.TreeEvent.add(0, 1, "one"));
+        tree.apply(ObservableConcurrentTree.TreeEvent.update(1, "ONE"));
+        tree.apply(ObservableConcurrentTree.TreeEvent.add(0, 2, "two"));
+        tree.apply(ObservableConcurrentTree.TreeEvent.move(1, 2));
+        require(tree.getParentId(1) == 2, "sealed move event");
+        tree.apply(ObservableConcurrentTree.TreeEvent.remove(1));
+        require(!tree.contains(1), "sealed remove event");
+    }
+
+    private static void verifyJsonSerialization() throws Exception {
         var tree = new ObservableConcurrentTree<Integer, String>(0, "root");
         tree.add(0, 1, "one");
-        var restored = ObservableConcurrentTree.<Integer, String>fromByteArray(tree.toByteArray());
-        require(restored.size() == 2, "serialized size");
-        require("one".equals(restored.get(1).getValue()), "serialized value");
+        var version = tree.getVersion();
+
+        var json = tree.toJson();
+        var restored = ObservableConcurrentTree.fromJson(
+                json,
+                Integer.class,
+                String.class);
+
+        require(restored.size() == 2, "JSON size");
+        require(restored.getVersion() == version, "JSON version");
+        require("one".equals(restored.get(1).value()), "JSON value");
         restored.add(0, 2, "two");
-        require(restored.contains(2), "deserialized locks initialized");
+        require(restored.contains(2), "restored tree remains mutable");
     }
 
     private static void verifyConcurrentAccess() throws Exception {
@@ -95,7 +115,7 @@ public final class ObservableConcurrentTreeVerification {
             readerB.get();
         }
         require(tree.size() == 10_001, "concurrent final size");
-        require(tree.snapshot().getEntries().size() == 10_001, "concurrent snapshot size");
+        require(tree.snapshot().entries().size() == 10_001, "concurrent snapshot size");
     }
 
     private static void writeRange(
