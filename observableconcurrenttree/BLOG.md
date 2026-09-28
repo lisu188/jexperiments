@@ -482,6 +482,79 @@ None of those syntax changes is counted as a performance optimization. They are 
 
 This is intentionally separate from the human-readable example program.
 
+## Verification architecture
+
+The experiment now has four complementary verification layers instead of relying only on the executable smoke test.
+
+### JUnit 6 unit and model-based tests
+
+Normal Gradle `test` uses JUnit 6.1.2 and covers the complete mutation lifecycle, invalid operations, observer payloads, immutable record views, JSON round-trips, stream detachment, atomic state loading, and deterministic concurrency races.
+
+```bash
+./gradlew :observableconcurrenttree:test
+```
+
+The randomized test maintains a deliberately simple reference tree and executes thousands of seeded operations across `add`, `update`, `move`, `removeSubtree`, `loadState`, `clear`, and JSON round-trips. Every few operations the production tree is compared against the reference model and its public snapshot invariants are revalidated. A failing run reports the deterministic seed and step.
+
+### Massive virtual-thread stress
+
+Massive tests are tagged separately so ordinary builds do not accidentally create tens of thousands of tasks.
+
+```bash
+./gradlew :observableconcurrenttree:massiveTest
+```
+
+The default profile exercises approximately 100,000 unique concurrent adds, duplicate-ID collision races, thousands of virtual readers and writers, repeated atomic `loadState` swaps, move/snapshot ping-pong, observer registration churn, and concurrent JSON encode/decode.
+
+The workload is configurable:
+
+```bash
+./gradlew :observableconcurrenttree:massiveTest \
+  -PtreeMassiveAddTasks=250000 \
+  -PtreeMassiveReaderTasks=10000 \
+  -PtreeMassiveWriterTasks=1000 \
+  -PtreeMassiveOpsPerWriter=100 \
+  -PtreeMassiveHeap=6g
+```
+
+### Long-running soak
+
+The soak profile continuously mixes transient add/remove pairs, updates, snapshots, streams, JSON serialization, and scalar reads for a configurable duration.
+
+```bash
+./gradlew :observableconcurrenttree:soakTest \
+  -PtreeSoakSeconds=3600 \
+  -PtreeSoakWorkers=10000 \
+  -PtreeSoakInitialNodes=1000000 \
+  -PtreeSoakHeap=8g
+```
+
+It is intentionally excluded from CI because its useful runtime is measured in minutes or hours rather than seconds.
+
+### jcstress Java Memory Model cases
+
+The module has a dedicated `jcstress` source set using OpenJDK jcstress. Because the historical public class remains in the default package while jcstress requires named packages, the actors use reflection only to cross that package boundary. The concurrency semantics being tested still execute the real `ObservableConcurrentTree`.
+
+```bash
+./gradlew :observableconcurrenttree:jcstress
+```
+
+The initial cases verify that a snapshot racing a move can observe only the pre-move or post-move parent, that `loadState` cannot publish a partial replacement, and that cached immutable `Entry` values expose only states allowed by linearization.
+
+### Performance matrix
+
+The original small benchmark remains available, while `benchmarkMatrixExperiment` covers star, deep-chain, balanced-8, and deterministic random topologies.
+
+```bash
+./gradlew :observableconcurrenttree:benchmarkMatrixExperiment \
+  -PtreeBenchmarkNodes=100000 \
+  -PtreeBenchmarkRepetitions=5
+```
+
+The matrix includes build cost, scalar reads, point lookup, cold and hot DFS/snapshot behavior, Stream pipelines, JSON encode/decode, `loadState`, wide-parent first/middle/last moves, 1/10/50/100% subtree removal, observer fan-out, read/write contention ratios, platform-thread versus virtual-thread throughput, and an approximate retained-memory probe.
+
+JMH is not used for this particular historical module because JMH explicitly rejects benchmark classes in the default package, while a named-package benchmark cannot directly reference a default-package production class. Moving the entire experiment's public API solely for the benchmark would be a larger compatibility change than the test work itself. The custom matrix therefore performs process-local warm-up and reports median/min/max results, while correctness races use jcstress.
+
 ## Exploratory benchmark results
 
 The benchmark below compares the implementation that was on `main` before this optimization with the final optimized implementation.
