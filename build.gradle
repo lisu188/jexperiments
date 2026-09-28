@@ -913,6 +913,13 @@ def coverageExcludes = [
         '**/DistributedThreadPoolSoak*',
         '**/DistributedThreadPoolVerification*'
     ],
+    evolution: [
+        '**/EvolutionBenchmark*',
+        '**/EvolutionExample*',
+        '**/EvolutionJfr*',
+        '**/EvolutionPerformanceMatrix*',
+        '**/EvolutionVerification*'
+    ],
     hashlife: [
         '**/Driver*'
     ],
@@ -960,6 +967,7 @@ def coverageSmokeMains = [
     bcel: 'com.company.Main',
     completeablefuture: 'Main',
     distributedthreadpool: 'com.lis.distributed.thread.pool.DistributedThreadPoolVerification',
+    evolution: 'com.lis.EvolutionVerification',
     flowpublisher: 'com.lis.flow.FlowPublisherExperiment',
     javakotlinbridges: 'experiments.kotlin.bridges.BridgeExperimentKt',
     kotlindatasynthetic: 'experiments.kotlin.datasynthetic.DataSyntheticExperimentKt',
