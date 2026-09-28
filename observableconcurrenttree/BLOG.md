@@ -500,7 +500,7 @@ A child list is created only when the first child is attached:
 private static <K, V> void addChild(Node<K, V> parent, Node<K, V> child) {
     var children = parent.children;
     if (children == null) {
-        children = new ArrayList<>(4);
+        children = new ArrayList<>(8);
         parent.children = children;
     }
     children.add(child);
