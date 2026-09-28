@@ -1,186 +1,580 @@
-# Evolving Arrays toward a Target
+# Evolution: A Deterministic Genetic Search over Dense Numeric Genomes
 
 ## Why this experiment exists
 
-This experiment implements a minimal evolutionary search over fixed-length
-arrays of doubles. Each candidate, called a `Drone`, contains numeric genes.
-The goal is another `Drone` whose data is all ones. Each generation removes
-some weak candidates, selects candidates for reproduction, creates crossover
-children, mutates them, and appends them to the population.
+This experiment implements a compact genetic algorithm over fixed-length arrays of doubles.
 
-The code is not a general genetic algorithm framework. It is a compact model of
-selection pressure, recombination, mutation, and fitness measurement. That makes
-it useful for Java developers who want to reason about how an evolutionary loop
-is represented with collections, streams, random generation, and mutable arrays
-without introducing a large domain library.
+The original 2016 version demonstrated selection, single-point crossover, mutation, and distance-to-goal with very little code. That made the mechanics easy to inspect, but several implementation choices obscured the actual algorithmic cost and made results difficult to reproduce:
 
-The main technical idea is that population dynamics are emergent from a few
-local rules. The comparison function is mean squared distance from the goal.
-The closer a candidate is to the goal, the lower its score. Removal and
-crossover probabilities depend on that score and on current population size, so
-the same candidate can be treated differently as the field grows or shrinks.
+- randomness came from a synchronized SecureRandom,
+- candidates were heap objects wrapping separate double arrays,
+- stream pipelines were used inside the hottest numeric loops,
+- population size changed indirectly and could collapse into an empty parent pool,
+- there was no guaranteed elitism,
+- there was no deterministic seed,
+- mutation could hit the same gene repeatedly while leaving others untouched,
+- population growth and shrinkage made performance hard to compare,
+- length checks relied on disabled-by-default assertions,
+- the demo printed one million lines,
+- there was no convergence API or hard generation limit.
 
-## Execution path
+The modern version keeps the same educational goal — evolve numeric genomes toward a target — while turning the implementation into a deterministic, measurable, allocation-conscious genetic search.
 
-The entrypoint constructs one search instance and runs one million iterations:
+## Public shape
 
-```java
-Evolution droneField = new Evolution(10, 0.1, 1000, 0.1,
-        new Drone(new double[]{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}));
-IntStream.range(0, 1000000).forEach(i -> {
-    droneField.iterate();
-    System.out.println(droneField.field.size() + " : " + (droneField.field.stream().mapToDouble(drone -> drone.compare(droneField.goal)).average()).orElseGet(() -> 0.0));
-});
-```
+A search is created from a goal vector and a configuration:
 
-The initial population has ten drones. The target has ten genes. The mutation
-factor and generation factor are both `0.1`, and the nominal maximum population
-is `1000`. Every iteration prints the population size and average distance from
-the goal.
+~~~java
+var evolution = new Evolution(
+        new double[]{1, 1, 1, 1},
+        Evolution.Config.defaults()
+                .withPopulationSize(512)
+                .withTournamentSize(6)
+                .withMutationProbability(0.08)
+                .withSeed(42));
+~~~
 
-The constructor stores the goal and tuning factors, then fills the field with
-`new Drone(RandomGenerator.nextDoubleArray(goal.size()))`. That `goal.size()`
-dependency is important: the experiment does not need a separate gene-count
-parameter. The target defines the candidate shape.
+The goal is defensively copied.
 
-```java
-// The goal length determines every candidate's genome length.
-IntStream.range(0, size).forEach(value ->
-        field.add(new Drone(RandomGenerator.nextDoubleArray(goal.size()))));
-```
+The default gene domain is:
 
-That keeps initialization coupled to the objective rather than to a duplicated
-configuration value.
+~~~text
+[0.0, 1.0]
+~~~
 
-## Core code walkthrough
+Custom finite bounds can be supplied with:
 
-Each iteration begins by removing candidates. A candidate with larger distance
-from the goal has a higher removal probability, and the current field size
-scales that pressure:
+~~~java
+config.withGeneBounds(-2.0, 2.0)
+~~~
 
-```java
-double size = field.size();
-field.removeIf(drone -> RandomGenerator.nextDouble() < drone.compare(goal) * size / maxPopulation);
-```
+The target must lie inside those bounds.
 
-The expression is intentionally simple. It does not rank the whole population
-or preserve the best individual. It samples each candidate independently. As
-population size rises, the same distance score becomes more likely to trigger
-removal.
+## Fixed-size population
 
-The next loop builds a pool of candidates eligible for crossover with the mirror
-image of the removal pressure:
-`RandomGenerator.nextDouble() > drone.compare(goal) * field.size() / maxPopulation`.
-Better candidates are more likely to enter `toCrossover`, but selection is
-still probabilistic. The code then chooses random parents from that pool to
-create children.
+The original code used probabilistic deletion plus a generation factor.
 
-The number of children is based on the current field size after removal:
-`field.size() * genFactor`, truncated to an integer. With the default
-generation factor of `0.1`, small populations can produce zero children for an
-iteration. Larger populations produce more children and also experience
-stronger removal pressure because population size appears in both probability
-formulas. The population therefore regulates itself indirectly rather than by a
-hard cap.
+Population size could drift, small populations could generate zero children, and an empty crossover pool could make nextInt(0) fail.
 
-Crossover uses a single cut point:
+The modern algorithm keeps exactly:
 
-```java
-int cutPoint = RandomGenerator.nextInt(size() + 1);
-System.arraycopy(data, 0, newData, 0, cutPoint);
-System.arraycopy(drone.data, cutPoint, newData, cutPoint, size() - cutPoint);
-return new Drone(newData);
-```
+~~~java
+config.populationSize()
+~~~
 
-The child receives the prefix from one parent and the suffix from the other.
-Because the cut point can be `0` or `size()`, the child may be an exact copy of
-one parent before mutation.
+candidates every generation.
 
-## Important implementation details
+One elite candidate is copied unchanged into the next generation, and every remaining slot is filled by reproduction.
 
-Mutation modifies the drone in place:
+Fixed population size provides several useful invariants:
 
-```java
-Drone mutate(double factor) {
-    IntStream.range(0, Double.valueOf(size() * factor).intValue()).forEach(value -> data[RandomGenerator.nextInt(size())] = RandomGenerator.nextDouble());
-    return this;
+- predictable memory use,
+- predictable work per generation,
+- no empty parent pool,
+- no accidental unbounded growth,
+- comparable benchmark runs.
+
+## Flat population layout
+
+Candidates are not separate Drone objects.
+
+All genes are stored in one flat primitive array:
+
+~~~java
+double[] population;
+double[] nextPopulation;
+~~~
+
+For candidate c and gene g:
+
+~~~text
+index = c * geneCount + g
+~~~
+
+This removes:
+
+- one object per candidate,
+- one double[] object per candidate,
+- pointer chasing through a List<Drone>,
+- temporary child objects during crossover.
+
+Two full buffers are allocated once and swapped after each generation.
+
+The next generation is therefore built without allocating one new genome object per child.
+
+## Fitness
+
+Fitness is mean squared error against the target:
+
+~~~text
+MSE =
+    sum((gene - goal)^2)
+    / geneCount
+~~~
+
+Lower is better.
+
+The hot kernel is a primitive loop using Math.fma:
+
+~~~java
+var difference =
+        genome[offset + gene]
+        - goal[gene];
+
+sum = Math.fma(
+        difference,
+        difference,
+        sum);
+~~~
+
+No streams, boxing, lambdas, or temporary collections are involved.
+
+The method accepts an offset into a flat genome buffer, which lets the same kernel evaluate every candidate without slicing arrays.
+
+## Deterministic randomness
+
+Each Evolution instance owns one SplittableRandom seeded from Config.
+
+~~~java
+var random =
+        new SplittableRandom(
+                config.seed());
+~~~
+
+The same:
+
+- goal,
+- configuration,
+- seed,
+- sequence of evolve calls
+
+produces the same population trajectory.
+
+This is critical for correctness tests and performance experiments.
+
+SecureRandom was removed because cryptographic unpredictability provides no benefit to this search while making experiments slower and irreproducible.
+
+## Tournament selection
+
+Parent selection uses a configurable tournament.
+
+The algorithm starts with one random candidate, samples additional candidates, and keeps the one with the lowest fitness.
+
+~~~java
+var winner =
+        random.nextInt(
+                config.populationSize());
+
+for (int competitor = 1;
+        competitor < config.tournamentSize();
+        competitor++) {
+    var candidate =
+            random.nextInt(
+                    config.populationSize());
+
+    if (fitness[candidate]
+            < winnerFitness) {
+        winner = candidate;
+        winnerFitness =
+                fitness[candidate];
+    }
 }
-```
+~~~
 
-In the current pipeline that is safe because mutation is called on the new child
-returned by `crossover`. If the same method were called on a parent already in
-the field, it would mutate population state directly. That behavior should be
-documented because the method returns `this`, not a copy.
+Tournament size controls selection pressure without sorting the full population.
 
-Fitness is mean squared distance:
+That is useful both algorithmically and for performance.
 
-```java
-double compare(Drone drone) {
-    assert data.length == drone.data.length;
-    return IntStream.range(0, data.length).mapToDouble(value ->
-            (data[value] - drone.data[value]) * (data[value] - drone.data[value])).average().orElseGet(() -> 0.0);
+A full ranked sort would add O(P log P) work per generation; tournament selection stays O(P * tournamentSize) across offspring creation.
+
+## Elitism
+
+Candidate zero of the next buffer receives an exact copy of the current best genome.
+
+~~~java
+copyGenome(
+        population,
+        bestIndex,
+        nextPopulation,
+        0);
+~~~
+
+The elite is not mutated.
+
+This guarantees:
+
+~~~text
+bestError(generation + 1)
+    <= bestError(generation)
+~~~
+
+The deterministic verification suite checks this property over hundreds of generations, including configurations with mutationProbability = 1.0.
+
+The old implementation could delete its best candidate.
+
+## Crossover
+
+Every non-elite child receives two tournament-selected parents.
+
+With configurable crossoverProbability, single-point crossover is performed:
+
+~~~java
+var cut =
+        random.nextInt(
+                geneCount + 1);
+~~~
+
+The prefix is copied from the first parent and the suffix from the second.
+
+System.arraycopy is used for both segments.
+
+The cut may be zero or geneCount, so exact parent copies remain possible.
+
+If crossover is skipped, the fitter of the two selected parents is copied directly.
+
+No child object is allocated.
+
+## Mutation
+
+Mutation is evaluated independently per gene:
+
+~~~java
+if (random.nextDouble()
+        < config.mutationProbability()) {
+    nextPopulation[offset + gene] =
+            randomGene();
 }
-```
+~~~
 
-Lower is better. The name `compare` is broader than the implementation; it is
-really a distance function. Since all genes are generated in `[0, 1)`, and the
-goal is all ones, initial scores are bounded and easy to interpret.
+The mutation operator is a random reset inside the configured gene bounds.
 
-Randomness is centralized in a `private static final Random RANDOM = new
-SecureRandom()` field with synchronized helper methods. The synchronized wrapper
-makes calls thread-safe, although this experiment is single-threaded.
-`SecureRandom` also makes runs intentionally non-repeatable unless the
-implementation is changed to accept a seeded `Random`.
+This differs from the original mutation-count rule, where:
 
-```java
-// Centralized random source; synchronized even though the demo is single-threaded.
-static synchronized double[] nextDoubleArray(int size) {
-    double[] data = new double[size];
-    IntStream.range(0, size).forEach(value -> data[value] = RandomGenerator.nextDouble());
-    return data;
-}
-```
+~~~text
+floor(geneCount * mutationFactor)
+~~~
 
-This helper is the only place new candidate genomes are filled with random
-values.
+random positions were selected and the same position could be chosen repeatedly.
 
-Using `SecureRandom` is unusual for an evolutionary toy. It is slower than a
-plain pseudo-random generator and has security-oriented behavior the algorithm
-does not need. That makes it a good discussion point: randomness quality,
-repeatability, and throughput are separate design choices. For experiments,
-repeatability is often more valuable than cryptographic unpredictability.
+Per-gene probability has a clearer interpretation and does not need an intermediate set of positions.
 
-## Runtime behavior and caveats
+## Generation lifecycle
 
-Running the module can produce a lot of output: one million lines, each with
-population size and average distance. There is no termination condition based
-on convergence, no charting, and no protection against a population that drifts
-into a problematic state.
+One evolve() call performs:
 
-The main correctness caveat is that `toCrossover` can become empty after
-selection. If that happens, `RandomGenerator.nextInt(toCrossover.size())` will
-throw. The current parameters may make that unlikely in normal runs, but the
-algorithm does not guard against it. There is also no elitism, so the best
-candidate can be removed. Mutation may also hit the same gene more than once
-because each mutation position is chosen independently.
+1. copy the elite,
+2. select two parents for every remaining child,
+3. crossover or copy,
+4. mutate the child,
+5. swap current and next population buffers,
+6. evaluate all fitness values,
+7. update best and average statistics.
 
-The use of assertions for length checks is another caveat. Assertions are
-disabled by default in most JVM runs, so mismatched drone sizes would not be
-reported by those checks unless the process is started with `-ea`.
+The method returns:
 
-The console output is also part of the runtime cost. Printing a million lines
-can dominate the actual search and make the algorithm appear slower than it is.
-If the goal is to evaluate convergence, sampling every hundred or thousand
-iterations would provide clearer data and much less I/O noise.
+~~~java
+record GenerationStats(
+        long generation,
+        int populationSize,
+        int geneCount,
+        double bestError,
+        double averageError)
+~~~
 
-Because the algorithm keeps the whole population in one `ArrayList`, memory use
-is easy to understand but tightly coupled to population growth. A separate
-generation object would make snapshots and comparisons easier.
+This makes the convergence curve observable without scanning the population from outside.
 
-## Suggested next experiments
+## Bounded convergence
 
-Add deterministic seeding so two runs can be compared. Track the best candidate
-and preserve it across generations. Replace probabilistic removal with ranked
-tournament selection. Add a convergence stop condition and reduce console I/O.
-Finally, extract the fitness function so the same engine can evolve arrays
-toward different objective functions, not just an all-ones target.
+The old example ran one million generations regardless of progress.
+
+The modern API supports:
+
+~~~java
+var result =
+        evolution.evolveUntil(
+                0.001,
+                10_000);
+~~~
+
+SearchResult contains:
+
+~~~java
+record SearchResult(
+        long generations,
+        double bestError,
+        boolean converged)
+~~~
+
+The hard generation limit prevents accidental infinite experiments.
+
+If the initial population already satisfies the target, zero generations are reported.
+
+## Defensive genome access
+
+bestGenome() returns a copy.
+
+~~~java
+double[] best =
+        evolution.bestGenome();
+~~~
+
+For allocation-sensitive code:
+
+~~~java
+evolution.copyBestInto(buffer);
+~~~
+
+The internal population arrays are never exposed.
+
+The same applies to goal().
+
+This prevents external code from silently corrupting search state.
+
+## Complexity
+
+Let:
+
+~~~text
+P = population size
+G = gene count
+T = tournament size
+~~~
+
+Fitness evaluation is:
+
+~~~text
+O(P * G)
+~~~
+
+Parent selection and offspring construction are:
+
+~~~text
+O(P * (T + G))
+~~~
+
+Memory is dominated by two population buffers:
+
+~~~text
+O(P * G)
+~~~
+
+plus:
+
+~~~text
+O(P)
+~~~
+
+fitness values.
+
+Because the population is fixed, these bounds are stable across generations.
+
+## Deterministic verification
+
+EvolutionVerification covers:
+
+- invalid configurations,
+- invalid and non-finite goals,
+- custom gene bounds,
+- defensive goal copies,
+- defensive best-genome copies,
+- deterministic reproduction from the same seed,
+- fixed population size,
+- monotonic best error from elitism,
+- gene-bound preservation,
+- convergence toward a multi-gene target,
+- single-gene convergence,
+- generation-limit enforcement,
+- the MSE offset kernel.
+
+The convergence tests use fixed seeds.
+
+A regression therefore produces a repeatable failing trajectory instead of a probabilistic test failure.
+
+## Lightweight benchmark
+
+EvolutionBenchmark measures complete generation loops for representative shapes:
+
+~~~text
+population 64,   genes 16
+population 512,  genes 16
+population 512,  genes 128
+~~~
+
+Each run constructs a deterministic search, evolves a fixed number of generations, and consumes bestError into a blackhole.
+
+This provides a quick regression signal.
+
+It is not intended to replace JMH.
+
+## Performance matrix
+
+EvolutionPerformanceMatrix explores:
+
+~~~text
+population:
+64
+256
+1024
+4096
+
+genes:
+8
+32
+128
+512
+~~~
+
+For each combination it reports:
+
+- nanoseconds per generation,
+- nanoseconds per candidate-gene,
+- final best error,
+- error improvement over the measured window.
+
+The per-candidate-gene number helps distinguish fixed generation overhead from actual genome-processing cost.
+
+## JMH
+
+EvolutionJmhBenchmark measures evolve() using:
+
+~~~text
+populationSize = 64, 512, 4096
+geneCount      = 16, 128
+~~~
+
+The benchmark uses AverageTime in microseconds.
+
+Each measured iteration begins with a fresh deterministic Evolution instance so one JMH iteration does not inherit the convergence state of a previous iteration.
+
+The normal benchmark uses multiple warmup iterations, measured iterations, and forks.
+
+CI runs only a small smoke case.
+
+## JFR
+
+Evolution defines disabled-by-default JFR events for:
+
+- each generation,
+- a complete evolveUntil search.
+
+Generation events record:
+
+- generation number,
+- population size,
+- gene count,
+- best MSE,
+- average MSE,
+- duration.
+
+Search events record:
+
+- target MSE,
+- maximum generations,
+- actual generations,
+- final error,
+- convergence,
+- duration.
+
+Profiling can be run with:
+
+~~~text
+./gradlew :evolution:profileEvolution
+~~~
+
+The recording is written under build/jfr/.
+
+This makes allocation, GC, JIT compilation, CPU sampling, and convergence behavior observable in one recording.
+
+## Java 27 build
+
+The module targets Java 27 with:
+
+~~~text
+-Xlint:all
+-Werror
+~~~
+
+Available tasks include:
+
+~~~text
+:evolution:runExperiment
+:evolution:verifyExperiment
+:evolution:benchmarkExperiment
+:evolution:performanceMatrix
+:evolution:jmh
+:evolution:jmhSmoke
+:evolution:profileEvolution
+~~~
+
+The module-specific GitHub Actions workflow runs:
+
+- deterministic verification,
+- JMH smoke,
+- a bounded performance matrix,
+- the complete example.
+
+The normal check task depends on verifyExperiment.
+
+## What changed from the 2016 experiment
+
+The conceptual mapping is:
+
+~~~text
+Drone objects
+    ->
+flat population buffers
+
+SecureRandom
+    ->
+seeded SplittableRandom
+
+probabilistic delete/grow
+    ->
+fixed generation size
+
+ad-hoc parent eligibility list
+    ->
+tournament selection
+
+no elitism
+    ->
+one preserved elite
+
+mutation count with duplicate hits
+    ->
+independent per-gene mutation probability
+
+stream MSE
+    ->
+primitive Math.fma loop
+
+one-million-line main
+    ->
+bounded search + compact summary
+~~~
+
+The new implementation is intentionally more conventional because that makes the effect of each genetic operator easier to reason about and benchmark.
+
+## Remaining limitations
+
+This remains a compact educational genetic algorithm.
+
+It does not currently provide:
+
+- arbitrary user-defined fitness functions,
+- multi-objective optimization,
+- rank selection,
+- roulette-wheel selection,
+- multiple elites,
+- uniform crossover,
+- Gaussian mutation,
+- adaptive mutation rates,
+- parallel fitness evaluation,
+- island models,
+- checkpoint serialization.
+
+Parallel evaluation is deliberately not the first optimization here.
+
+The current target-distance kernel is extremely small, so parallelism can cost more than it saves for typical population sizes.
+
+A useful next experiment would first benchmark much more expensive fitness functions, then add parallel evaluation only when the objective dominates selection and memory traffic.
