@@ -41,7 +41,7 @@ The Gradle build currently includes more than twenty independent modules; see `s
 
 ## Build
 
-The repository uses Gradle 9.8.0. A full build now requires JDK 27 because the `observableconcurrenttree` experiment intentionally targets the latest Java release; older historical modules keep their original lower bytecode targets.
+The repository uses Gradle 9.8.0. Pure Java experiment modules target Java 27, the latest GA release. Kotlin/JVM bytecode experiments use Kotlin 2.4.20 with a JDK 27 toolchain and JVM 26 bytecode, the highest target currently supported by Kotlin. The Spring Boot `blogsite` targets Java 26, the highest Java version supported by the current stable Spring Boot line. The Android project builds with JDK 27 while retaining Java 17 bytecode for Android platform compatibility.
 
 ```bash
 ./gradlew build

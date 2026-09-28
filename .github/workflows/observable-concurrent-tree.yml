@@ -26,11 +26,13 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Set up Java 27
+      - name: Set up Java toolchains
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '27'
+          java-version: |
+            26
+            27
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6

@@ -1,7 +1,7 @@
 plugins {
     id 'base'
     id 'org.springframework.boot' version '4.0.6' apply false
-    id 'org.jetbrains.kotlin.jvm' version '2.3.0' apply false
+    id 'org.jetbrains.kotlin.jvm' version '2.4.20' apply false
 }
 
 allprojects {
@@ -48,12 +48,16 @@ configure(javaModules) {
     }
 
     java {
-        sourceCompatibility = JavaVersion.toVersion(9)
-        targetCompatibility = JavaVersion.toVersion(9)
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(27)
+        }
+        sourceCompatibility = JavaVersion.VERSION_27
+        targetCompatibility = JavaVersion.VERSION_27
     }
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+        options.release = 27
     }
 
     sourceSets {
@@ -87,13 +91,22 @@ def kotlinBytecodeMainClasses = [
 configure(kotlinBytecodeMainClasses.keySet().collect { project(":$it") }) {
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
+    java {
+        sourceCompatibility = JavaVersion.VERSION_26
+        targetCompatibility = JavaVersion.VERSION_26
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.release = 26
+    }
+
     kotlin {
-        jvmToolchain(17)
+        jvmToolchain(27)
     }
 
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile).configureEach {
         compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_9)
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_26)
         }
     }
 }
@@ -456,12 +469,16 @@ project(':blogsite') {
     }
 
     java {
-        sourceCompatibility = JavaVersion.toVersion(17)
-        targetCompatibility = JavaVersion.toVersion(17)
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(26)
+        }
+        sourceCompatibility = JavaVersion.VERSION_26
+        targetCompatibility = JavaVersion.VERSION_26
     }
 
     tasks.withType(JavaCompile).configureEach {
         options.encoding = 'UTF-8'
+        options.release = 26
     }
 
     tasks.withType(Test).configureEach {
