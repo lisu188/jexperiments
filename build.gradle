@@ -110,6 +110,10 @@ kotlinBytecodeMainClasses.each { moduleName, mainClassName ->
 }
 
 project(':observableconcurrenttree') {
+    dependencies {
+        implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
+    }
+
     java {
         toolchain {
             languageVersion = JavaLanguageVersion.of(27)
