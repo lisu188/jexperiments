@@ -92,6 +92,70 @@ class HashLifeUniverseTest {
         assertSame(first, second);
     }
 
+
+    @Test
+    void privateGenerationKernelsAndCanonicalInterningAreCovered() throws Exception {
+        TreeNode base = TreeNode.create();
+        TreeNode levelTwo = base.emptyTree(2);
+        TreeNode levelThree = base.emptyTree(3).setBit(0, 0).setBit(1, 0).setBit(0, 1);
+
+        var oneGen = TreeNode.class.getDeclaredMethod("oneGen", int.class);
+        oneGen.setAccessible(true);
+        assertEquals(0, ((TreeNode) oneGen.invoke(levelTwo, 0)).population);
+        assertEquals(1, ((TreeNode) oneGen.invoke(levelTwo, 0b111)).population);
+        assertEquals(1, ((TreeNode) oneGen.invoke(levelTwo, (1 << 5) | 0b11)).population);
+        assertEquals(0, ((TreeNode) oneGen.invoke(levelTwo, 1)).population);
+
+        assertNotNull(levelTwo.slowSimulation());
+        assertNotNull(levelThree.nextGeneration());
+        assertEquals(0, base.emptyTree(3).nextGeneration().population);
+
+        var centeredSubnode = TreeNode.class.getDeclaredMethod("centeredSubnode");
+        centeredSubnode.setAccessible(true);
+        assertNotNull(centeredSubnode.invoke(levelThree));
+
+        var centeredHorizontal = TreeNode.class.getDeclaredMethod(
+                "centeredHorizontal", TreeNode.class, TreeNode.class);
+        centeredHorizontal.setAccessible(true);
+        assertNotNull(centeredHorizontal.invoke(levelThree, levelThree.nw, levelThree.ne));
+
+        var centeredVertical = TreeNode.class.getDeclaredMethod(
+                "centeredVertical", TreeNode.class, TreeNode.class);
+        centeredVertical.setAccessible(true);
+        assertNotNull(centeredVertical.invoke(levelThree, levelThree.nw, levelThree.sw));
+
+        var centeredSubSubnode = TreeNode.class.getDeclaredMethod("centeredSubSubnode");
+        centeredSubSubnode.setAccessible(true);
+        assertNotNull(centeredSubSubnode.invoke(levelThree));
+
+        CanonicalTreeNode canonicalLeaf = new CanonicalTreeNode(true);
+        assertSame(canonicalLeaf.intern(), canonicalLeaf.intern());
+        assertTrue(canonicalLeaf.equals(new CanonicalTreeNode(true)));
+        assertFalse(canonicalLeaf.equals(new CanonicalTreeNode(false)));
+
+        TreeNode hashLife = HashLifeTreeNode.create().setBit(0, 0).setBit(1, 0).setBit(0, 1);
+        assertNotNull(hashLife.nextGeneration());
+
+        var horizontalForward = HashLifeTreeNode.class.getDeclaredMethod(
+                "horizontalForward", TreeNode.class, TreeNode.class);
+        horizontalForward.setAccessible(true);
+        assertNotNull(horizontalForward.invoke(hashLife, hashLife.nw, hashLife.ne));
+
+        var verticalForward = HashLifeTreeNode.class.getDeclaredMethod(
+                "verticalForward", TreeNode.class, TreeNode.class);
+        verticalForward.setAccessible(true);
+        assertNotNull(verticalForward.invoke(hashLife, hashLife.nw, hashLife.sw));
+
+        var centerForward = HashLifeTreeNode.class.getDeclaredMethod("centerForward");
+        centerForward.setAccessible(true);
+        assertNotNull(centerForward.invoke(hashLife));
+
+        TreeNode hashLifeLevelTwo = HashLifeTreeNode.create().emptyTree(2)
+                .setBit(0, 0).setBit(1, 0).setBit(0, 1);
+        assertNotNull(hashLifeLevelTwo.nextGeneration());
+        assertEquals(0, HashLifeTreeNode.create().nextGeneration().population);
+    }
+
     private static List<TreeUniverse> universes() {
         return List.of(
                 new TreeUniverse(),
