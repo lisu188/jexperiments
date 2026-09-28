@@ -27,15 +27,18 @@ public final class NeuroNativeBlas {
 
     public static Optional<Session> tryCreate(Neuro network) {
         Objects.requireNonNull(network, "network");
+        var arena = Arena.ofShared();
         try {
-            return Optional.of(new Session(network));
+            var resolved = resolveDgemm(arena);
+            return Optional.of(new Session(network, arena, resolved));
         } catch (IllegalArgumentException | IllegalStateException | IllegalCallerException | UnsatisfiedLinkError exception) {
+            arena.close();
             return Optional.empty();
         }
     }
 
     public static final class Session implements AutoCloseable {
-        private final Arena arena = Arena.ofShared();
+        private final Arena arena;
         private final MethodHandle dgemm;
         private final String libraryName;
         private final int[] topology;
@@ -43,12 +46,21 @@ public final class NeuroNativeBlas {
         private final double[][] biases;
         private final double beta;
         private final Neuro.SigmoidMode sigmoidMode;
+        private final int maxWidth;
+        private MemorySegment firstBuffer;
+        private MemorySegment secondBuffer;
+        private int capacity;
 
-        private Session(Neuro network) {
-            var resolved = resolveDgemm(arena);
+        private Session(Neuro network, Arena arena, Resolved resolved) {
+            this.arena = arena;
             dgemm = resolved.handle();
             libraryName = resolved.libraryName();
             topology = network.topology();
+            var width = 0;
+            for (var size : topology) {
+                width = Math.max(width, size);
+            }
+            maxWidth = width;
             beta = network.hyperParameters().beta();
             sigmoidMode = network.hyperParameters().sigmoidMode();
             weights = new MemorySegment[topology.length - 1];
@@ -97,35 +109,44 @@ public final class NeuroNativeBlas {
                 return;
             }
 
-            try (var callArena = Arena.ofConfined()) {
-                var current = callArena.allocate(ValueLayout.JAVA_DOUBLE, inputElements);
-                MemorySegment.copy(inputs, 0, current, ValueLayout.JAVA_DOUBLE, 0, inputElements);
+            ensureCapacity(batchSize);
+            MemorySegment.copy(inputs, 0, firstBuffer, ValueLayout.JAVA_DOUBLE, 0, inputElements);
+            var current = firstBuffer;
+            var next = secondBuffer;
 
-                for (int layer = 0; layer < weights.length; layer++) {
-                    var layerInputs = topology[layer];
-                    var layerOutputs = topology[layer + 1];
-                    var next = callArena.allocate(
-                            ValueLayout.JAVA_DOUBLE,
-                            Math.multiplyExact(batchSize, layerOutputs));
-                    dgemm(
-                            batchSize,
-                            layerOutputs,
-                            layerInputs,
-                            current,
-                            weights[layer],
-                            next);
-                    activate(next, biases[layer], batchSize, layerOutputs);
-                    current = next;
-                }
-
-                MemorySegment.copy(
+            for (int layer = 0; layer < weights.length; layer++) {
+                var layerInputs = topology[layer];
+                var layerOutputs = topology[layer + 1];
+                dgemm(
+                        batchSize,
+                        layerOutputs,
+                        layerInputs,
                         current,
-                        ValueLayout.JAVA_DOUBLE,
-                        0,
-                        outputs,
-                        0,
-                        outputElements);
+                        weights[layer],
+                        next);
+                activate(next, biases[layer], batchSize, layerOutputs);
+                var swap = current;
+                current = next;
+                next = swap;
             }
+
+            MemorySegment.copy(
+                    current,
+                    ValueLayout.JAVA_DOUBLE,
+                    0,
+                    outputs,
+                    0,
+                    outputElements);
+        }
+
+        private void ensureCapacity(int batchSize) {
+            if (batchSize <= capacity) {
+                return;
+            }
+            capacity = Math.max(batchSize, Math.max(8, capacity * 2));
+            var elements = Math.multiplyExact(capacity, maxWidth);
+            firstBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, elements);
+            secondBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, elements);
         }
 
         private void dgemm(
