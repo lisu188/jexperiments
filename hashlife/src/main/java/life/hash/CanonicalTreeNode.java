@@ -35,15 +35,21 @@ class CanonicalTreeNode extends TreeNode {
      * able to hash these objects.
      */
     public int hashCode() {
+        int classHash = System.identityHashCode(getClass());
         if (level == 0)
-            return (int) population;
-        return System.identityHashCode(nw) +
+            return 31 * classHash + (int) population;
+        return 31 * classHash +
+                System.identityHashCode(nw) +
                 11 * System.identityHashCode(ne) +
                 101 * System.identityHashCode(sw) +
                 1007 * System.identityHashCode(se);
     }
 
     public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
         TreeNode t = (TreeNode) o;
         if (level != t.level)
             return false;
