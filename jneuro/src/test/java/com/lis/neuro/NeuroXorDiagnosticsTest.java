@@ -107,7 +107,7 @@ final class NeuroXorDiagnosticsTest {
         assertThrows(NullPointerException.class, () -> NeuroXorDiagnostics.capture(null, 0, 0.0));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> NeuroXorDiagnostics.capture(new Neuro(new int[]{2, 1}), 0, 0.0));
+                () -> NeuroXorDiagnostics.capture(new Neuro(new int[]{3, 1}), 0, 0.0));
         assertThrows(NullPointerException.class, () -> NeuroXorDiagnostics.probe(null, 0.0, 0.0));
         assertThrows(NullPointerException.class, () -> NeuroXorDiagnostics.renderHiddenMaps(null, 4));
         assertThrows(
