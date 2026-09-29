@@ -15,7 +15,7 @@ import javax.swing.border.EmptyBorder
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWorker: Boolean = true) : AutoCloseable {
+class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private val startWorker: Boolean = true) : AutoCloseable {
     private enum class View(val title: String) {
         OVERVIEW("Overview"), NEURONS("Neurons"), DATA("Learning set"), UPDATE("Step effect"),
         PARAMETERS("Parameters"), SEEDS("Seeds"), TIMELINE("Timeline"), SEARCH("Architecture search")
@@ -28,11 +28,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     private val hidden = JTextField("6")
     private val dataset = JComboBox(NeuroLearningSets.Kind.entries.toTypedArray())
     private val seed = JTextField("42")
-    private val epochLimit = JSpinner(SpinnerNumberModel(10_000, 1, 1_000_000, 1000))
-    private val rate = JSpinner(SpinnerNumberModel(0.6, 0.001, 10.0, 0.05))
-    private val momentum = JSpinner(SpinnerNumberModel(0.2, 0.0, 0.999, 0.05))
-    private val target = JSpinner(SpinnerNumberModel(0.05, 0.000001, 0.999, 0.01))
-    private val configError = JLabel(" ")
+    private val epochLimit = NumericInputs.spinner(10_000, 1000)
+    private val rate = NumericInputs.spinner(0.6, 0.05)
+    private val momentum = NumericInputs.spinner(0.2, 0.05)
+    private val target = NumericInputs.spinner(0.05, 0.01)
+    private val configError = JLabel(" ").apply { accessibleContext.accessibleName = "Configuration error" }
     private val description = JLabel()
     private val status = JLabel("Starting…")
     private val activeTopology = JLabel(" ")
@@ -42,13 +42,12 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     private val reset = JButton("Reset")
     private val study = JButton("Compare 4 seeds")
     private val cancelStudy = JButton("Cancel study")
-    private val hiddenLayer = JComboBox<String>()
-    private val neuronPage = JSpinner(SpinnerNumberModel(0, 0, 0, 8))
-    private val parameterLayer = JComboBox<String>()
-    private val parameterPage = JSpinner(SpinnerNumberModel(0, 0, 0, 24))
-    private val customClass = JComboBox(arrayOf("Class 1 · circle", "Class 0 · square"))
+    private val neuronGallery = NeuronGallery(synchronous = !startWorker)
+    private val parameterLayer = JComboBox<String>().apply { accessibleContext.accessibleName = "Parameter layer" }
+    private val parameterPage = NumericInputs.spinner(0, 24).apply { accessibleContext.accessibleName = "First parameter" }
+    private val customClass = JComboBox(arrayOf("Class 1 · circle", "Class 0 · square")).apply { accessibleContext.accessibleName = "Point class" }
     private val contextBar = JPanel(FlowLayout(FlowLayout.LEFT, 12, 8))
-    private val metrics = List(4) { JLabel("—") }
+    private val metrics = List(4) { index -> JLabel("—").apply { name = "metric-$index" } }
     private val metricDetails = List(4) { JLabel(" ") }
     private val commands = LinkedBlockingQueue<(NeuroStudio) -> Unit>()
     private val revision = AtomicLong()
@@ -82,7 +81,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         sidebar.layout = BoxLayout(sidebar, BoxLayout.Y_AXIS)
         sidebar.background = SURFACE
         sidebar.border = EmptyBorder(24, 20, 20, 20)
-        sidebar.preferredSize = Dimension(286, 700)
+        sidebar.minimumSize = Dimension(286, 0)
         buildSidebar()
         val sideScroll = JScrollPane(sidebar).apply {
             border = EmptyBorder(0, 0, 0, 1)
@@ -126,7 +125,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         sidebar.add(Box.createVerticalStrut(22))
         section("02  ARCHITECTURE")
         field("Hidden layers", hidden)
-        hidden.toolTipText = "Comma-separated widths: 2 or 6,4,2. Empty = 2 → 1 baseline. Up to 8 layers; 1–128 neurons each."
+        hidden.toolTipText = "Comma-separated widths: 2 or 6,4,2. Empty = 2 → 1 baseline. Positive widths; limited only by numeric representation and available heap."
         sidebar.add(note("One width per hidden layer.<br>Example: 4,3 means 2 → 4 → 3 → 1.<br>Leave empty for 2 → 1 (no hidden layer)."))
         val layerButtons = JPanel(GridLayout(1, 2, 8, 0)).apply {
             isOpaque = false; alignmentX = 0f; maximumSize = Dimension(242, 34)
@@ -209,9 +208,23 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         reset.addActionListener { post { it.apply(it.activeConfig) } }
         controls.add(train); controls.add(step); controls.add(stepTen); controls.add(reset)
         controls.add(JLabel("   Epochs / refresh").apply { foreground = MUTED })
-        controls.add(JComboBox(arrayOf(1, 10, 100)).apply { selectedItem = 10; addActionListener { speed = selectedItem as Int } })
+        controls.add(NumericInputs.spinner(10, 10).apply {
+            accessibleContext.accessibleName = "Epochs per refresh"
+            (editor as JSpinner.DefaultEditor).textField.accessibleContext.accessibleName = "Epochs per refresh"
+            addChangeListener {
+                val next = (value as Number).toInt()
+                if (next > 0) { speed = next; configError.text = " " }
+                else showConfigError("Epochs per refresh must be positive.")
+            }
+        })
         controls.add(JButton("Save PNG").apply { addActionListener { exportImage() } })
-        top.add(controls)
+        top.add(JScrollPane(controls).apply {
+            border = EmptyBorder(0,0,0,0)
+            viewport.background = BACKGROUND
+            verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER
+            maximumSize = Dimension(Int.MAX_VALUE,64)
+            preferredSize = Dimension(640,64)
+        })
         workspace.add(top, BorderLayout.NORTH)
         val center = JPanel(BorderLayout()).apply { isOpaque = false }
         contextBar.isOpaque = false
@@ -223,14 +236,15 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             }
             tabs.addTab(view.title, scroll)
         }
-        tabs.addTab(View.SEARCH.title, architectureSearch)
+        tabs.addTab(View.SEARCH.title, JScrollPane(architectureSearch).apply {
+            border = EmptyBorder(0, 0, 0, 0)
+            verticalScrollBar.unitIncrement = 28
+        })
         tabs.addChangeListener { updateContextBar(); charts.values.forEach { it.revalidate(); it.repaint() } }
         tabs.font = uiFont(13)
         tabs.tabLayoutPolicy = JTabbedPane.SCROLL_TAB_LAYOUT
         center.add(tabs, BorderLayout.CENTER)
         center.add(contextBar, BorderLayout.NORTH)
-        hiddenLayer.addActionListener { if (!updating) requestHidden(0) }
-        neuronPage.addChangeListener { if (!updating) requestHidden((neuronPage.value as Number).toInt()) }
         parameterLayer.addActionListener {
             if (!updating) {
                 selectedParameterLayer = parameterLayer.selectedIndex.coerceAtLeast(0); selectedParameterStart = 0
@@ -238,7 +252,13 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             }
         }
         parameterPage.addChangeListener {
-            if (!updating) { selectedParameterStart = (parameterPage.value as Number).toInt(); charts[View.PARAMETERS]?.repaint() }
+            if (!updating) {
+                val next = (parameterPage.value as Number).toInt()
+                val current = frame
+                val count = current?.diagnostics?.let { it.layerInputCount(selectedParameterLayer).toLong() * it.layerOutputCount(selectedParameterLayer) } ?: 0
+                if (next >= 0 && next < count) { selectedParameterStart = next; configError.text = " "; charts[View.PARAMETERS]?.repaint() }
+                else showConfigError("Parameter offset is outside the active layer.")
+            }
         }
         study.addActionListener { startStudy() }
         cancelStudy.addActionListener { revision.incrementAndGet(); studyRunning = false; refresh() }
@@ -257,6 +277,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         targetPanel.add(Box.createVerticalStrut(6))
         component.alignmentX = 0f; component.maximumSize = Dimension(242, 34)
         component.preferredSize = Dimension(242, 34); component.accessibleContext.accessibleName = title
+        if (component is JSpinner) (component.editor as JSpinner.DefaultEditor).textField.accessibleContext.accessibleName = title
         targetPanel.add(component); targetPanel.add(Box.createVerticalStrut(12))
     }
 
@@ -402,26 +423,12 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         updateContextBar()
     }
 
-    private fun requestHidden(start: Int) {
-        if (frame?.diagnostics?.hiddenLayerCount() == 0) return
-        val layer = hiddenLayer.selectedIndex.coerceAtLeast(0)
-        frame?.let {
-            val maximum = it.diagnostics.layerOutputCount(layer) - 1
-            val offset = start.coerceIn(0, maximum)
-            updating = true
-            neuronPage.model = SpinnerNumberModel(offset, 0, maximum, 8)
-            updating = false
-            post(false) { model -> model.selectHidden(layer, offset) }
-        }
-    }
-
     private fun updateParameterPage() {
         val current = frame ?: return
-        val diagnostics = current.diagnostics
-        val layer = selectedParameterLayer.coerceIn(0, diagnostics.layerCount() - 1)
-        val maximum = maxOf(diagnostics.layerInputCount(layer) * diagnostics.layerOutputCount(layer), diagnostics.layerOutputCount(layer)) - 1
+        selectedParameterLayer = selectedParameterLayer.coerceIn(0, current.diagnostics.layerCount() - 1)
+        selectedParameterStart = 0
         updating = true
-        parameterPage.model = SpinnerNumberModel(selectedParameterStart.coerceIn(0, maximum), 0, maximum, 24)
+        parameterPage.value = 0
         updating = false
     }
 
@@ -429,9 +436,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         contextBar.removeAll()
         when (View.entries[tabs.selectedIndex.coerceAtLeast(0)]) {
             View.NEURONS -> {
-                contextBar.add(JLabel("Hidden layer")); contextBar.add(hiddenLayer)
-                contextBar.add(JLabel("First neuron")); contextBar.add(neuronPage)
-                contextBar.add(JLabel("8 activation maps per page").apply { foreground = MUTED })
+                contextBar.add(JLabel("All hidden layers and neurons · scroll to explore; maps render on demand").apply { foreground = MUTED })
             }
             View.PARAMETERS -> {
                 contextBar.add(JLabel("Layer")); contextBar.add(parameterLayer)
@@ -466,15 +471,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         frame = next
         if (shownConfig != next.config) {
             shownConfig = next.config
+            neuronGallery.request(next.diagnostics, emptyList()) {}
             updating = true
-            hiddenLayer.removeAllItems(); parameterLayer.removeAllItems()
-            for (layer in 0 until next.diagnostics.hiddenLayerCount()) hiddenLayer.addItem("H${layer + 1} · ${next.diagnostics.layerOutputCount(layer)} neurons")
+            parameterLayer.removeAllItems()
             for (layer in 0 until next.diagnostics.layerCount()) parameterLayer.addItem("${layer + 1}: ${next.diagnostics.layerInputCount(layer)} → ${next.diagnostics.layerOutputCount(layer)}")
             selectedParameterLayer = 0; selectedParameterStart = 0
-            val hasHidden = next.diagnostics.hiddenLayerCount() > 0
-            hiddenLayer.isEnabled = hasHidden
-            neuronPage.isEnabled = hasHidden
-            neuronPage.model = SpinnerNumberModel(0, 0, maxOf(0, next.diagnostics.hiddenCount() - 1), 8)
             updating = false
             updateParameterPage(); updateContextBar()
         }
@@ -536,6 +537,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             addMouseMotionListener(mouse); addMouseListener(mouse)
             addKeyListener(object : KeyAdapter() {
                 override fun keyPressed(event: KeyEvent) {
+                    if (event.isControlDown || event.isAltDown) return
                     when (event.keyCode) {
                         KeyEvent.VK_LEFT -> hoverX = (hoverX - 0.025).coerceAtLeast(0.0)
                         KeyEvent.VK_RIGHT -> hoverX = (hoverX + 0.025).coerceAtMost(1.0)
@@ -553,7 +555,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         override fun getPreferredSize(): Dimension {
             val w = if (parent != null) maxOf(640, parent.width) else 1000
             val h = when (view) {
-                View.NEURONS -> 400 + ((frame?.hiddenImages?.size ?: 6) + 3) / 4 * 230
+                View.NEURONS -> frame?.let { NeuronGallery.Layout(it.diagnostics, w).height } ?: 450
                 View.TIMELINE -> 80 + ((frame?.checkpoints?.size ?: 1) + 3) / 4 * 260
                 View.SEEDS -> 760
                 View.PARAMETERS -> 800
@@ -639,7 +641,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         }
 
         private fun neurons(g: Graphics2D, current: StudioFrame) {
-            card(g, 12, 12, width - 24, 332, "Forward pass · ${current.config.description()}", "Solid positive · dashed negative · connection width = |weight|")
+            card(g, 12, 12, width - 24, 332, "Forward pass · ${current.config.description()}", "Graph preview · solid positive / dashed negative · all neuron maps below")
             networkGraph(g, current, 42, 84, width - 84, 195)
             val probe = NeuroXorDiagnostics.probe(current.diagnostics, hoverX, hoverY)
             text(g, "Probe (${number(hoverX, 3)}, ${number(hoverY, 3)}) → ${number(probe.output(), 6)}   |   output z ${number(probe.outputPreActivation(), 4)}", 30, 306, 13, TEXT)
@@ -648,20 +650,25 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
                 text(g, "The output uses two input weights and one bias. There are no hidden activation maps.", 14, 399, 12, MUTED)
                 return
             }
-            val layer = current.hiddenLayer
-            val all = current.diagnostics.layerOutputCount(layer)
-            text(g, "H${layer + 1} activations · neurons ${current.hiddenStart + 1}–${current.hiddenStart + current.hiddenImages.size} of $all", 14, 375, 16, TEXT, true)
-            text(g, if (layer == 0) "Red line = z = 0 (activation 0.5) in input space" else "Deeper activations are nonlinear functions of x and y; no straight boundary is assumed.", 14, 399, 12, MUTED)
-            val columns = 4
-            val cellWidth = (width - 60) / columns
-            val size = minOf(158, cellWidth - 36)
-            for ((i, image) in current.hiddenImages.withIndex()) {
-                val x = 12 + i % columns * (cellWidth + 12)
-                val y = 420 + i / columns * 230
-                card(g, x, y, cellWidth, 216, "H${layer + 1}.${current.hiddenStart + i}", "activation 0–1")
-                val px = x + (cellWidth - size) / 2
-                plot(g, image, px, y + 58, size, false)
-                if (layer == 0) NeuroXorDiagnostics.boundary(current.diagnostics, current.hiddenStart + i)?.let { line ->
+            val layout = NeuronGallery.Layout(current.diagnostics, width)
+            val clip = g.clipBounds ?: visibleRect
+            val cells = layout.visible(clip)
+            neuronGallery.request(current.diagnostics, cells) { EventQueue.invokeLater { if (!closing) repaint() } }
+            for (section in layout.sections) {
+                if (section.top + 58 >= clip.y && section.top.toLong() < clip.y.toLong() + clip.height) {
+                    text(g, "H${section.layer + 1} activations · all ${section.neurons} neurons", 14, section.top + 18, 16, TEXT, true)
+                    text(g, if (section.layer == 0) "Red line = z = 0 in input space" else "Deeper activations are nonlinear functions of x and y.", 14, section.top + 42, 12, MUTED)
+                }
+            }
+            for (cell in cells) {
+                val (x, y, w) = listOf(cell.bounds.x, cell.bounds.y, cell.bounds.width)
+                val size = minOf(164, w - 36)
+                val px = x + (w - size) / 2
+                card(g, x, y, w, 242, "H${cell.layer + 1}.${cell.neuron}", "activation 0–1")
+                val image = neuronGallery.image(cell.layer, cell.neuron)
+                if (image == null) text(g, "Rendering…", px, y + 94, 12, MUTED)
+                else plot(g, image, px, y + 58, size, false)
+                if (cell.layer == 0) NeuroXorDiagnostics.boundary(current.diagnostics, cell.neuron)?.let { line ->
                     g.color = WARNING; g.stroke = BasicStroke(1.6f)
                     g.drawLine(px + (line.x1 * size).roundToInt(), y + 58 + ((1 - line.y1) * size).roundToInt(), px + (line.x2 * size).roundToInt(), y + 58 + ((1 - line.y2) * size).roundToInt())
                 }
@@ -848,7 +855,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         val window = JFrame("JNeuro · Neural Learning Studio").apply {
             defaultCloseOperation = WindowConstants.DISPOSE_ON_CLOSE
             contentPane = root
-            minimumSize = Dimension(1000, 720)
+            minimumSize = Dimension(900, 640)
             val available = GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
             size = Dimension(minOf(1520, available.width - 32), minOf(1000, available.height - 32))
             setLocationRelativeTo(null)
@@ -858,7 +865,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     }
 
     override fun close() {
-        closing = true; searchSession.invalidate(); revision.incrementAndGet(); timer.stop(); thread?.interrupt()
+        closing = true; searchSession.invalidate(); revision.incrementAndGet(); timer.stop(); neuronGallery.close(); thread?.interrupt()
     }
 
     companion object {

@@ -592,6 +592,7 @@ class Neuro @JvmOverloads constructor(
         private fun validateTopology(topology: IntArray): IntArray {
             require(topology.size >= 2) { "topology must contain at least input and output layers" }
             require(topology.all { it > 0 }) { "all layer sizes must be positive" }
+            NumericInputs.checkAllocation(topology)
             return topology.copyOf()
         }
         private fun requireFinite(values: DoubleArray, name: String) {

@@ -1075,8 +1075,7 @@ def coverageExcludes = [
         '**/NeuroNativeBlas*',
         '**/NeuroNativeBlasBenchmark*',
         '**/NeuroPerformanceMatrix*',
-        '**/NeuroVerification*',
-        '**/NeuroXorCanvas*'
+        '**/NeuroVerification*'
     ],
     observableconcurrenttree: [
         '**/ObservableConcurrentTreeBenchmark*',
@@ -1207,3 +1206,58 @@ tasks.register('coverageVerification') {
     }
 }
 
+
+project(':jneuro') {
+    def guiPython = providers.gradleProperty('guiPython').getOrElse(System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('windows') ? 'python' : 'python3')
+    tasks.named('test') {
+        useJUnitPlatform { excludeTags 'gui' }
+    }
+    def guiTest = tasks.register('guiTest', Test) {
+        group = 'verification'
+        description = 'Tests real JNeuro windows with native mouse/keyboard input; requires a display.'
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        useJUnitPlatform { includeTags 'gui' }
+        systemProperty 'java.awt.headless', 'false'
+        systemProperty 'junit.jupiter.execution.parallel.enabled', 'false'
+        systemProperty 'user.language', 'en'
+        systemProperty 'user.country', 'US'
+        systemProperty 'gui.screenshots', layout.buildDirectory.dir('screenshots/gui').get().asFile.absolutePath
+        maxParallelForks = 1
+        maxHeapSize = '1g'
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
+        doFirst {
+            delete layout.buildDirectory.dir('screenshots/gui').get().asFile
+            delete layout.buildDirectory.dir('test-results/guiTest').get().asFile
+        }
+        reports.junitXml.required = true
+        reports.html.required = true
+    }
+    def guiPathVerifierTest = tasks.register('guiPathVerifierTest', Exec) {
+        group = 'verification'
+        workingDir file('scripts')
+        commandLine guiPython, '-m', 'unittest', 'test_gui_paths.py'
+    }
+    def guiPathCoverage = tasks.register('guiPathCoverage', Exec) {
+        group = 'verification'
+        dependsOn guiTest, guiPathVerifierTest
+        commandLine guiPython, file('scripts/verify_gui_paths.py'), '--catalog', file('GUI_PATHS.md'),
+                '--reports', layout.buildDirectory.dir('test-results/guiTest').get().asFile,
+                '--output', layout.buildDirectory.file('reports/gui-paths/coverage.json').get().asFile
+    }
+    def guiCoverageReport = tasks.register('guiCoverageReport', org.gradle.testing.jacoco.tasks.JacocoReport) {
+        dependsOn guiTest
+        executionData(guiTest.map { it.extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension).destinationFile })
+        sourceDirectories.setFrom(files('src/main/kotlin'))
+        classDirectories.setFrom(files(sourceSets.main.output.classesDirs.collect {
+            fileTree(dir: it, includes: ['**/NeuroXorCanvas*', '**/ArchitectureSearchPanel*', '**/NeuronGallery*', '**/NumericInputs*'])
+        }))
+        reports { xml.required = true; html.required = true }
+    }
+    tasks.register('guiCheck') {
+        group = 'verification'
+        description = 'Runs real-window tests and enforces at least 90% of registered UI paths.'
+        dependsOn guiTest, guiPathCoverage, guiCoverageReport
+    }
+}

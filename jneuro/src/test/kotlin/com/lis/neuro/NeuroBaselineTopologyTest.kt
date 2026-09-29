@@ -100,8 +100,7 @@ class NeuroBaselineTopologyTest {
             try {
                 val root = field(ui, "root") as JPanel
                 val tabs = field(ui, "tabs") as JTabbedPane
-                assertFalse((field(ui, "hiddenLayer") as JComboBox<*>).isEnabled)
-                assertFalse((field(ui, "neuronPage") as JSpinner).isEnabled)
+                assertNotNull(field(ui, "neuronGallery"))
                 for (index in 0 until tabs.tabCount) {
                     tabs.selectedIndex = index; root.setSize(1520, 1060); layout(root)
                     val image = BufferedImage(1520, 1060, BufferedImage.TYPE_INT_RGB)
@@ -115,8 +114,7 @@ class NeuroBaselineTopologyTest {
                 val next = NeuroStudio(StudioConfig("3,2")).frame()
                 ui.javaClass.getDeclaredField("published").apply { isAccessible = true }.set(ui, next)
                 ui.javaClass.getDeclaredMethod("refresh").apply { isAccessible = true }.invoke(ui)
-                assertTrue((field(ui, "hiddenLayer") as JComboBox<*>).isEnabled)
-                assertTrue((field(ui, "neuronPage") as JSpinner).isEnabled)
+                assertEquals(2, (field(ui, "published") as StudioFrame).diagnostics.hiddenLayerCount())
             } finally { ui.close() }
         }
     }

@@ -6,11 +6,13 @@ on:
     paths:
       - 'jneuro/**'
       - 'build.gradle'
+      - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
   pull_request:
     paths:
       - 'jneuro/**'
       - 'build.gradle'
+      - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
 
 permissions:
@@ -80,4 +82,32 @@ jobs:
             jneuro/build/reports/**
             jneuro/build/screenshots/**
           if-no-files-found: ignore
+          retention-days: 14
+
+  gui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '27'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install virtual desktop
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth openbox
+      - name: Verify real GUI paths
+        run: >-
+          xvfb-run -a -s '-screen 0 1920x1200x24'
+          bash -c 'openbox --config-file jneuro/scripts/gui-openbox.xml >/tmp/jneuro-openbox.log 2>&1 & wm=$!; trap "kill $wm 2>/dev/null || true" EXIT; ./gradlew --no-daemon :jneuro:guiCheck'
+      - name: Upload GUI reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-gui-validation
+          path: |
+            jneuro/build/reports/**
+            jneuro/build/test-results/guiTest/**
+            jneuro/build/screenshots/gui/**
+          if-no-files-found: error
           retention-days: 14

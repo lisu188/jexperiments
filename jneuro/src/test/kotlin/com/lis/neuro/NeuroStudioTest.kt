@@ -118,7 +118,7 @@ class NeuroStudioTest {
 
     @Test fun validatesConfigurationCommandsAndDiffRendering() {
         for (config in listOf<() -> StudioConfig>(
-            { StudioConfig("2,") }, { StudioConfig(maxEpochs = 0) }, { StudioConfig(targetError = 0.0) },
+            { StudioConfig("2,") }, { StudioConfig(maxEpochs = 0) }, { StudioConfig(targetError = -1.0) },
             { StudioConfig(targetError = Double.NaN) }, { StudioConfig(learningRate = 0.0) }, { StudioConfig(momentum = 1.0) }))
             assertThrows(IllegalArgumentException::class.java) { config() }
         val studio = NeuroStudio()

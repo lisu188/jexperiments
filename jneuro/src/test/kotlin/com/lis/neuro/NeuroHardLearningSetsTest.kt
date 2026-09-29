@@ -116,7 +116,7 @@ class NeuroHardLearningSetsTest {
             assertTrue(training.intersect(validation).isEmpty())
             assertEquals(setOf(0.0, 1.0), data.validation.map { it.target }.toSet())
             val result = NeuroArchitectureSearch().search(data, ArchitectureSearchConfig(
-                maxLayers = 1, maxWidth = 2, seeds = listOf(1L, 42L), maxEpochs = 2,
+                strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 1, maxWidth = 2, seeds = listOf(1L, 42L), maxEpochs = 2,
                 checkEvery = 1, requiredSuccesses = 1, parallelism = 2))
             assertEquals(ArchitectureTermination.COMPLETED, result.termination)
             assertEquals(2, result.evaluated)
