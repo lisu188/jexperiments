@@ -62,7 +62,8 @@ internal data class StudioFrame(
     val history: List<StudioHistory>,
     val checkpoints: List<StudioCheckpoint>,
     val seeds: List<StudioSeed>,
-    val message: String = ""
+    val message: String = "",
+    val replayNote: String = ""
 )
 
 internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<NeuroLearningSets.Sample> = emptyList()) {
@@ -87,6 +88,7 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
     private var difference: BufferedImage? = null
     private var layerImages: List<BufferedImage>? = null
     private var failure = ""
+    private var replayNote = ""
     private val historyCapacity: Int get() = minOf(1024, maxOf(8, 2_000_000 / network.parameterCount()))
 
     private data class Render(val diagnostics: NeuroXorDiagnostics.Snapshot, val image: BufferedImage, val values: DoubleArray)
@@ -115,6 +117,7 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
         pendingEpochs = 0
         stepped = false
         failure = ""
+        replayNote = ""
         history.clear()
         checkpoints.clear()
         seedResults = emptyList()
@@ -217,6 +220,41 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
         return seedResults
     }
 
+    fun searchData(evaluation: ArchitectureEvaluation, fraction: Double = 0.2, splitSeed: Long = 42): ArchitectureSearchData =
+        if (evaluation == ArchitectureEvaluation.TRAINING_FIT) ArchitectureSearchData.fitting(samples, config.dataset.toString())
+        else ArchitectureSearchData.split(samples, fraction, splitSeed, config.dataset.toString())
+
+    fun applyArchitecture(report: ArchitectureSearchResult, candidate: ArchitectureCandidate) {
+        require(candidate.valid && report.candidates.any { it === candidate }) { "Choose a fully evaluated architecture from this search." }
+        val hp = report.config.hyperParameters
+        apply(config.copy(hidden = candidate.architecture.hidden.joinToString(","), maxEpochs = report.config.maxEpochs,
+            targetError = report.config.targetRmse, learningRate = hp.learningRate, momentum = hp.momentum))
+    }
+
+    fun replayArchitecture(report: ArchitectureSearchResult, candidate: ArchitectureCandidate, trial: ArchitectureTrial,
+                           cancelled: () -> Boolean = { false }): Boolean {
+        require(candidate.valid && report.candidates.any { it === candidate } && candidate.trials.any { it === trial } &&
+            trial.state == ArchitectureTrialState.COMPLETED) { "Choose a completed seed run from this search." }
+        if (cancelled()) return false
+        val model = report.data.newNetwork(candidate.architecture, report.config.hyperParameters, trial.seed)
+        repeat(trial.bestEpoch) {
+            if (cancelled()) return false
+            model.trainEpoch()
+        }
+        val score = report.data.score(model)
+        check(score.isFinite() && kotlin.math.abs(score - trial.bestRmse) <= 1e-10) { "Replay did not reproduce the scored checkpoint." }
+        if (cancelled()) return false
+        applyArchitecture(report, candidate)
+        config = config.copy(seed = trial.seed)
+        samples = report.data.training
+        network = model
+        epoch = trial.bestEpoch
+        error = model.trainingError()
+        stepped = true
+        replayNote = "Search replay · ${report.data.evaluation.label} %.5f · %d held-out samples".format(java.util.Locale.ROOT, score, report.data.validation.size)
+        return true
+    }
+
     fun fail(message: String) {
         require(message.isNotBlank()) { "Failure message must not be empty." }
         automatic = false
@@ -233,7 +271,7 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
             current.image.width).also { difference = it }
         return StudioFrame(config, state, current.diagnostics, samples, current.image,
             previousImage ?: current.image, previousEpoch, delta, images, selectedLayer, hiddenStart,
-            history.toList(), checkpoints.toList(), seedResults, failure)
+            history.toList(), checkpoints.toList(), seedResults, failure, replayNote)
     }
 
     private fun canTrain(): Boolean = samples.isNotEmpty() && epoch < config.maxEpochs &&

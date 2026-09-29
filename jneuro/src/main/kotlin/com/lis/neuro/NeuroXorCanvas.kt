@@ -18,13 +18,13 @@ import kotlin.math.roundToInt
 class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWorker: Boolean = true) : AutoCloseable {
     private enum class View(val title: String) {
         OVERVIEW("Overview"), NEURONS("Neurons"), DATA("Learning set"), UPDATE("Step effect"),
-        PARAMETERS("Parameters"), SEEDS("Seeds"), TIMELINE("Timeline")
+        PARAMETERS("Parameters"), SEEDS("Seeds"), TIMELINE("Timeline"), SEARCH("Architecture search")
     }
 
     private val root = JPanel(BorderLayout(0, 0))
     private val sidebar = JPanel()
     private val tabs = JTabbedPane()
-    private val charts = View.entries.associateWith { Chart(it) }
+    private val charts = View.entries.filter { it != View.SEARCH }.associateWith { Chart(it) }
     private val hidden = JTextField("6")
     private val dataset = JComboBox(NeuroLearningSets.Kind.entries.toTypedArray())
     private val seed = JTextField("42")
@@ -52,6 +52,17 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     private val metricDetails = List(4) { JLabel(" ") }
     private val commands = LinkedBlockingQueue<(NeuroStudio) -> Unit>()
     private val revision = AtomicLong()
+    private val searchSession = ArchitectureSearchSession()
+    @Volatile private var searchRunning = false
+    private val architectureSearch = ArchitectureSearchPanel(
+        { config, evaluation, fraction, splitSeed -> startArchitectureSearch(config, evaluation, fraction, splitSeed) },
+        { searchSession.cancel() },
+        { result, candidate ->
+            post { it.applyArchitecture(result, candidate) }
+            tabs.selectedIndex = View.OVERVIEW.ordinal
+        },
+        { result, candidate, trial -> replayArchitecture(result, candidate, trial) }
+    )
     @Volatile private var published: StudioFrame? = initial
     @Volatile private var closing = false
     @Volatile private var studyRunning = false
@@ -83,7 +94,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         root.add(buildWorkspace(), BorderLayout.CENTER)
         bind("control ENTER", "Apply configuration") { applySettings() }
         bind("control SPACE", "Toggle training") { toggleTraining() }
-        bind("control RIGHT", "Single epoch") { post { it.step(1) } }
+        bind("control RIGHT", "Single epoch") { if (!searchRunning && !studyRunning) post(false) { it.step(1) } }
         bind("control R", "Reset model") { post { it.apply(it.activeConfig) } }
         dataset.addActionListener { updateDescription() }
         updateDescription()
@@ -123,6 +134,12 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             add(JButton("+ Layer").apply { addActionListener { editLayers(true) } })
         }
         sidebar.add(Box.createVerticalStrut(8)); sidebar.add(layerButtons)
+        sidebar.add(Box.createVerticalStrut(8))
+        sidebar.add(JButton("Auto search…").apply {
+            alignmentX = 0f; maximumSize = Dimension(242, 34)
+            addActionListener { tabs.selectedIndex = View.SEARCH.ordinal }
+            toolTipText = "Compare architecture size, RMSE and reliability across seeds."
+        })
         sidebar.add(Box.createVerticalStrut(20))
         section("03  TRAINING")
         field("Random seed", seed)
@@ -186,8 +203,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         train.font = uiFont(13, Font.BOLD); train.toolTipText = "Start or pause · Ctrl+Space"
         train.addActionListener { toggleTraining() }
         step.toolTipText = "Advance exactly one complete epoch · Ctrl+Right"
-        step.addActionListener { post { it.step(1) } }
-        stepTen.addActionListener { post { it.step(10) } }
+        step.addActionListener { post(false) { it.step(1) } }
+        stepTen.addActionListener { post(false) { it.step(10) } }
         reset.toolTipText = "Reset the active configuration · Ctrl+R"
         reset.addActionListener { post { it.apply(it.activeConfig) } }
         controls.add(train); controls.add(step); controls.add(stepTen); controls.add(reset)
@@ -206,6 +223,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             }
             tabs.addTab(view.title, scroll)
         }
+        tabs.addTab(View.SEARCH.title, architectureSearch)
         tabs.addChangeListener { updateContextBar(); charts.values.forEach { it.revalidate(); it.repaint() } }
         tabs.font = uiFont(13)
         tabs.tabLayoutPolicy = JTabbedPane.SCROLL_TAB_LAYOUT
@@ -276,8 +294,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     }
 
     private fun toggleTraining() {
+        if (searchRunning || studyRunning) return
         val next = frame?.state != StudioState.RUNNING
-        post { it.setRunning(next) }
+        post(false) { it.setRunning(next) }
     }
 
     private fun bind(key: String, name: String, action: () -> Unit) {
@@ -285,8 +304,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         root.actionMap.put(name, object : AbstractAction() { override fun actionPerformed(event: ActionEvent) = action() })
     }
 
-    private fun post(action: (NeuroStudio) -> Unit) {
+    private fun post(invalidateSearch: Boolean = true, action: (NeuroStudio) -> Unit) {
         if (closing) return
+        if (invalidateSearch) {
+            searchSession.invalidate(); searchRunning = false; architectureSearch.invalidateResults()
+        }
         revision.incrementAndGet()
         commands.offer(action)
     }
@@ -310,8 +332,65 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
     }
 
+    private fun startArchitectureSearch(config: ArchitectureSearchConfig, evaluation: ArchitectureEvaluation, fraction: Double, splitSeed: Long) {
+        val expectedConfig = frame?.config
+        val expectedSamples = frame?.samples
+        val token = searchSession.begin()
+        searchRunning = true
+        revision.incrementAndGet()
+        commands.offer { studio ->
+            if (!searchSession.isCurrent(token)) return@offer
+            try {
+                studio.setRunning(false)
+                require(studio.activeConfig == expectedConfig && studio.frame().samples == expectedSamples) {
+                    "Active configuration changed before search started. Try again on the current run."
+                }
+                val data = studio.searchData(evaluation, fraction, splitSeed)
+                published = studio.frame()
+                val report = NeuroArchitectureSearch().search(data, config, { progress ->
+                    EventQueue.invokeLater {
+                        if (!closing && searchSession.isCurrent(token)) architectureSearch.updateProgress(progress)
+                    }
+                }, { closing || token.cancelled.get() || !searchSession.isCurrent(token) })
+                EventQueue.invokeLater {
+                    if (!closing && searchSession.isCurrent(token)) {
+                        searchRunning = false; architectureSearch.complete(report); refresh()
+                    }
+                }
+            } catch (exception: Exception) {
+                EventQueue.invokeLater {
+                    if (!closing && searchSession.isCurrent(token)) {
+                        searchRunning = false; architectureSearch.failed(exception.message ?: "Search failed"); refresh()
+                    }
+                }
+            }
+        }
+        refresh()
+    }
+
+    private fun replayArchitecture(report: ArchitectureSearchResult, candidate: ArchitectureCandidate, trial: ArchitectureTrial) {
+        revision.incrementAndGet()
+        val token = searchSession.begin()
+        searchRunning = true
+        commands.offer { studio ->
+            studio.setRunning(false)
+            published = studio.frame()
+            try {
+                studio.replayArchitecture(report, candidate, trial) { closing || token.cancelled.get() || !searchSession.isCurrent(token) }
+            } finally {
+                EventQueue.invokeLater {
+                    if (!closing && searchSession.isCurrent(token)) {
+                        searchRunning = false; architectureSearch.invalidateResults()
+                        tabs.selectedIndex = View.OVERVIEW.ordinal; refresh()
+                    }
+                }
+            }
+        }
+        refresh()
+    }
+
     private fun startStudy() {
-        if (studyRunning) return
+        if (studyRunning || searchRunning) return
         studyRunning = true
         val expected = revision.incrementAndGet()
         commands.offer { studio ->
@@ -331,7 +410,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             updating = true
             neuronPage.model = SpinnerNumberModel(offset, 0, maximum, 8)
             updating = false
-            post { model -> model.selectHidden(layer, offset) }
+            post(false) { model -> model.selectHidden(layer, offset) }
         }
     }
 
@@ -364,7 +443,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
                 contextBar.add(JButton("Clear custom").apply { addActionListener { post { it.clearSamples() } } })
             }
             View.SEEDS -> {
-                study.isEnabled = !studyRunning && frame?.samples?.isNotEmpty() == true
+                study.isEnabled = !studyRunning && !searchRunning && frame?.samples?.isNotEmpty() == true
                 contextBar.add(study)
                 if (studyRunning) { contextBar.add(cancelStudy); contextBar.add(JLabel("Comparing… main run paused").apply { foreground = ACCENT }) }
                 else contextBar.add(JLabel("Same dataset and topology; independent initialization").apply { foreground = MUTED })
@@ -372,6 +451,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             else -> contextBar.add(JLabel(when (View.entries[tabs.selectedIndex.coerceAtLeast(0)]) {
                 View.UPDATE -> "Before / after one update batch. Pause and step to isolate an epoch."
                 View.TIMELINE -> "Saved milestones and final state. These images are history, not replay controls."
+                View.SEARCH -> "Exhaustive within bounds. Full-budget seed trials; no early pruning or claim of a global optimum."
                 else -> "Grayscale = output 0–1. RMSE = training error, not validation error."
             }).apply { foreground = MUTED; font = uiFont(12) })
         }
@@ -394,9 +474,10 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             updating = false
             updateParameterPage(); updateContextBar()
         }
-        status.text = if (studyRunning) "Comparing seeds…" else next.state.label
+        architectureSearch.setSource(next.config, next.samples.size)
+        status.text = if (searchRunning) "Architecture search…" else if (studyRunning) "Comparing seeds…" else next.state.label
         status.foreground = if (next.state == StudioState.FAILED) ERROR else ACCENT
-        activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}"
+        activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}" + if (next.replayNote.isEmpty()) "" else "   ·   ${next.replayNote}"
         metrics[0].text = "%,d".format(Locale.ROOT, next.diagnostics.epoch())
         metricDetails[0].text = "of %,d epochs".format(Locale.ROOT, next.config.maxEpochs)
         metrics[1].text = number(next.diagnostics.error(), 5)
@@ -406,7 +487,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         metrics[3].text = next.samples.size.toString(); metricDetails[3].text = "2 inputs · 1 output"
         train.text = if (next.state == StudioState.RUNNING) "Pause" else "Train"
         val finished = next.state in setOf(StudioState.EMPTY, StudioState.CONVERGED, StudioState.LIMIT_REACHED, StudioState.FAILED)
-        train.isEnabled = !finished && !studyRunning; step.isEnabled = !finished && !studyRunning; stepTen.isEnabled = !finished && !studyRunning
+        train.isEnabled = !finished && !studyRunning && !searchRunning; step.isEnabled = !finished && !studyRunning && !searchRunning; stepTen.isEnabled = !finished && !studyRunning && !searchRunning
         if (next.message.isNotEmpty()) showConfigError(next.message)
         if (View.entries[tabs.selectedIndex.coerceAtLeast(0)] == View.SEEDS) updateContextBar()
         if (changed) charts.values.forEach { it.revalidate(); it.repaint() }
@@ -499,6 +580,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
                     View.PARAMETERS -> parameters(g, current)
                     View.SEEDS -> seeds(g, current)
                     View.TIMELINE -> timeline(g, current)
+                    View.SEARCH -> Unit
                 }
                 if (hasFocus()) { g.color = ACCENT; g.stroke = BasicStroke(2f); g.drawRect(2, 2, width - 5, height - 5) }
             } finally { g.dispose() }
@@ -767,7 +849,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     }
 
     override fun close() {
-        closing = true; revision.incrementAndGet(); timer.stop(); thread?.interrupt()
+        closing = true; searchSession.invalidate(); revision.incrementAndGet(); timer.stop(); thread?.interrupt()
     }
 
     companion object {
@@ -840,9 +922,12 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
                 while (studio.hasWork) studio.advance(100)
                 studio.compareSeeds()
                 val snapshot = studio.frame()
+                val searchPreview = NeuroArchitectureSearch().search(studio.searchData(ArchitectureEvaluation.TRAINING_FIT),
+                    ArchitectureSearchConfig(maxLayers = 2, maxWidth = 3, maxEpochs = 2500, maxParameters = 32))
                 EventQueue.invokeAndWait {
                     installTheme()
                     NeuroXorCanvas(snapshot, false).use { ui ->
+                        ui.architectureSearch.complete(searchPreview)
                         ui.root.setSize(1520, 1060)
                         for (view in View.entries) {
                             ui.tabs.selectedIndex = view.ordinal
