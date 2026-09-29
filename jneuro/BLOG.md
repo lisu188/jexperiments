@@ -286,29 +286,34 @@ parameters = sum((inputWidth + 1) * outputWidth)
 
 The next candidate is generated from observed results, not taken from a precomputed list. Ordered layer sequences remain distinct: `4,2` is not deduplicated with `2,4`. `NetworkArchitecture` owns an unmodifiable copy of its widths and uses value equality, avoiding the reference equality of Kotlin arrays.
 
-The initial budget is 10,000 seed trials; the maximum is 20,000. An adaptive run reserves a complete seed group before evaluating the next architecture. It checks retained checkpoint storage before funding each new group and stops with `MEMORY_LIMIT` before exceeding eight million parameter values. The default adaptive strategy does not call `architectures()` and can explore spaces too large for exhaustive enumeration. The optional **Exhaustive · reference** strategy preserves the original grid search: it rejects more than 4,096 candidates or 100,000 visited prefixes and funds a deterministic parameter-ordered prefix of complete seed groups. Checkpoint curves are compacted to at most 128 entries per seed while preserving the initial, final and current best checkpoints. These limits bound stored model state; actual JVM overhead also includes objects, datasets and temporary training workspaces.
+The default budget is 10,000 seed trials; the input has no arbitrary preset maximum. An adaptive run reserves a complete seed group before evaluating the next architecture. It checks retained checkpoint storage before funding each new group and stops with `MEMORY_LIMIT` before exceeding eight million parameter values. The default adaptive strategy does not call `architectures()` and can explore spaces too large for exhaustive enumeration. The optional **Exhaustive · reference** strategy preserves the original grid search: it rejects more than 4,096 candidates or 100,000 visited prefixes and funds a deterministic parameter-ordered prefix of complete seed groups. Checkpoint curves are compacted to at most 128 entries per seed while preserving the initial, final and current best checkpoints. These limits bound stored model state; actual JVM overhead also includes objects, datasets and temporary training workspaces.
 
-Depth/width controls support the Studio's existing limits of eight hidden layers and 128 neurons per layer, subject to parameter and storage limits. Adaptive mode previews a seed-trial budget and starting architecture, not a fictitious total candidate count. An optional wall-clock limit is a safety stop, not a reproducibility promise: it can leave different subsets evaluated on different machines.
+Depth/width controls accept positive ordered bounds subject to explicit numeric, parameter and storage safety checks, without the former eight-layer/128-neuron caps. Adaptive mode previews a seed-trial budget and starting architecture, not a fictitious total candidate count. An optional wall-clock limit is a safety stop, not a reproducibility promise: it can leave different subsets evaluated on different machines.
 
 ### Adaptive mutation of completed leaders
 
 The Studio supplies its active hidden widths as the initial architecture. If those widths lie outside the selected search bounds (including the direct `2 → 1` baseline when hidden layers are required), the planner explicitly starts from the smallest legal architecture instead. Editing the sidebar alone still does not affect the active search input.
 
-The coordinator evaluates one architecture at a time, parallelizing only its independent seed trials. It waits for the entire seed group before asking the planner for another proposal:
+`AdaptiveTrialScheduler` shares the trial pool across architectures as well as seeds. The previous coordinator submitted one architecture and waited for all of its seeds; this limited active work to `min(parallelism, seeds.size)`. One seed therefore used only one worker even with Parallel seed trials set to 32.
+
+The scheduler now reserves a full seed group for each admitted architecture and submits individual trials while a worker slot is available. Once the bootstrap architecture is evaluated, spare slots receive offspring of the current completed elite. Finished groups update the elite immediately; no generation-wide or architecture-wide barrier holds up unrelated work. A slow seed does not block other architectures from progressing.
 
 ~~~kotlin
-val proposal = planner.next()
-val candidate = evaluateAllSeeds(proposal.architecture)
-planner.observe(candidate)
+if (trials.size == config.seeds.size) {
+    val candidate = candidate(finished.architecture, trials)
+    pending.remove(finished.architecture)
+    completed += candidate
+    if (candidate.fullyEvaluated) planner.observe(candidate)
+}
 ~~~
 
-This is schematic control flow: `searchAdaptive` owns the completion service and `evaluate` performs each actual training trial. The search engine does not use an epoch-zero score, fastest-finishing seed or partial result as a parent-selection signal. Worker scheduling therefore does not determine the next architecture.
+A partially evaluated architecture is never a parent. `propose()` may issue several children of evaluated parents while other children remain outstanding. An empty neighbourhood while work is pending means wait for feedback, not end the search. The initial single architecture must still finish before any valid parent exists; after that, utilization depends on available unseen elite mutations and the remaining budget. Search parallelism does not parallelize the ordinary Studio Train button.
 
 After each completed seed group, `ArchitectureRanking` recomputes the recommendation, best-error candidate, ordinary Pareto frontier and reliability-filtered frontier. `EliteParentSelection` builds the current mating pool from the two frontiers and the recommendation, using only fully evaluated finite candidates. An architecture dominated out of both frontiers immediately loses eligibility and its cached neighbourhood is discarded. Failed or partial groups never breed.
 
 A new recommendation (or best-error leader before a reliable solution exists) gets the next available mutation opportunity. A newly admitted Pareto candidate also gets one immediate opportunity when the leader is unchanged. Subsequent parents are **selected again by fitness for every offspring**, not rotated through an insertion-order queue. The pool is ordered by the active recommendation policy: reliable target-meeting architectures first and smallest first in the default mode; smallest within tolerance in near-best mode; lowest median RMSE in accuracy mode. Outside the preferred group, median RMSE then parameter count determine order. All comparisons use the completed seed group, not one lucky initialization.
 
-The selector draws two ranks independently with replacement and chooses the better rank. With `n` eligible parents the best rank wins with probability `1 - ((n - 1) / n)^2`; lower-ranked frontier trade-offs retain a chance to breed, preserving diversity without using inferior candidates outside the elite pool. This is a fitness tournament, not a claim to implement NSGA-II or crowding-distance selection. Canonical ordering and the separate search seed make the outcome reproducible across worker counts.
+The selector draws two ranks independently with replacement and chooses the better rank. With `n` eligible parents the best rank wins with probability `1 - ((n - 1) / n)^2`; lower-ranked frontier trade-offs retain a chance to breed, preserving diversity without using inferior candidates outside the elite pool. This is a fitness tournament, not a claim to implement NSGA-II or crowding-distance selection. Canonical ordering and the separate search seed make each selection reproducible for a given sequence of observations. With asynchronous evaluation, the observation sequence and therefore the adaptive search trajectory can change with timing or worker count; use one worker for a repeatable proposal sequence. Individual architecture/seed training and replay remain deterministic.
 
 ~~~kotlin
 val parent = promotedParent?.takeIf { it in available }
@@ -386,7 +391,11 @@ Only the training partition is added as training samples. Validation samples are
 
 ### Cancellation and model ownership
 
-`ExecutorCompletionService` manages outstanding seed trials. Adaptive mode submits at most one full seed group (up to 20 trials) and uses a bounded worker count; reference mode retains its original bounded outstanding-trial queue. Each worker owns a fresh `Neuro`; there is no nested parallel training pool and no inference against a network another thread is updating. Seed results are assembled in canonical configured-seed order. Adaptive candidates retain their proposal order; reference candidates retain parameter order. Completion order does not alter ranking or adaptive lineage. Progress contains copied lists and immutable diagnostic snapshots, published at most about ten times per second apart from the initial/final events.
+[`ExecutorCompletionService`](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/ExecutorCompletionService.html) delivers completed trials to one coordinator. At most `parallelism` trials are submitted but not yet received. Each newly admitted architecture reserves **all** configured seeds against the trial and eight-million-parameter checkpoint budgets; full-group funding cannot be exceeded by in-flight work. A budget or memory stop prevents new admissions but still completes already funded groups. A cancellation or deadline stops submission and drains active trials cooperatively, leaving unstarted seeds explicitly incomplete.
+
+Each worker owns a fresh `Neuro`; there is no nested training pool and no concurrent weight mutation of one network. Globally unique trial IDs prevent different architectures using the same seed index from overwriting each other's progress. `TrialActivity` counts actual active evaluator calls and records peak overlap in both search strategies. The UI shows `Active trials: N/P`, distinct active architectures and peak utilization, instead of displaying only the first running trial as though it were the whole pool. Allocation and scoring are included in the evaluator lifetime; this is concurrency telemetry, not a CPU-percent or speedup measurement.
+
+Seed results retain configured-seed order. Completed adaptive candidates retain **feedback order**; `lineage` retains **proposal order**, and each proposal records `evaluatedCount`, the length of the completed feedback prefix from which its parent was selected. This allows tests and consumers to reconstruct the actual eligible parent pool even when children finish out of order. A parent demoted after a child's submission does not retroactively invalidate that already-running child. Later proposals use the freshly ranked elite. Progress remains immutable and throttled to approximately ten updates per second, plus initial and final events.
 
 Cancellation is cooperative between epochs. A cancelled search drains its submitted jobs, retains completed candidates and explicitly reports partial and untested counts. The pool is shut down in `finally`, including when a progress callback fails. Cancellation latency is bounded by the current epoch's work, not by a hard millisecond guarantee.
 
@@ -423,7 +432,7 @@ Primary references for these boundaries are [Kotlin array equality and defensive
 
 ### Adaptive search regression checks
 
-Focused tests prove that changing a child's measured RMSE changes the next proposal, that each newly promoted leader is used as a parent immediately, and that dominated or numerically failed candidates are not expanded. Other checks cover width/depth/order mutations, deterministic restarts, deduplication, defensive copies, bounded large-space execution without enumeration, serial/parallel lineage equality, full trial budgets, storage limits, cancellation and observer-failure cleanup. A real shallow XOR adaptive sweep retains the expected two-neuron recommendation under the default five-seed protocol; it is a reproducible local result, not a global-search guarantee.
+Focused tests prove that changing a child's measured RMSE changes the next proposal, that each newly promoted leader is used as a parent immediately, and that dominated or numerically failed candidates are not expanded. Other checks cover width/depth/order mutations, deterministic restarts, deduplication, defensive copies, bounded large-space execution without enumeration, serial trajectory repeatability, per-architecture numerical equality across worker counts, full trial budgets, storage limits, cancellation and observer-failure cleanup. A real shallow XOR adaptive sweep retains the expected two-neuron recommendation under the default five-seed protocol; it is a reproducible local result, not a global-search guarantee.
 
 ## Direct 2 → 1 baseline and PR #46 integration
 
@@ -540,3 +549,9 @@ The GUI path verifier uses Python 3 (`python` on Windows, `python3` elsewhere). 
 ### Elite-parent regression verification
 
 Tests assert policy-dependent rank ordering, reliability-frontier preservation, exclusion of failed/partial/dominated groups, deterministic tournament selection and a preference for fitter ranks without collapsing to a single parent. Planner tests reconstruct the elite pool from each completed prefix and verify every ordinary and restart descendant against it; old neighbourhoods cannot leak a demoted parent. The native GUI regression checks that the result table exposes the same valid ancestry. The registered GUI scenario catalog is maintained separately from line coverage.
+
+### Parallel trial regression verification
+
+The concurrency regression holds 32 offspring at a latch until 32 distinct worker threads have entered their evaluator simultaneously, with only one seed configured. A separate five-seed test exercises 32 concurrent slots across several architectures and verifies grouping, exact full-seed budgets and attribution. A slow-offspring test proves other architectures advance without waiting for it. Tests also verify out-of-order feedback, exclusion of partial parents, elite membership at proposal time, cancellation of all 32 workers, observer-failure cleanup, and accurate lower concurrency for a one-architecture budget.
+
+The native GUI scenario GUI-097 enters 32 workers and a single seed through the real controls, starts adaptive search, asserts the live count reaches 32 across different architectures, cancels it, and checks the retained peak. The peak is limited by available independent tasks: bootstrap, an exhausted search space, a narrow budget, and completion of the final few trials can legitimately use fewer workers. A fixed pool does not create additional work merely because its capacity is 32; see the [Executor factory contract](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/Executors.html).

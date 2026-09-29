@@ -121,20 +121,26 @@ class AdaptiveArchitectureSearchTest {
         assertEquals(seen.size, planner.lineage.size)
     }
 
-    @Test fun serialAndParallelAdaptiveRunsHaveTheSameLineageFullBudgetsAndRankings() {
+    @Test fun serialAndParallelAdaptiveRunsPreserveFullBudgetsAndPerArchitectureNumerics() {
         val data = ArchitectureSearchData.fitting(xor())
         fun run(workers: Int) = NeuroArchitectureSearch().search(data, ArchitectureSearchConfig(initialHidden = listOf(2, 2),
             maxLayers = 3, maxWidth = 8, maxTrials = 30, maxEpochs = 100, checkEvery = 25, parallelism = workers))
-        val first = run(1); val parallel = run(4)
-        assertEquals(ArchitectureTermination.TRIAL_BUDGET, first.termination)
-        assertEquals(first.lineage, parallel.lineage)
-        assertEquals(6, first.evaluated); assertEquals(0, first.untested)
-        for ((left, right) in first.candidates.zip(parallel.candidates)) {
-            assertEquals(left.architecture, right.architecture)
-            assertEquals(left.medianRmse, right.medianRmse, 1e-12)
-            assertEquals(5, left.trials.size)
-            for ((a, b) in left.trials.zip(right.trials)) {
-                assertEquals(100, a.epochs)
+        val serial = run(1); val repeated = run(1); val parallel = run(4)
+        assertEquals(serial.lineage, repeated.lineage)
+        for (report in listOf(serial, parallel)) {
+            assertEquals(ArchitectureTermination.TRIAL_BUDGET, report.termination)
+            assertEquals(6, report.evaluated); assertEquals(0, report.untested)
+            assertTrue(report.candidates.all { it.trials.size == 5 && it.trials.all { trial -> trial.epochs == 100 } })
+            for (proposal in report.lineage) proposal.parent?.let { parent ->
+                val observed = report.candidates.take(proposal.evaluatedCount)
+                assertTrue(parent in EliteParentSelection.rank(ArchitectureRanking.select(observed, report.config), report.config))
+            }
+        }
+        val right = parallel.candidates.associateBy { it.architecture }
+        for (left in serial.candidates) right[left.architecture]?.let { matching ->
+            assertEquals(left.medianRmse, matching.medianRmse, 1e-12)
+            for ((a, b) in left.trials.zip(matching.trials)) {
+                assertEquals(a.seed, b.seed)
                 assertArrayEquals(a.snapshot!!.parameters(), b.snapshot!!.parameters(), 1e-12)
             }
         }

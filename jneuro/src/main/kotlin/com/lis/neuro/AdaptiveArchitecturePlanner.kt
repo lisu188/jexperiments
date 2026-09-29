@@ -12,7 +12,8 @@ internal data class ArchitectureProposal(
     val architecture: NetworkArchitecture,
     val parent: NetworkArchitecture? = null,
     val mutation: String = "Initial architecture",
-    val generation: Int = 0
+    val generation: Int = 0,
+    val evaluatedCount: Int = 0
 )
 
 internal object EliteParentSelection {
@@ -48,12 +49,17 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
     private var leader: NetworkArchitecture? = null
     private var stagnant = 0
     private var restarts = 0
-    private var awaiting: NetworkArchitecture? = null
+    private val awaiting = HashSet<NetworkArchitecture>()
     val lineage: List<ArchitectureProposal> get() = java.util.List.copyOf(issued.values)
     val restartCount: Int get() = restarts
 
     fun next(): ArchitectureProposal? {
-        check(awaiting == null) { "Evaluate all seeds before proposing another architecture." }
+        check(awaiting.isEmpty()) { "Evaluate all seeds before proposing another architecture." }
+        return propose()
+    }
+
+    fun propose(): ArchitectureProposal? {
+        if (elites.isEmpty() && awaiting.isNotEmpty()) return null
         if (issued.isEmpty()) return issue(ArchitectureProposal(config.startingArchitecture()))
         if (stagnant >= config.restartAfter && restarts < config.maxRestarts) {
             restart()?.let { return issue(it) }
@@ -68,20 +74,25 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
             promotedParent = null
             return issue(neighbours.getValue(parent).removeFirst())
         }
-        return restart()?.let { issue(it) }
+        return if (awaiting.isEmpty()) restart()?.let { issue(it) } else null
     }
 
     fun observe(candidate: ArchitectureCandidate) {
-        check(candidate.architecture == awaiting) { "Candidate does not match the outstanding proposal." }
+        check(candidate.architecture in awaiting) { "Candidate does not match the outstanding proposal." }
         check(candidate.fullyEvaluated) { "Only completed seed groups can guide the search." }
-        awaiting = null
+        awaiting.remove(candidate.architecture)
         evaluated[candidate.architecture] = candidate
         val selection = ArchitectureRanking.select(evaluated.values.toList(), config)
         val nextLeader = (selection.recommended ?: selection.bestError)?.architecture
         val nextElites = EliteParentSelection.rank(selection, config)
         val promoted = nextElites.toSet() - elites.toSet()
         stagnant = if (promoted.isNotEmpty() || nextLeader != leader) 0 else stagnant + 1
-        promotedParent = if (nextLeader != leader) nextLeader else candidate.architecture.takeIf { it in promoted }
+        promotedParent = when {
+            nextLeader != leader -> nextLeader
+            promotedParent == nextLeader -> promotedParent
+            candidate.architecture in promoted -> candidate.architecture
+            else -> promotedParent?.takeIf { it in nextElites }
+        }
         neighbours.keys.retainAll(nextElites.toSet())
         elites = nextElites
         leader = nextLeader
@@ -125,9 +136,10 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
     }
 
     private fun issue(proposal: ArchitectureProposal): ArchitectureProposal {
-        check(issued.putIfAbsent(proposal.architecture, proposal) == null) { "Architecture was already evaluated." }
-        awaiting = proposal.architecture
-        return proposal
+        val recorded = proposal.copy(evaluatedCount = evaluated.size)
+        check(issued.putIfAbsent(recorded.architecture, recorded) == null) { "Architecture was already evaluated." }
+        awaiting.add(recorded.architecture)
+        return recorded
     }
 
     private fun restart(): ArchitectureProposal? {

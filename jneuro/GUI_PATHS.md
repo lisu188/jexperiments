@@ -104,3 +104,4 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-094 | Replay keeps validation samples held out | `validationSearchReplaysHeldOutPartition` |
 | GUI-095 | Reset validation replay restores the full Studio dataset | `validationSearchReplaysHeldOutPartition` |
 | GUI-096 | Adaptive result ancestry names an eligible, fully evaluated elite for each descendant | `searchResultsSupportNativeSelectionInspectionReplayAndApply` |
+| GUI-097 | Parallel trials set to 32 starts 32 concurrent elite offspring with one seed and exposes actual utilization | `parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization` |
