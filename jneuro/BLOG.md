@@ -502,25 +502,67 @@ Those omissions are deliberate boundaries rather than hot-path limitations: the 
 
 
 
-## Live XOR learning dashboard
+## Visual learning playground
 
-JNeuro includes an AWT Canvas dashboard that exposes how a small 2-6-1 network constructs XOR rather than only showing the final classifier.
+The original XOR Canvas is now a multi-view neural-network learning playground. It still uses the small 2-6-1 dense network, but it can train on several deterministic two-dimensional datasets and preserve enough state to explain how the learned function changes.
 
-The main heatmap keeps the original interpretation: x and y are the two inputs over the range 0 to 1, and pixel brightness is the network output. Black is 0, white is 1, and intermediate activations are gray.
+Available learning sets are:
 
-Below it, six smaller heatmaps show the activation surface of every hidden neuron. A red line overlays each neuron's first-layer z = 0 boundary, so movement of its weight vector and bias is visible geometrically while SGD trains.
+~~~text
+XOR
+AND
+OR
+NAND
+XNOR
+Noisy XOR
+Circle
+Spiral
+Custom
+~~~
 
-A live network diagram shows the same snapshot structurally. Connection thickness is proportional to absolute weight magnitude, blue and orange distinguish positive and negative weights, and node brightness is the activation for the point currently selected on the main heatmap. Moving the mouse across the heatmap therefore acts as a forward-pass inspector.
+The boolean sets expose linear versus non-linear separability directly. Noisy XOR replaces each corner with a deterministic cloud of labeled samples. Circle and Spiral make the same tiny network approximate curved decision regions. Custom mode turns the output surface into an editor: left click adds a target-1 point and right click adds a target-0 point, then training restarts on the edited dataset.
 
-The diagram also shows each hidden neuron's signed contribution to the output pre-activation. This makes it possible to see which hidden features are reinforcing or suppressing the output for a selected point.
+The playground has six views.
 
-A training-history chart records RMSE plus f(0,0), f(0,1), f(1,0), and f(1,1). The separation of the four XOR cases is visible alongside loss convergence instead of being reduced to the latest scalar values.
+### Overview
 
-Pause, single-epoch step, ten-epoch step, resume, and reset controls make the training trajectory inspectable rather than forcing a fixed-speed animation.
+Overview combines the output surface, hidden-neuron activation maps, first-layer z = 0 boundaries, the live network graph, forward-pass inspection, hidden-neuron output contributions, and RMSE/output history.
 
-Training, output rendering, parameter capture, and hidden-map generation all happen on the same worker thread. The AWT event thread only receives immutable post-update snapshots, so visualization never performs inference against weights while they are being mutated.
+### Learning set
 
-Run it with:
+Learning set overlays every training example on the current learned surface. This is useful for comparing memorization and generalization, especially with Noisy XOR, Circle, Spiral, and hand-authored custom points.
+
+### Step effect
+
+Step effect preserves the previous parameter snapshot and shows three maps side by side:
+
+~~~text
+before
+after
+delta f(x, y)
+~~~
+
+Positive changes are red and negative changes are blue. Pause the run and use Step 1 epoch to isolate the spatial effect of one complete shuffled SGD epoch.
+
+### Parameters
+
+Parameters tracks every model parameter through training. Separate charts show all input-to-hidden weights, hidden biases, hidden-to-output weights, and layer-level weight/bias norms.
+
+Because this network has only 25 trainable values, plotting the complete parameter trajectory is practical and makes symmetry breaking, saturation, and convergence visible.
+
+### Seeds
+
+Seeds trains the same architecture and learning set from four deterministic random initializations. Their output surfaces are displayed together with the resulting RMSE, showing that different parameter-space trajectories can learn geometrically different approximations of the same problem.
+
+### Timeline
+
+Timeline retains output surfaces around meaningful epoch milestones. Unlike an animation, these small multiples can be compared directly and show how broad low-frequency structure turns into the final classifier.
+
+The toolbar also exposes pause/resume, one-epoch stepping, ten-epoch stepping, reset, and 1x/10x/100x training speeds.
+
+All mutable model operations remain on the training worker. The AWT event thread receives immutable parameter/image/history snapshots, so rendering, hover inspection, timeline comparison, and step-difference views never race a weight update.
+
+Run the playground with:
 
 ~~~text
 ./gradlew :jneuro:runXorCanvas

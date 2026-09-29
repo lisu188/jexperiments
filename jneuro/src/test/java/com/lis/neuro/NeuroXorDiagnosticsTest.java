@@ -140,7 +140,70 @@ final class NeuroXorDiagnosticsTest {
             assertEquals(outputWeights[neuron], snapshot.outputWeight(neuron), 0.0);
         }
         assertEquals(outputBiases[0], snapshot.outputBias(), 0.0);
+        assertEquals(25, snapshot.parameters().length);
         assertNotNull(NeuroXorDiagnostics.probe(snapshot, 0.0, 0.0));
+    }
+
+    @Test
+    void rendersOutputAndDifferenceMaps() {
+        var network = xorNetwork();
+        var before = NeuroXorDiagnostics.capture(network, 0, network.trainingError());
+        network.train(10);
+        var after = NeuroXorDiagnostics.capture(network, 10, network.trainingError());
+
+        var output = NeuroXorDiagnostics.renderOutputMap(after, 6);
+        var difference = NeuroXorDiagnostics.renderDifferenceMap(before, after, 6);
+
+        assertEquals(6, output.getWidth());
+        assertEquals(6, output.getHeight());
+        assertEquals(6, difference.getWidth());
+        assertEquals(6, difference.getHeight());
+        assertEquals(
+                NeuroXorGrid.grayRgb(NeuroXorDiagnostics.probe(after, 0.0, 1.0).output()),
+                output.getRGB(0, 0) & 0xFFFFFF);
+    }
+
+    @Test
+    void differenceColorsEncodeDirection() {
+        var positive = NeuroXorDiagnostics.differenceRgb(0.2);
+        var negative = NeuroXorDiagnostics.differenceRgb(-0.2);
+        var neutral = NeuroXorDiagnostics.differenceRgb(0.0);
+
+        assertTrue(((positive >> 16) & 0xFF) > (positive & 0xFF));
+        assertTrue((negative & 0xFF) > ((negative >> 16) & 0xFF));
+        assertEquals((neutral >> 16) & 0xFF, neutral & 0xFF);
+        assertThrows(IllegalArgumentException.class, () -> NeuroXorDiagnostics.differenceRgb(Double.NaN));
+    }
+
+    @Test
+    void computesWeightAndBiasNorms() {
+        var snapshot = NeuroXorDiagnostics.capture(xorNetwork(), 0, 0.5);
+
+        assertTrue(NeuroXorDiagnostics.weightNorm(snapshot, 0) > 0.0);
+        assertTrue(NeuroXorDiagnostics.weightNorm(snapshot, 1) > 0.0);
+        assertEquals(0.0, NeuroXorDiagnostics.biasNorm(snapshot, 0), 0.0);
+        assertEquals(0.0, NeuroXorDiagnostics.biasNorm(snapshot, 1), 0.0);
+        assertThrows(IllegalArgumentException.class, () -> NeuroXorDiagnostics.weightNorm(snapshot, 2));
+        assertThrows(IllegalArgumentException.class, () -> NeuroXorDiagnostics.biasNorm(snapshot, -1));
+        assertThrows(NullPointerException.class, () -> NeuroXorDiagnostics.weightNorm(null, 0));
+        assertThrows(NullPointerException.class, () -> NeuroXorDiagnostics.biasNorm(null, 0));
+    }
+
+    @Test
+    void validatesNewRenderHelpers() {
+        var snapshot = NeuroXorDiagnostics.capture(xorNetwork(), 0, 0.5);
+
+        assertThrows(NullPointerException.class, () -> NeuroXorDiagnostics.renderOutputMap(null, 4));
+        assertThrows(IllegalArgumentException.class, () -> NeuroXorDiagnostics.renderOutputMap(snapshot, 1));
+        assertThrows(
+                NullPointerException.class,
+                () -> NeuroXorDiagnostics.renderDifferenceMap(null, snapshot, 4));
+        assertThrows(
+                NullPointerException.class,
+                () -> NeuroXorDiagnostics.renderDifferenceMap(snapshot, null, 4));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> NeuroXorDiagnostics.renderDifferenceMap(snapshot, snapshot, 1));
     }
 
     private static Neuro xorNetwork() {
