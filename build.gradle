@@ -2,6 +2,7 @@ plugins {
     id 'base'
     id 'org.springframework.boot' version '4.0.6' apply false
     id 'org.jetbrains.kotlin.jvm' version '2.4.20' apply false
+    id 'org.jetbrains.kotlin.kapt' version '2.4.20' apply false
 }
 
 allprojects {
@@ -574,9 +575,11 @@ project(':distributedthreadpool') {
 }
 
 project(':jneuro') {
+    apply plugin: 'org.jetbrains.kotlin.jvm'
+    apply plugin: 'org.jetbrains.kotlin.kapt'
     sourceSets {
         jmh {
-            java.srcDir 'src/jmh/java'
+            kotlin.srcDir 'src/jmh/kotlin'
             compileClasspath += sourceSets.main.output
             runtimeClasspath += output + compileClasspath
         }
@@ -588,21 +591,37 @@ project(':jneuro') {
     }
 
     dependencies {
+        implementation 'com.formdev:flatlaf:3.7.2'
         jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
-        jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+        kaptJmh 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
     }
 
     java {
         toolchain {
             languageVersion = JavaLanguageVersion.of(27)
         }
-        sourceCompatibility = JavaVersion.VERSION_27
-        targetCompatibility = JavaVersion.VERSION_27
+        sourceCompatibility = JavaVersion.VERSION_26
+        targetCompatibility = JavaVersion.VERSION_26
     }
 
     tasks.withType(JavaCompile).configureEach {
-        options.release = 27
+        options.release = 26
         options.compilerArgs += ['--add-modules', 'jdk.incubator.vector', '-Xlint:all,-incubating', '-Werror']
+    }
+
+    kotlin {
+        jvmToolchain(27)
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_26)
+            languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
+            apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
+            allWarningsAsErrors.set(true)
+            freeCompilerArgs.add('-Xadd-modules=jdk.incubator.vector')
+        }
+    }
+
+    kapt {
+        correctErrorTypes = true
     }
 
     def java27 = javaToolchains.launcherFor {
@@ -614,7 +633,9 @@ project(':jneuro') {
     }
 
     tasks.withType(Test).configureEach {
-        jvmArgs '--add-modules', 'jdk.incubator.vector'
+        jvmArgs '--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED'
+        systemProperty 'java.awt.headless', 'true'
+        javaLauncher = java27
     }
 
     tasks.register('runExperiment', JavaExec) {
@@ -627,10 +648,31 @@ project(':jneuro') {
 
     tasks.register('runXorCanvas', JavaExec) {
         group = 'application'
-        description = 'Runs the interactive JNeuro visual learning playground.'
+        description = 'Runs the Kotlin JNeuro Neural Learning Studio.'
         classpath = sourceSets.main.runtimeClasspath
         mainClass = 'com.lis.neuro.NeuroXorCanvas'
         javaLauncher = java27
+    }
+
+    tasks.register('renderStudio', JavaExec) {
+        group = 'verification'
+        description = 'Renders all seven implemented Swing studio views without a display.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroXorCanvas'
+        javaLauncher = java27
+        systemProperty 'java.awt.headless', 'true'
+        args "--screenshots=${layout.buildDirectory.dir('screenshots').get().asFile.absolutePath}"
+    }
+
+    tasks.register('migrationParity', JavaExec) {
+        group = 'verification'
+        description = 'Compares Kotlin inference and training against the pinned Java baseline.'
+        dependsOn tasks.named('testClasses')
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroMigrationParity'
+        javaLauncher = java27
+        args providers.gradleProperty('neuroJavaBaseline').orElse(
+                layout.buildDirectory.dir('migration-baseline/classes').get().asFile.absolutePath).get()
     }
 
     tasks.register('verifyExperiment', JavaExec) {
@@ -647,7 +689,7 @@ project(':jneuro') {
         classpath = sourceSets.main.runtimeClasspath
         mainClass = 'com.lis.neuro.NeuroBenchmark'
         javaLauncher = java27
-        jvmArgs = ['-Xms1g', '-Xmx1g']
+        jvmArgs '-Xms1g', '-Xmx1g'
     }
 
     tasks.register('performanceMatrix', JavaExec) {
