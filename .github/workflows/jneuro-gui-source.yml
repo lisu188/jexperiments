@@ -1,0 +1,22 @@
+name: JNeuro GUI source snapshot
+on:
+  push:
+    branches: [test/jneuro-gui-regressions]
+    paths: ['.github/workflows/jneuro-gui-source.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: git bundle create /tmp/jneuro-gui-source.bundle --all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-gui-source
+          path: /tmp/jneuro-gui-source.bundle
+          retention-days: 1
