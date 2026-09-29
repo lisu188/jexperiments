@@ -560,6 +560,22 @@ Timeline retains output surfaces around meaningful epoch milestones. Unlike an a
 
 The toolbar also exposes pause/resume, one-epoch stepping, ten-epoch stepping, reset, and 1x/10x/100x training speeds.
 
+The architecture is editable at runtime through the Hidden layers field. It accepts comma-separated positive integers:
+
+~~~text
+1       -> 2 -> 1 -> 1
+2       -> 2 -> 2 -> 1
+3,2     -> 2 -> 3 -> 2 -> 1
+8,4,2   -> 2 -> 8 -> 4 -> 2 -> 1
+<empty> -> 2 -> 1
+~~~
+
+Applying a new architecture rebuilds the model and resets training history, timeline snapshots, parameter plots, and seed comparisons. This makes it practical to test how few hidden neurons can learn XOR, compare shallow versus deep solutions, or deliberately try a network with no hidden layer.
+
+The visual diagnostics adapt to depth. Activation heatmaps are produced for neurons across all hidden layers. The exact straight z = 0 boundary overlay is retained only for the first hidden layer, because deeper-layer decision boundaries are no longer linear in input space. The live graph adds one column per layer and parameter/norm charts use the active topology instead of assuming 2-6-1.
+
+The visualizer limits configurations to eight hidden layers and 64 hidden neurons in total so interactive rendering remains practical; this limit applies only to the playground, not to the core Neuro API.
+
 All mutable model operations remain on the training worker. The AWT event thread receives immutable parameter/image/history snapshots, so rendering, hover inspection, timeline comparison, and step-difference views never race a weight update.
 
 Run the playground with:
