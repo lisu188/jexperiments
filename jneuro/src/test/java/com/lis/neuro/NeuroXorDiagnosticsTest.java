@@ -206,6 +206,58 @@ final class NeuroXorDiagnosticsTest {
                 () -> NeuroXorDiagnostics.renderDifferenceMap(snapshot, snapshot, 1));
     }
 
+    @Test
+    void supportsMultipleHiddenLayers() {
+        var network = new Neuro(
+                new int[]{2, 3, 2, 1},
+                Neuro.HyperParameters.defaults().withSeed(42));
+        network.addTrainingSample(new double[]{0, 0}, new double[]{0});
+        network.addTrainingSample(new double[]{0, 1}, new double[]{1});
+        network.addTrainingSample(new double[]{1, 0}, new double[]{1});
+        network.addTrainingSample(new double[]{1, 1}, new double[]{0});
+
+        var snapshot = NeuroXorDiagnostics.capture(network, 0, network.trainingError());
+        var probe = NeuroXorDiagnostics.probe(snapshot, 0.2, 0.7);
+        var maps = NeuroXorDiagnostics.renderHiddenMaps(snapshot, 4);
+
+        assertArrayEquals(new int[]{2, 3, 2, 1}, snapshot.topology());
+        assertEquals(3, snapshot.layerCount());
+        assertEquals(2, snapshot.hiddenLayerCount());
+        assertEquals(3, snapshot.hiddenLayerSize(0));
+        assertEquals(2, snapshot.hiddenLayerSize(1));
+        assertEquals(5, snapshot.hiddenNeuronCount());
+        assertEquals(5, maps.length);
+        assertEquals(0, NeuroXorDiagnostics.hiddenMapOffset(snapshot, 0));
+        assertEquals(3, NeuroXorDiagnostics.hiddenMapOffset(snapshot, 1));
+        assertEquals(3, probe.activations().length);
+        assertEquals(3, probe.layerActivations(0).length);
+        assertEquals(2, probe.layerActivations(1).length);
+        assertEquals(1, probe.layerActivations(2).length);
+        assertEquals(network.predict(new double[]{0.2, 0.7})[0], probe.output(), 1.0e-12);
+        assertEquals(network.parameterCount(), snapshot.parameterCount());
+        assertEquals(0, snapshot.layerParameterOffset(0));
+        assertEquals(
+                snapshot.layerParameterCount(0),
+                snapshot.layerParameterOffset(1));
+        assertTrue(NeuroXorDiagnostics.weightNorm(snapshot, 2) > 0.0);
+        assertEquals(0.0, NeuroXorDiagnostics.biasNorm(snapshot, 2), 0.0);
+    }
+
+    @Test
+    void supportsNoHiddenLayer() {
+        var network = new Neuro(new int[]{2, 1}, Neuro.HyperParameters.defaults().withSeed(42));
+        network.addTrainingSample(new double[]{0, 0}, new double[]{0});
+        var snapshot = NeuroXorDiagnostics.capture(network, 0, network.trainingError());
+        var probe = NeuroXorDiagnostics.probe(snapshot, 0.25, 0.75);
+
+        assertEquals(0, snapshot.hiddenLayerCount());
+        assertEquals(0, snapshot.hiddenNeuronCount());
+        assertEquals(0, NeuroXorDiagnostics.renderHiddenMaps(snapshot, 3).length);
+        assertEquals(0, probe.hidden().length);
+        assertEquals(2, probe.contributions().length);
+        assertEquals(null, NeuroXorDiagnostics.boundary(snapshot, 0));
+    }
+
     private static Neuro xorNetwork() {
         var network = new Neuro(
                 new int[]{2, 6, 1},
