@@ -79,6 +79,10 @@ final class NeuroXorDiagnostics {
             return Math.max(0, topology.length - 2);
         }
 
+        int hiddenCount() {
+            return hiddenLayerCount() == 0 ? 0 : hiddenLayerSize(0);
+        }
+
         int hiddenLayerSize(int hiddenLayer) {
             validateHiddenLayer(hiddenLayer);
             return topology[hiddenLayer + 1];
