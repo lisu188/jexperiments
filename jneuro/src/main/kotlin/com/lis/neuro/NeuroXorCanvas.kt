@@ -452,7 +452,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             else -> contextBar.add(JLabel(when (View.entries[tabs.selectedIndex.coerceAtLeast(0)]) {
                 View.UPDATE -> "Before / after one update batch. Pause and step to isolate an epoch."
                 View.TIMELINE -> "Saved milestones and final state. These images are history, not replay controls."
-                View.SEARCH -> "Exhaustive within bounds. Full-budget seed trials; no early pruning or claim of a global optimum."
+                View.SEARCH -> "Evolve promising architectures through mutations. Equal seed budgets; reference grid optional."
                 else -> "Grayscale = output 0–1. RMSE = training error, not validation error."
             }).apply { foreground = MUTED; font = uiFont(12) })
         }

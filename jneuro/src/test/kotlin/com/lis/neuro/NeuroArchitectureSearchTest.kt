@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test
 
 class NeuroArchitectureSearchTest {
     @Test fun enumeratesUniqueParameterOrderedArchitecturesWithoutDiscardingPermutations() {
-        val architectures = ArchitectureSearchConfig().architectures()
+        val architectures = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE).architectures()
         assertEquals(584, architectures.size)
         assertEquals(architectures.size, architectures.toSet().size)
         assertTrue(architectures.zipWithNext().all { (a, b) -> a.parameters <= b.parameters })
@@ -25,34 +25,34 @@ class NeuroArchitectureSearchTest {
         assertNotEquals(frozen, "2,2")
         assertNotEquals(frozen, NetworkArchitecture(listOf(2)))
         assertThrows(UnsupportedOperationException::class.java) { (frozen.hidden as MutableList)[0] = 99 }
-        val bounded = ArchitectureSearchConfig(maxParameters = 9).architectures()
+        val bounded = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxParameters = 9).architectures()
         assertTrue(bounded.all { it.parameters <= 9 })
         assertTrue(bounded.any { it.hidden == listOf(1, 1) })
     }
 
     @Test fun rejectsUnboundedInvalidAndEmptySearchSpaces() {
         for (factory in listOf<() -> ArchitectureSearchConfig>(
-            { ArchitectureSearchConfig(minLayers = 0) }, { ArchitectureSearchConfig(maxLayers = 9) },
-            { ArchitectureSearchConfig(minWidth = 0) }, { ArchitectureSearchConfig(maxWidth = 129) },
-            { ArchitectureSearchConfig(minWidth = 5, maxWidth = 4) }, { ArchitectureSearchConfig(maxParameters = 0) },
-            { ArchitectureSearchConfig(seeds = emptyList()) }, { ArchitectureSearchConfig(seeds = listOf(1, 1)) },
-            { ArchitectureSearchConfig(seeds = (1L..21L).toList()) }, { ArchitectureSearchConfig(maxEpochs = 0) },
-            { ArchitectureSearchConfig(checkEvery = 0) }, { ArchitectureSearchConfig(checkEvery = 10_001) },
-            { ArchitectureSearchConfig(targetRmse = Double.NaN) }, { ArchitectureSearchConfig(targetRmse = 1.0) },
-            { ArchitectureSearchConfig(requiredSuccesses = 0) }, { ArchitectureSearchConfig(requiredSuccesses = 6) },
-            { ArchitectureSearchConfig(nearBestTolerance = -0.1) }, { ArchitectureSearchConfig(nearBestTolerance = Double.NaN) },
-            { ArchitectureSearchConfig(parallelism = 0) }, { ArchitectureSearchConfig(maxTrials = 4) },
-            { ArchitectureSearchConfig(maxTrials = 20_001) }, { ArchitectureSearchConfig(timeLimitSeconds = -1) })) {
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, minLayers = 0) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 9) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, minWidth = 0) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxWidth = 129) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, minWidth = 5, maxWidth = 4) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxParameters = 0) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, seeds = emptyList()) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, seeds = listOf(1, 1)) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, seeds = (1L..21L).toList()) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxEpochs = 0) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, checkEvery = 0) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, checkEvery = 10_001) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, targetRmse = Double.NaN) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, targetRmse = 1.0) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, requiredSuccesses = 0) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, requiredSuccesses = 6) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, nearBestTolerance = -0.1) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, nearBestTolerance = Double.NaN) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, parallelism = 0) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxTrials = 4) },
+            { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxTrials = 20_001) }, { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, timeLimitSeconds = -1) })) {
             assertThrows(IllegalArgumentException::class.java) { factory() }
         }
-        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(maxParameters = 4).architectures() }
-        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(maxLayers = 4, maxWidth = 12, maxParameters = 100_000).architectures() }
+        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxParameters = 4).architectures() }
+        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 4, maxWidth = 12, maxParameters = 100_000).architectures() }
         assertThrows(IllegalArgumentException::class.java) {
-            ArchitectureSearchConfig(minLayers = 2, maxLayers = 2, minWidth = 32, maxWidth = 80,
+            ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, minLayers = 2, maxLayers = 2, minWidth = 32, maxWidth = 80,
                 maxParameters = 10_000, seeds = (1L..20L).toList(), maxTrials = 20_000).architectures()
         }
         val input = mutableListOf(1L, 2L)
-        val config = ArchitectureSearchConfig(seeds = input, requiredSuccesses = 1)
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, seeds = input, requiredSuccesses = 1)
         input.clear()
         assertEquals(listOf(1L, 2L), config.seeds)
     }
@@ -91,7 +91,7 @@ class NeuroArchitectureSearchTest {
         val reliable = candidate(listOf(2), listOf(0.04, 0.045, 0.047, 0.044, 0.043))
         val accurate = candidate(listOf(4), List(5) { 0.01 })
         val dominated = candidate(listOf(3), List(5) { 0.049 })
-        val config = ArchitectureSearchConfig()
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE)
         val entries = listOf(accurate, lucky, dominated, reliable)
         val selection = ArchitectureRanking.select(entries, config)
         assertSame(reliable, selection.recommended); assertSame(reliable, selection.smallestMeetingTarget)
@@ -112,7 +112,7 @@ class NeuroArchitectureSearchTest {
         val sameSize = candidate(listOf(1, 3), List(5) { 0.04 })
         val shallow = candidate(listOf(3), List(5) { 0.04 })
         assertEquals(sameSize.architecture.parameters, shallow.architecture.parameters)
-        val config = ArchitectureSearchConfig()
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE)
         assertSame(shallow, ArchitectureRanking.select(listOf(sameSize, shallow), config).recommended)
         assertEquals(2, ArchitectureRanking.frontier(listOf(sameSize, shallow)).size)
         val even = ArchitectureCandidate(NetworkArchitecture(listOf(2)), listOf(trial(1, 0.02), trial(2, 0.04)), 2, 0.05)
@@ -130,7 +130,7 @@ class NeuroArchitectureSearchTest {
 
     @Test fun realXorSearchUsesFullBudgetsAndFindsSmallReliableNetworks() {
         val data = ArchitectureSearchData.fitting(xor(), "XOR")
-        val config = ArchitectureSearchConfig(maxLayers = 1, maxWidth = 4, parallelism = 2)
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 1, maxWidth = 4, parallelism = 2)
         val progress = ArrayList<ArchitectureSearchProgress>()
         val report = NeuroArchitectureSearch().search(data, config, { progress += it }, { false })
         assertEquals(ArchitectureTermination.COMPLETED, report.termination)
@@ -161,7 +161,7 @@ class NeuroArchitectureSearchTest {
 
     @Test fun sequentialAndParallelSearchesUseIdenticalTrialsAndDeterministicBudgets() {
         val data = ArchitectureSearchData.fitting(xor())
-        fun run(parallelism: Int) = NeuroArchitectureSearch().search(data, ArchitectureSearchConfig(maxLayers = 2,
+        fun run(parallelism: Int) = NeuroArchitectureSearch().search(data, ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 2,
             maxWidth = 3, maxEpochs = 100, parallelism = parallelism, maxTrials = 12))
         val sequential = run(1); val parallel = run(3)
         assertEquals(ArchitectureTermination.TRIAL_BUDGET, sequential.termination)
@@ -176,7 +176,7 @@ class NeuroArchitectureSearchTest {
 
     @Test fun cancellationDeadlineAndCallbackFailureCleanUpWorkers() {
         val engine = NeuroArchitectureSearch(); val data = ArchitectureSearchData.fitting(xor())
-        val config = ArchitectureSearchConfig(maxLayers = 1, maxWidth = 3, maxEpochs = 1_000_000)
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 1, maxWidth = 3, maxEpochs = 1_000_000)
         val cancelled = engine.search(data, config, {}, { true })
         assertEquals(ArchitectureTermination.CANCELLED, cancelled.termination); assertEquals(0, cancelled.evaluated)
         val checks = AtomicInteger()
@@ -184,7 +184,7 @@ class NeuroArchitectureSearchTest {
         assertEquals(ArchitectureTermination.CANCELLED, partial.termination)
         assertTrue(partial.candidates.any { candidate -> candidate.trials.any { it.state == ArchitectureTrialState.CANCELLED } })
         assertNull(partial.selection.recommended)
-        val deadline = engine.search(data, ArchitectureSearchConfig(maxLayers = 1, maxWidth = 1, timeLimitSeconds = 1),
+        val deadline = engine.search(data, ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 1, maxWidth = 1, timeLimitSeconds = 1),
             { progress -> if (progress.finishedTrials == 0) Thread.sleep(1050) }, { false })
         assertEquals(ArchitectureTermination.TIME_LIMIT, deadline.termination)
         assertThrows(IllegalStateException::class.java) { engine.search(data, config, { error("Observer failed") }, { false }) }
@@ -193,7 +193,7 @@ class NeuroArchitectureSearchTest {
 
     @Test fun individualFailuresAndCancelledEpochsAreExplicit() {
         val engine = NeuroArchitectureSearch(); val data = ArchitectureSearchData.fitting(xor())
-        val config = ArchitectureSearchConfig(maxEpochs = 100)
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxEpochs = 100)
         val architecture = NetworkArchitecture(listOf(2))
         val failed = engine.evaluate(data, config, architecture, 42, { false }, { _, _ -> throw IllegalStateException("Numeric failure") })
         assertEquals(ArchitectureTrialState.FAILED, failed.state); assertEquals("Numeric failure", failed.failure)
@@ -222,7 +222,7 @@ class NeuroArchitectureSearchTest {
     @Test fun validationReplayRecreatesScoredPartitionAndApplyingStartsAnUntrainedFullDatasetModel() {
         val studio = NeuroStudio(StudioConfig(dataset = NeuroLearningSets.Kind.CIRCLE))
         val data = studio.searchData(ArchitectureEvaluation.VALIDATION, 0.2, 42)
-        val report = NeuroArchitectureSearch().search(data, ArchitectureSearchConfig(maxLayers = 1, minWidth = 2, maxWidth = 2, maxEpochs = 125))
+        val report = NeuroArchitectureSearch().search(data, ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 1, minWidth = 2, maxWidth = 2, maxEpochs = 125))
         val candidate = report.candidates.single(); val trial = candidate.representative!!
         assertTrue(candidate.valid)
         val original = studio.frame()
