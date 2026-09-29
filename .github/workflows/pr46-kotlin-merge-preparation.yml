@@ -1,0 +1,308 @@
+name: Prepare PR 46 Kotlin merge
+
+on:
+  push:
+    branches: [automation/pr46-kotlin-merge-preparation]
+    paths: ['.github/workflows/pr46-kotlin-merge-preparation.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: 44bc9e39b744af7727fff3725eb2fe40b63be1a3
+          fetch-depth: 0
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '27'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Preserve Kotlin main and port missing no-hidden-layer baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('jneuro')
+          main = root / 'src/main/kotlin/com/lis/neuro'
+          tests = root / 'src/test/kotlin/com/lis/neuro'
+
+          def replace(path, before, after):
+              text = path.read_text()
+              assert text.count(before) == 1, f'Expected exactly one match in {path}: {before!r}'
+              path.write_text(text.replace(before, after))
+
+          config = main / 'NeuroTopologyConfig.kt'
+          replace(config,
+              '        require(text.isNotBlank()) { "Enter at least one hidden layer, for example 2 or 6,4,2." }',
+              '        if (text.isBlank()) return intArrayOf()')
+          replace(config,
+              '        require(hidden.size in 1..MAX_HIDDEN_LAYERS) { "Use 1–$MAX_HIDDEN_LAYERS hidden layers." }',
+              '        require(hidden.size <= MAX_HIDDEN_LAYERS) { "Use 0–$MAX_HIDDEN_LAYERS hidden layers." }')
+          replace(config,
+              '        require(hidden.size > 1) { "Keep at least one hidden layer." }',
+              '        require(hidden.isNotEmpty()) { "There is no hidden layer to remove." }')
+
+          diagnostics = main / 'NeuroXorDiagnostics.kt'
+          replace(diagnostics,
+              '        fun hidden(): DoubleArray = layers.last().copyOf()',
+              '        fun hidden(): DoubleArray = layers.lastOrNull()?.copyOf() ?: doubleArrayOf()')
+          replace(diagnostics,
+              '        fun hiddenCount(): Int = shape[1]',
+              '        fun hiddenCount(): Int = if (hiddenLayerCount() == 0) 0 else shape[1]')
+          replace(diagnostics,
+              '        require(topology.size >= 3 && topology[0] == 2 && topology.last() == 1) { "diagnostics require topology 2-hidden...-1" }',
+              '        require(topology.size >= 2 && topology[0] == 2 && topology.last() == 1) { "diagnostics require topology 2-...-1" }')
+          replace(diagnostics,
+              '    fun renderHiddenMaps(snapshot: Snapshot, size: Int): Array<BufferedImage> =\n        renderHiddenMaps(snapshot, size, 0, 0, minOf(snapshot.hiddenCount(), 12))',
+              '    fun renderHiddenMaps(snapshot: Snapshot, size: Int): Array<BufferedImage> {\n        validateSize(size)\n        if (snapshot.hiddenLayerCount() == 0) return emptyArray()\n        return renderHiddenMaps(snapshot, size, 0, 0, minOf(snapshot.hiddenCount(), 12))\n    }')
+
+          studio = main / 'NeuroStudio.kt'
+          replace(studio,
+              '        val images = layerImages ?: NeuroXorDiagnostics.renderHiddenMaps(current.diagnostics,\n            resolution(network.parameterCount(), 96), selectedLayer, hiddenStart,\n            minOf(8, current.diagnostics.layerOutputCount(selectedLayer) - hiddenStart)).toList().also { layerImages = it }',
+              '        val images = layerImages ?: (if (current.diagnostics.hiddenLayerCount() == 0) emptyList()\n            else NeuroXorDiagnostics.renderHiddenMaps(current.diagnostics,\n                resolution(network.parameterCount(), 96), selectedLayer, hiddenStart,\n                minOf(8, current.diagnostics.layerOutputCount(selectedLayer) - hiddenStart)).toList()).also { layerImages = it }')
+
+          canvas = main / 'NeuroXorCanvas.kt'
+          replace(canvas,
+              'Comma-separated widths: 2 or 6,4,2. Up to 8 layers; 1–128 neurons each.',
+              'Comma-separated widths: 2 or 6,4,2. Empty = 2 → 1 baseline. Up to 8 layers; 1–128 neurons each.')
+          replace(canvas,
+              'One width per hidden layer.<br>Example: 4,3 means 2 → 4 → 3 → 1.',
+              'One width per hidden layer.<br>Example: 4,3 means 2 → 4 → 3 → 1.<br>Leave empty for 2 → 1 (no hidden layer).')
+          replace(canvas,
+              'NeuroTopologyConfig.addLayer(values, values.last())',
+              'NeuroTopologyConfig.addLayer(values, values.lastOrNull() ?: 6)')
+          replace(canvas,
+              '    private fun requestHidden(start: Int) {\n        val layer = hiddenLayer.selectedIndex.coerceAtLeast(0)',
+              '    private fun requestHidden(start: Int) {\n        if (frame?.diagnostics?.hiddenLayerCount() == 0) return\n        val layer = hiddenLayer.selectedIndex.coerceAtLeast(0)')
+          replace(canvas,
+              '            neuronPage.model = SpinnerNumberModel(0, 0, next.diagnostics.hiddenCount() - 1, 8)',
+              '            val hasHidden = next.diagnostics.hiddenLayerCount() > 0\n            hiddenLayer.isEnabled = hasHidden\n            neuronPage.isEnabled = hasHidden\n            neuronPage.model = SpinnerNumberModel(0, 0, maxOf(0, next.diagnostics.hiddenCount() - 1), 8)')
+          replace(canvas,
+              '            val layer = current.hiddenLayer\n            val all = current.diagnostics.layerOutputCount(layer)',
+              '            if (current.diagnostics.hiddenLayerCount() == 0) {\n                text(g, "No hidden layers · direct 2 → 1 baseline", 14, 375, 16, TEXT, true)\n                text(g, "The output uses two input weights and one bias. There are no hidden activation maps.", 14, 399, 12, MUTED)\n                return\n            }\n            val layer = current.hiddenLayer\n            val all = current.diagnostics.layerOutputCount(layer)')
+
+          config_test = tests / 'NeuroTopologyConfigTest.kt'
+          replace(config_test, 'listOf("", " ", "0", "-2",', 'listOf("0", "-2",')
+          replace(config_test, 'listOf(intArrayOf(), intArrayOf(0),', 'listOf(intArrayOf(0),')
+          replace(config_test,
+              'assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.removeLayer(intArrayOf(2)) }',
+              'assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.removeLayer(intArrayOf()) }')
+          replace(tests / 'NeuroXorDiagnosticsTest.kt',
+              'listOf(intArrayOf(2, 1), intArrayOf(3, 2, 1), intArrayOf(2, 2, 2))',
+              'listOf(intArrayOf(3, 2, 1), intArrayOf(2, 2, 2))')
+
+          (tests / 'NeuroBaselineTopologyTest.kt').write_text('''package com.lis.neuro
+
+          import java.awt.Container
+          import java.awt.EventQueue
+          import java.awt.image.BufferedImage
+          import javax.swing.JButton
+          import javax.swing.JComboBox
+          import javax.swing.JPanel
+          import javax.swing.JSpinner
+          import javax.swing.JTabbedPane
+          import javax.swing.JTextField
+          import org.junit.jupiter.api.Assertions.*
+          import org.junit.jupiter.api.Test
+
+          class NeuroBaselineTopologyTest {
+              @Test fun emptySpecificationAndLayerEditingRoundTrip() {
+                  for (text in listOf("", " ", "\\t\\n")) {
+                      assertArrayEquals(intArrayOf(), NeuroTopologyConfig.parseHidden(text))
+                      assertArrayEquals(intArrayOf(2, 1), StudioConfig(hidden = text).topology())
+                  }
+                  assertEquals("2 → 1", StudioConfig(hidden = "").description())
+                  assertArrayEquals(intArrayOf(), NeuroTopologyConfig.removeLayer(intArrayOf(6)))
+                  assertArrayEquals(intArrayOf(6), NeuroTopologyConfig.addLayer(intArrayOf(), 6))
+                  assertEquals(8, NeuroTopologyConfig.parseHidden("128,128,128,128,128,128,128,128").size)
+                  assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.addLayer(intArrayOf(), 0) }
+              }
+
+              @Test fun baselineDiagnosticsMatchTrainingAndOwnTheirSnapshots() {
+                  for (mode in Neuro.SigmoidMode.entries) {
+                      val network = Neuro(intArrayOf(2, 1), Neuro.HyperParameters(0.6, 0.2, 1.4, 42, Neuro.Kernel.AUTO, mode))
+                      NeuroLearningSets.addTo(network, NeuroLearningSets.create(NeuroLearningSets.Kind.XOR, 42))
+                      network.train(3)
+                      val snapshot = NeuroXorDiagnostics.capture(network, 3, network.trainingError())
+                      assertEquals(0, snapshot.hiddenCount()); assertEquals(0, snapshot.hiddenLayerCount())
+                      assertEquals(1, snapshot.layerCount()); assertEquals(3, snapshot.parameterCount())
+                      assertEquals(0, snapshot.parameterOffset(0))
+                      for ((x, y) in listOf(0.0 to 0.0, 0.0 to 1.0, 1.0 to 0.0, 1.0 to 1.0, 0.31 to 0.77)) {
+                          val probe = NeuroXorDiagnostics.probe(snapshot, x, y)
+                          assertEquals(network.predict(doubleArrayOf(x, y))[0], probe.output(), 1e-12)
+                          assertTrue(probe.hiddenLayers().isEmpty()); assertTrue(probe.hidden().isEmpty())
+                          assertArrayEquals(doubleArrayOf(x * snapshot.weight(0, 0, 0), y * snapshot.weight(0, 0, 1)), probe.contributions())
+                          assertEquals(snapshot.outputBias() + probe.contributions().sum(), probe.outputPreActivation(), 1e-12)
+                          val original = probe.contributions(); probe.contributions()[0] = 100.0
+                          assertArrayEquals(original, probe.contributions())
+                      }
+                      val before = NeuroXorDiagnostics.probe(snapshot, 0.31, 0.77).output()
+                      snapshot.topology()[0] = 99; snapshot.parameters()[0] = 99.0
+                      network.train(20)
+                      assertEquals(before, NeuroXorDiagnostics.probe(snapshot, 0.31, 0.77).output(), 0.0)
+                      assertTrue(NeuroXorDiagnostics.renderHiddenMaps(snapshot, 5).isEmpty())
+                      val image = NeuroXorDiagnostics.renderOutputMap(snapshot, 5)
+                      assertEquals(NeuroXorGrid.grayRgb(NeuroXorDiagnostics.probe(snapshot, 0.0, 1.0).output()), image.getRGB(0, 0) and 0xffffff)
+                      val after = NeuroXorDiagnostics.capture(network, 23, network.trainingError())
+                      assertEquals(5, NeuroXorDiagnostics.renderDifferenceMap(snapshot, after, 5).width)
+                      assertThrows(IllegalArgumentException::class.java) { NeuroXorDiagnostics.boundary(snapshot, 0) }
+                      assertThrows(IllegalArgumentException::class.java) { NeuroXorDiagnostics.renderHiddenMaps(snapshot, 5, 0, 0, 1) }
+                      for (size in listOf(1, 1025))
+                          assertThrows(IllegalArgumentException::class.java) { NeuroXorDiagnostics.renderHiddenMaps(snapshot, size) }
+                  }
+              }
+
+              @Test fun baselineSupportsStepsSeedStudiesAndAtomicTopologyResets() {
+                  val config = StudioConfig(hidden = "", maxEpochs = 10, targetError = 1e-12)
+                  val studio = NeuroStudio(config)
+                  val initial = studio.frame()
+                  assertTrue(initial.hiddenImages.isEmpty()); assertEquals(3, initial.history.single().parameterCount)
+                  assertEquals(2, initial.history.single().normCount)
+                  assertThrows(IllegalArgumentException::class.java) { studio.selectHidden(0) }
+                  studio.step(1); assertEquals(1, studio.advance(10))
+                  val stepped = studio.frame()
+                  assertEquals(1, stepped.diagnostics.epoch()); assertEquals(0, stepped.beforeEpoch)
+                  val parameters = stepped.diagnostics.parameters()
+                  assertEquals(4, studio.compareSeeds(2).size)
+                  assertArrayEquals(parameters, studio.frame().diagnostics.parameters())
+                  assertEquals(1, studio.epochs)
+                  studio.apply(StudioConfig("3,2", targetError = 1e-12))
+                  studio.selectHidden(1, 1)
+                  assertEquals(1, studio.frame().hiddenImages.size)
+                  studio.apply(config)
+                  val reset = studio.frame()
+                  assertEquals(0, reset.diagnostics.epoch()); assertEquals(1, reset.history.size)
+                  assertEquals(1, reset.checkpoints.size); assertTrue(reset.seeds.isEmpty())
+                  assertTrue(reset.hiddenImages.isEmpty()); assertEquals(0, reset.hiddenLayer)
+                  assertArrayEquals(initial.diagnostics.parameters(), reset.diagnostics.parameters())
+                  studio.setRunning(true); assertEquals(10, studio.advance(100))
+                  assertEquals(StudioState.LIMIT_REACHED, studio.state)
+                  assertEquals(10, studio.frame().checkpoints.last().epoch)
+                  studio.apply(config.copy(dataset = NeuroLearningSets.Kind.CUSTOM))
+                  assertEquals(StudioState.EMPTY, studio.frame().state)
+                  assertTrue(studio.frame().hiddenImages.isEmpty())
+                  studio.addSample(0.3, 0.7, 1.0); studio.step(1)
+                  assertEquals(1, studio.advance()); assertTrue(studio.frame().hiddenImages.isEmpty())
+              }
+
+              @Test fun baselineRendersAllViewsAndLayerControlsRecover() {
+                  EventQueue.invokeAndWait {
+                      val constructor = NeuroXorCanvas::class.java.getDeclaredConstructor(StudioFrame::class.java, Boolean::class.javaPrimitiveType)
+                      constructor.isAccessible = true
+                      val ui = constructor.newInstance(NeuroStudio(StudioConfig(hidden = "")).frame(), false)
+                      try {
+                          val root = field(ui, "root") as JPanel
+                          val tabs = field(ui, "tabs") as JTabbedPane
+                          assertFalse((field(ui, "hiddenLayer") as JComboBox<*>).isEnabled)
+                          assertFalse((field(ui, "neuronPage") as JSpinner).isEnabled)
+                          for (index in 0 until tabs.tabCount) {
+                              tabs.selectedIndex = index; root.setSize(1520, 1060); layout(root)
+                              val image = BufferedImage(1520, 1060, BufferedImage.TYPE_INT_RGB)
+                              val graphics = image.createGraphics()
+                              try { root.printAll(graphics) } finally { graphics.dispose() }
+                          }
+                          buttons(root).first { it.text == "+ Layer" }.doClick()
+                          assertEquals("6", (field(ui, "hidden") as JTextField).text)
+                          buttons(root).first { it.text == "− Layer" }.doClick()
+                          assertEquals("", (field(ui, "hidden") as JTextField).text)
+                          val next = NeuroStudio(StudioConfig("3,2")).frame()
+                          ui.javaClass.getDeclaredField("published").apply { isAccessible = true }.set(ui, next)
+                          ui.javaClass.getDeclaredMethod("refresh").apply { isAccessible = true }.invoke(ui)
+                          assertTrue((field(ui, "hiddenLayer") as JComboBox<*>).isEnabled)
+                          assertTrue((field(ui, "neuronPage") as JSpinner).isEnabled)
+                      } finally { ui.close() }
+                  }
+              }
+
+              private fun field(instance: Any, name: String): Any? = instance.javaClass.getDeclaredField(name).run { isAccessible = true; get(instance) }
+              private fun layout(component: Container) {
+                  component.doLayout()
+                  component.components.filterIsInstance<Container>().forEach { layout(it) }
+              }
+              private fun buttons(component: Container): List<JButton> = component.components.flatMap {
+                  when (it) { is JButton -> listOf(it); is Container -> buttons(it); else -> emptyList() }
+              }
+          }
+          '''.replace('\n          ', '\n'))
+
+          blog = root / 'BLOG.md'
+          blog.write_text(blog.read_text().rstrip() + '''
+
+          ## Direct 2 → 1 baseline and PR #46 integration
+
+          Leaving **Hidden layers** empty (or whitespace-only) now selects the direct two-input,
+          one-output network with no hidden layer. It has three trainable parameters: two weights
+          and one bias. Removing the final hidden layer selects this baseline; adding a layer to
+          an empty editor starts with six neurons. Malformed comma-separated input is still rejected.
+
+          This restores the missing baseline from the original configurable-topology Java PR while
+          preserving the later Kotlin-only implementation, FlatLaf UI and architecture-search tools.
+          The newer Studio limits remain eight hidden layers and 128 neurons per layer; the earlier
+          Java visualizer's 64-total-neuron cap is not reintroduced. Search enumeration still uses
+          its configured positive hidden-layer bounds; the zero-hidden-layer baseline is selected
+          manually in the Studio rather than silently changing the search space.
+
+          ~~~kotlin
+          val baseline = NeuroStudio(StudioConfig(hidden = ""))
+          val initial = baseline.frame()
+          check(initial.diagnostics.parameterCount() == 3)
+          check(initial.hiddenImages.isEmpty())
+          baseline.step(1)
+          baseline.advance()
+          ~~~
+
+          The output graph, probe, learning curve, parameter/norm plots, update differences,
+          checkpoints and same-topology seed comparisons still operate. Probe contributions are
+          now the two input-weight products, not fabricated hidden activations. The Neurons view
+          shows a direct input/output graph and an explanatory empty state; hidden-layer paging
+          controls are disabled until a hidden layer is restored. Applying another topology resets
+          the model, history, snapshots and seed results together, as for all other configurations.
+
+          Regression tests cover blank input, layer editing, numerical parity with the actual
+          forward kernel in both sigmoid modes, snapshot isolation, output/difference maps,
+          training and seed-study isolation, deep-to-baseline resets, empty custom datasets,
+          and offscreen rendering of every Studio tab. The per-module coverage threshold is unchanged.
+          '''.replace('\n          ', '\n'))
+          PY
+          git diff --check
+          test -z "$(find jneuro/src -name '*.java' -print -quit)"
+          git diff --stat
+      - name: Install OpenBLAS
+        run: sudo apt-get update && sudo apt-get install -y libopenblas0-pthread
+      - name: Validate production code, tests, coverage and blog
+        run: ./gradlew --no-daemon :jneuro:check :jneuro:jacocoTestReport :blogsite:build
+      - name: Publish resolution without modifying main or the original PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=44bc9e39b744af7727fff3725eb2fe40b63be1a3
+          PR_HEAD=241e89b5de2a0708fe0af02c69d95b96706c893a
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$BASE"
+          test "$(git ls-remote origin refs/heads/feature/jneuro-configurable-topology | cut -f1)" = "$PR_HEAD"
+          git cat-file -e "$PR_HEAD^{commit}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add jneuro
+          TREE=$(git write-tree)
+          COMMIT=$(printf '%s\n\n%s\n' 'Merge current Kotlin main into PR #46 and preserve the direct topology baseline' 'Resolve Java/Kotlin modify-delete conflicts by retaining the Kotlin Studio, architecture search and newer limits, and port the missing zero-hidden-layer behavior with regression tests. Validated with :jneuro:check, coverage and :blogsite:build.' | git commit-tree "$TREE" -p "$PR_HEAD" -p "$BASE")
+          git push origin "$COMMIT:refs/heads/feature/pr46-kotlin-reconciled"
+          echo "RESOLVED_COMMIT=$COMMIT"
+          echo "Resolution commit: $COMMIT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr46-reconciliation-validation
+          path: |
+            jneuro/build/reports/**
+            jneuro/build/test-results/**
+            blogsite/build/reports/**
+          if-no-files-found: ignore
+          retention-days: 7
