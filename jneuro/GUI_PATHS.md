@@ -103,3 +103,4 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-093 | Run validation search on a fixed held-out partition | `validationSearchReplaysHeldOutPartition` |
 | GUI-094 | Replay keeps validation samples held out | `validationSearchReplaysHeldOutPartition` |
 | GUI-095 | Reset validation replay restores the full Studio dataset | `validationSearchReplaysHeldOutPartition` |
+| GUI-096 | Adaptive result ancestry names an eligible, fully evaluated elite for each descendant | `searchResultsSupportNativeSelectionInspectionReplayAndApply` |

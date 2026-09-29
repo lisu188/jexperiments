@@ -304,7 +304,19 @@ planner.observe(candidate)
 
 This is schematic control flow: `searchAdaptive` owns the completion service and `evaluate` performs each actual training trial. The search engine does not use an epoch-zero score, fastest-finishing seed or partial result as a parent-selection signal. Worker scheduling therefore does not determine the next architecture.
 
-After each completed group, `ArchitectureRanking` computes the recommendation, best-error candidate, ordinary Pareto frontier and reliability-filtered frontier. A new recommendation (or best-error leader before a reliable solution exists) becomes the highest-priority parent. Every newly admitted Pareto candidate also contributes a neighbourhood. Other surviving parents rotate through a queue; candidates dominated out of both frontiers stop generating children. A failed seed group is never a parent.
+After each completed seed group, `ArchitectureRanking` recomputes the recommendation, best-error candidate, ordinary Pareto frontier and reliability-filtered frontier. `EliteParentSelection` builds the current mating pool from the two frontiers and the recommendation, using only fully evaluated finite candidates. An architecture dominated out of both frontiers immediately loses eligibility and its cached neighbourhood is discarded. Failed or partial groups never breed.
+
+A new recommendation (or best-error leader before a reliable solution exists) gets the next available mutation opportunity. A newly admitted Pareto candidate also gets one immediate opportunity when the leader is unchanged. Subsequent parents are **selected again by fitness for every offspring**, not rotated through an insertion-order queue. The pool is ordered by the active recommendation policy: reliable target-meeting architectures first and smallest first in the default mode; smallest within tolerance in near-best mode; lowest median RMSE in accuracy mode. Outside the preferred group, median RMSE then parameter count determine order. All comparisons use the completed seed group, not one lucky initialization.
+
+The selector draws two ranks independently with replacement and chooses the better rank. With `n` eligible parents the best rank wins with probability `1 - ((n - 1) / n)^2`; lower-ranked frontier trade-offs retain a chance to breed, preserving diversity without using inferior candidates outside the elite pool. This is a fitness tournament, not a claim to implement NSGA-II or crowding-distance selection. Canonical ordering and the separate search seed make the outcome reproducible across worker counts.
+
+~~~kotlin
+val parent = promotedParent?.takeIf { it in available }
+    ?: EliteParentSelection.choose(available, random)
+return issue(neighbours.getValue(parent).removeFirst())
+~~~
+
+`available` contains only current elites with an unseen legal local mutation. A parent whose local neighbours are all tested is omitted from this particular tournament, but remains eligible for a larger exploratory mutation. Neighbour lists are per-parent mutation caches, not a predetermined global search schedule.
 
 The neighbourhood contains bounded, deduplicated mutations:
 
@@ -321,13 +333,15 @@ val nextLeader = (selection.recommended ?: selection.bestError)?.architecture
 
 This is architecture inheritance, **not weight inheritance**. Every proposed network still trains from the same fresh seed list with the same full budget. Carrying optimized parent weights into only some trials would make the existing median/reliability comparison and deterministic replay mean something different. Search changes which architectures are tried, not how a given architecture is scored.
 
-Mutation order is deterministic from the search seed and parent topology. An issued set prevents reevaluating the same topology. After 12 consecutive results that neither improve the leader nor add a frontier candidate, or after available elite neighbourhoods run out, the planner can perform an exploration restart. The first restart tries the minimum-size architecture if it has not been evaluated; subsequent restarts use bounded seeded random sampling. There are at most four restarts by default, each with at most 256 attempts to draw a legal unseen topology. There is no exhaustive fallback. A missed narrow feasible region is possible and is not reported as global exhaustion.
+Local mutation order is deterministic from the search seed and parent topology. An issued set prevents reevaluating the same topology. After 12 consecutive results that neither improve the leader nor add a frontier candidate, or after available elite neighbourhoods run out, the planner can perform an **elite-anchored restart**. It selects a current elite with the same fitness tournament, then changes one width to a seeded value anywhere in the configured width interval, inserts a layer with such a width, or removes a layer. Unchanged layers are inherited; Parent and generation are preserved and Mutation starts with `Elite restart`. No unrelated random topology replaces elite selection while a valid parent exists.
+
+The only parentless recovery is bootstrap: if every evaluated candidate has failed, there is no valid parent to select. The minimum-size topology, then bounded random initialization, can supply the first usable parent. Once one valid candidate exists, all subsequent proposals, including restarts, have an elite parent. There are at most four restart rounds by default with at most 256 attempts each. Invalid, over-budget and already-issued children are rejected. There is no exhaustive fallback; failing to find an unseen mutation is not proof of global exhaustion.
 
 The search ends with `NEIGHBOURHOODS_EXHAUSTED` if no more legal unseen children or allowed restart candidates are available. This is not a proof of a global optimum. `TRIAL_BUDGET`, `TIME_LIMIT`, `MEMORY_LIMIT` and `CANCELLED` remain distinct exits. In adaptive progress/results, `generated` counts proposals actually issued; `untested` concerns issued-but-unfunded proposals, **not all unseen topologies inside the bounds**. The UI labels these as proposals and does not claim the full search space was tested. Parameter-space completeness belongs only to the explicitly selected exhaustive reference mode.
 
 Recommendation policy and strategy are frozen while a search is running; after completion the recommendation policy can still be changed to inspect alternative trade-offs. Search seed, restart interval and restart count are available under advanced settings. Cancellation, invalidation of stale sessions and scored-checkpoint replay retain their existing ownership rules.
 
-The adaptive approach is inspired by mutation-based [evolutionary architecture search](https://arxiv.org/abs/1802.01548) and [multi-objective NAS](https://www.jmlr.org/papers/v25/23-1013.html), but is a deliberately small Pareto-guided local search, not an implementation of AmoebaNet or LaMOO. No speedup or superior final RMSE is assumed merely from using this strategy.
+The adaptive approach is inspired by mutation-based [evolutionary architecture search](https://arxiv.org/abs/1802.01548) and [multi-objective NAS](https://www.jmlr.org/papers/v25/23-1013.html), with fitness tournaments as documented in [DEAP's evolutionary selection operators](https://deap.readthedocs.io/en/master/api/tools.html#deap.tools.selTournament), but is a deliberately small Pareto-guided local search, not an implementation of AmoebaNet, LaMOO or NSGA-II. No speedup or superior final RMSE is assumed merely from using this strategy.
 
 ### Full-budget training, checkpoints and seed aggregation
 
@@ -522,3 +536,7 @@ The harder-dataset regression explicitly selects exhaustive reference mode when 
 Primary API references: [Robot native input and EDT restrictions](https://docs.oracle.com/en/java/javase/26/docs/api/java.desktop/java/awt/Robot.html), [unbounded SpinnerNumberModel bounds](https://docs.oracle.com/en/java/javase/26/docs/api/java.desktop/javax/swing/SpinnerNumberModel.html), and [JaCoCo's independent line and branch counters](https://www.jacoco.org/jacoco/trunk/doc/counters.html).
 
 The GUI path verifier uses Python 3 (`python` on Windows, `python3` elsewhere). Override the executable with `-PguiPython=/path/to/python` when needed. GUI test reports and screenshots are cleared before every run; native tests cannot be fulfilled by an up-to-date or cached result.
+
+### Elite-parent regression verification
+
+Tests assert policy-dependent rank ordering, reliability-frontier preservation, exclusion of failed/partial/dominated groups, deterministic tournament selection and a preference for fitter ranks without collapsing to a single parent. Planner tests reconstruct the elite pool from each completed prefix and verify every ordinary and restart descendant against it; old neighbourhoods cannot leak a demoted parent. The native GUI regression checks that the result table exposes the same valid ancestry. The registered GUI scenario catalog is maintained separately from line coverage.

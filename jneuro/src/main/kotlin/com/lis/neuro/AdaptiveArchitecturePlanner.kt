@@ -15,13 +15,36 @@ internal data class ArchitectureProposal(
     val generation: Int = 0
 )
 
+internal object EliteParentSelection {
+    fun rank(selection: ArchitectureSelection, config: ArchitectureSearchConfig): List<NetworkArchitecture> {
+        val candidates = (selection.paretoFrontier + selection.reliableFrontier + listOfNotNull(selection.recommended))
+            .filter { it.valid }.distinctBy { it.architecture }
+        val bySize = compareBy<ArchitectureCandidate> { it.architecture.parameters }.thenBy { it.medianRmse }
+            .thenComparator { a, b -> ArchitectureSearchConfig.ARCHITECTURE_ORDER.compare(a.architecture, b.architecture) }
+        val byError = compareBy<ArchitectureCandidate> { it.medianRmse }.then(bySize)
+        val threshold = (selection.bestError?.medianRmse ?: Double.POSITIVE_INFINITY) + config.nearBestTolerance
+        val preferred: (ArchitectureCandidate) -> Boolean = when (config.policy) {
+            ArchitecturePolicy.SMALLEST_MEETING_TARGET -> { candidate -> candidate.meetsTarget(config.requiredSuccesses) }
+            ArchitecturePolicy.SMALLEST_NEAR_BEST -> { candidate -> candidate.medianRmse <= threshold }
+            ArchitecturePolicy.LOWEST_RMSE -> { _ -> false }
+        }
+        val ranked = candidates.filter(preferred).sortedWith(bySize) + candidates.filterNot(preferred).sortedWith(byError)
+        return java.util.List.copyOf(ranked.map { it.architecture })
+    }
+
+    fun choose(ranked: List<NetworkArchitecture>, random: SplittableRandom): NetworkArchitecture {
+        require(ranked.isNotEmpty()) { "An evaluated elite parent is required." }
+        return ranked[minOf(random.nextInt(ranked.size), random.nextInt(ranked.size))]
+    }
+}
+
 internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearchConfig) {
     private val random = SplittableRandom(config.searchSeed)
     private val issued = LinkedHashMap<NetworkArchitecture, ArchitectureProposal>()
     private val evaluated = LinkedHashMap<NetworkArchitecture, ArchitectureCandidate>()
     private val neighbours = HashMap<NetworkArchitecture, ArrayDeque<ArchitectureProposal>>()
-    private val parents = ArrayDeque<NetworkArchitecture>()
-    private var elites = emptySet<NetworkArchitecture>()
+    private var elites = emptyList<NetworkArchitecture>()
+    private var promotedParent: NetworkArchitecture? = null
     private var leader: NetworkArchitecture? = null
     private var stagnant = 0
     private var restarts = 0
@@ -35,16 +58,15 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
         if (stagnant >= config.restartAfter && restarts < config.maxRestarts) {
             restart()?.let { return issue(it) }
         }
-        while (parents.isNotEmpty()) {
-            val parent = parents.removeFirst()
-            if (parent !in elites) continue
-            val choices = neighbours.getValue(parent)
-            while (choices.isNotEmpty()) {
-                val proposal = choices.removeFirst()
-                if (proposal.architecture in issued) continue
-                if (choices.isNotEmpty()) parents.addLast(parent)
-                return issue(proposal)
-            }
+        val available = elites.filter { architecture ->
+            val choices = neighbours.getOrPut(architecture) { ArrayDeque(mutations(issued.getValue(architecture))) }
+            while (choices.isNotEmpty() && choices.first.architecture in issued) choices.removeFirst()
+            choices.isNotEmpty()
+        }
+        if (available.isNotEmpty()) {
+            val parent = promotedParent?.takeIf { it in available } ?: EliteParentSelection.choose(available, random)
+            promotedParent = null
+            return issue(neighbours.getValue(parent).removeFirst())
         }
         return restart()?.let { issue(it) }
     }
@@ -56,20 +78,11 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
         evaluated[candidate.architecture] = candidate
         val selection = ArchitectureRanking.select(evaluated.values.toList(), config)
         val nextLeader = (selection.recommended ?: selection.bestError)?.architecture
-        val nextElites = (selection.paretoFrontier + selection.reliableFrontier + listOfNotNull(selection.recommended))
-            .map { it.architecture }.toSet()
-        val promoted = nextElites - elites
+        val nextElites = EliteParentSelection.rank(selection, config)
+        val promoted = nextElites.toSet() - elites.toSet()
         stagnant = if (promoted.isNotEmpty() || nextLeader != leader) 0 else stagnant + 1
-        parents.removeIf { it !in nextElites }
-        for (architecture in promoted.sortedWith(ArchitectureSearchConfig.ARCHITECTURE_ORDER).asReversed()) {
-            neighbours.getOrPut(architecture) { ArrayDeque(mutations(issued.getValue(architecture))) }
-            parents.remove(architecture)
-            parents.addFirst(architecture)
-        }
-        if (nextLeader != null && nextLeader != leader) {
-            parents.remove(nextLeader)
-            parents.addFirst(nextLeader)
-        }
+        promotedParent = if (nextLeader != leader) nextLeader else candidate.architecture.takeIf { it in promoted }
+        neighbours.keys.retainAll(nextElites.toSet())
         elites = nextElites
         leader = nextLeader
     }
@@ -121,17 +134,54 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
         while (restarts < config.maxRestarts) {
             restarts++
             stagnant = 0
+            if (elites.isNotEmpty()) {
+                repeat(256) {
+                    val parent = issued.getValue(EliteParentSelection.choose(elites, random))
+                    eliteRestart(parent)?.let { return it }
+                }
+                continue
+            }
             val minimum = config.minimumArchitecture()
-            if (minimum !in issued) return ArchitectureProposal(minimum, mutation = "Minimum-size exploration")
+            if (minimum !in issued) return ArchitectureProposal(minimum, mutation = "Minimum-size bootstrap")
             repeat(256) {
                 val depth = random.nextLong(config.minLayers.toLong(), config.maxLayers.toLong() + 1).toInt()
                 if (depth.toLong() * 2 + 3 > config.maxParameters) return@repeat
-                val architecture = try { NetworkArchitecture(List(depth) { random.nextLong(config.minWidth.toLong(), config.maxWidth.toLong() + 1).toInt() }) } catch (_: IllegalArgumentException) { return@repeat }
+                val architecture = try { NetworkArchitecture(List(depth) { randomWidth() }) } catch (_: IllegalArgumentException) { return@repeat }
                 if (architecture.parameters <= config.maxParameters && architecture !in issued) {
-                    return ArchitectureProposal(architecture, mutation = "Exploration restart $restarts")
+                    return ArchitectureProposal(architecture, mutation = "Bootstrap restart $restarts (no valid parent)")
                 }
             }
         }
         return null
     }
+
+    private fun eliteRestart(parent: ArchitectureProposal): ArchitectureProposal? {
+        val widths = parent.architecture.hidden.toMutableList()
+        val operation = when (random.nextInt(3)) {
+            0 -> {
+                val layer = random.nextInt(widths.size)
+                val previous = widths[layer]
+                widths[layer] = randomWidth()
+                "H${layer + 1}: $previous → ${widths[layer]}"
+            }
+            1 -> {
+                if (widths.size >= config.maxLayers) return null
+                val layer = random.nextInt(widths.size + 1)
+                val width = randomWidth()
+                widths.add(layer, width)
+                "Insert H${layer + 1} ($width)"
+            }
+            else -> {
+                if (widths.size <= config.minLayers) return null
+                val layer = random.nextInt(widths.size)
+                widths.removeAt(layer)
+                "Remove H${layer + 1}"
+            }
+        }
+        val architecture = try { NetworkArchitecture(widths) } catch (_: IllegalArgumentException) { return null }
+        if (architecture.parameters > config.maxParameters || architecture in issued) return null
+        return ArchitectureProposal(architecture, parent.architecture, "Elite restart $restarts: $operation", parent.generation + 1)
+    }
+
+    private fun randomWidth(): Int = random.nextLong(config.minWidth.toLong(), config.maxWidth.toLong() + 1).toInt()
 }

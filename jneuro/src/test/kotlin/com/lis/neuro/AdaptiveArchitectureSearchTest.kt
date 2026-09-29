@@ -87,7 +87,7 @@ class AdaptiveArchitectureSearchTest {
         val first = planner.next()!!; planner.observe(candidate(first.architecture, 0.3))
         val child = planner.next()!!; planner.observe(candidate(child.architecture, 0.6))
         val restart = planner.next()!!
-        assertNull(restart.parent); assertTrue(restart.mutation.contains("restart")); assertEquals(1, planner.restartCount)
+        assertEquals(first.architecture, restart.parent); assertTrue(restart.mutation.startsWith("Elite restart")); assertEquals(1, planner.restartCount)
         planner.observe(candidate(restart.architecture, 0.9))
         val next = planner.next()!!
         assertNotEquals(child.architecture, next.parent)
@@ -182,7 +182,9 @@ class AdaptiveArchitectureSearchTest {
         assertThrows(IllegalStateException::class.java) {
             engine.search(data, config, { if (it.running.isNotEmpty()) error("Observer failed") }, { false })
         }
-        assertFalse(Thread.getAllStackTraces().keys.any { it.isAlive && it.name.startsWith("jneuro-search-") })
+        val workers = Thread.getAllStackTraces().keys.filter { it.isAlive && it.name.startsWith("jneuro-search-") }
+        workers.forEach { it.join(2000) }
+        assertFalse(workers.any { it.isAlive }, "Search worker threads did not exit after executor shutdown")
     }
 
     @Test fun adaptiveCheckpointStorageIsCheckedBeforeFundingTheNextArchitecture() {
