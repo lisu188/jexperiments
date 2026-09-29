@@ -3,6 +3,7 @@ package com.lis.neuro;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -10,15 +11,23 @@ final class NeuroXorDiagnostics {
     record Boundary(double x1, double y1, double x2, double y2) {
     }
 
-    record Probe(double[] hidden, double output, double[] contributions, double outputPreActivation) {
+    record Probe(double[][] activations, double output, double[] contributions, double outputPreActivation) {
         Probe {
-            hidden = hidden.clone();
+            activations = deepCopy(activations);
             contributions = contributions.clone();
         }
 
         @Override
-        public double[] hidden() {
-            return hidden.clone();
+        public double[][] activations() {
+            return deepCopy(activations);
+        }
+
+        double[] layerActivations(int layer) {
+            return activations[layer].clone();
+        }
+
+        double[] hidden() {
+            return activations.length > 1 ? activations[0].clone() : new double[0];
         }
 
         @Override
@@ -31,26 +40,23 @@ final class NeuroXorDiagnostics {
         private final int epoch;
         private final double error;
         private final double beta;
-        private final double[] inputWeights;
-        private final double[] hiddenBiases;
-        private final double[] outputWeights;
-        private final double outputBias;
+        private final int[] topology;
+        private final double[][] weights;
+        private final double[][] biases;
 
         private Snapshot(
                 int epoch,
                 double error,
                 double beta,
-                double[] inputWeights,
-                double[] hiddenBiases,
-                double[] outputWeights,
-                double outputBias) {
+                int[] topology,
+                double[][] weights,
+                double[][] biases) {
             this.epoch = epoch;
             this.error = error;
             this.beta = beta;
-            this.inputWeights = inputWeights.clone();
-            this.hiddenBiases = hiddenBiases.clone();
-            this.outputWeights = outputWeights.clone();
-            this.outputBias = outputBias;
+            this.topology = topology.clone();
+            this.weights = deepCopy(weights);
+            this.biases = deepCopy(biases);
         }
 
         int epoch() {
@@ -61,36 +67,120 @@ final class NeuroXorDiagnostics {
             return error;
         }
 
-        int hiddenCount() {
-            return hiddenBiases.length;
+        int[] topology() {
+            return topology.clone();
+        }
+
+        int layerCount() {
+            return weights.length;
+        }
+
+        int hiddenLayerCount() {
+            return Math.max(0, topology.length - 2);
+        }
+
+        int hiddenLayerSize(int hiddenLayer) {
+            validateHiddenLayer(hiddenLayer);
+            return topology[hiddenLayer + 1];
+        }
+
+        int hiddenNeuronCount() {
+            var count = 0;
+            for (int layer = 1; layer < topology.length - 1; layer++) {
+                count += topology[layer];
+            }
+            return count;
+        }
+
+        int layerInputSize(int layer) {
+            validateLayer(layer);
+            return topology[layer];
+        }
+
+        int layerOutputSize(int layer) {
+            validateLayer(layer);
+            return topology[layer + 1];
+        }
+
+        double layerWeight(int layer, int output, int input) {
+            validateLayer(layer);
+            var inputs = topology[layer];
+            return weights[layer][output * inputs + input];
+        }
+
+        double layerBias(int layer, int output) {
+            validateLayer(layer);
+            return biases[layer][output];
         }
 
         double inputWeight(int hidden, int input) {
-            return inputWeights[hidden * 2 + input];
+            requireSingleFirstHiddenLayer();
+            return layerWeight(0, hidden, input);
         }
 
         double hiddenBias(int hidden) {
-            return hiddenBiases[hidden];
+            requireSingleFirstHiddenLayer();
+            return layerBias(0, hidden);
         }
 
         double outputWeight(int hidden) {
-            return outputWeights[hidden];
+            if (weights.length != 2) {
+                throw new IllegalStateException("outputWeight is only defined for one hidden layer");
+            }
+            return layerWeight(1, 0, hidden);
         }
 
         double outputBias() {
-            return outputBias;
+            return layerBias(weights.length - 1, 0);
+        }
+
+        double[] layerWeights(int layer) {
+            validateLayer(layer);
+            return weights[layer].clone();
+        }
+
+        double[] layerBiases(int layer) {
+            validateLayer(layer);
+            return biases[layer].clone();
         }
 
         double[] parameters() {
-            var result = new double[inputWeights.length + hiddenBiases.length + outputWeights.length + 1];
+            var count = 0;
+            for (int layer = 0; layer < weights.length; layer++) {
+                count += weights[layer].length + biases[layer].length;
+            }
+
+            var result = new double[count];
             var offset = 0;
-            System.arraycopy(inputWeights, 0, result, offset, inputWeights.length);
-            offset += inputWeights.length;
-            System.arraycopy(hiddenBiases, 0, result, offset, hiddenBiases.length);
-            offset += hiddenBiases.length;
-            System.arraycopy(outputWeights, 0, result, offset, outputWeights.length);
-            result[result.length - 1] = outputBias;
+            for (int layer = 0; layer < weights.length; layer++) {
+                System.arraycopy(weights[layer], 0, result, offset, weights[layer].length);
+                offset += weights[layer].length;
+                System.arraycopy(biases[layer], 0, result, offset, biases[layer].length);
+                offset += biases[layer].length;
+            }
             return result;
+        }
+
+        int parameterCount() {
+            return parameters().length;
+        }
+
+        private void requireSingleFirstHiddenLayer() {
+            if (hiddenLayerCount() < 1) {
+                throw new IllegalStateException("network has no hidden layer");
+            }
+        }
+
+        private void validateLayer(int layer) {
+            if (layer < 0 || layer >= weights.length) {
+                throw new IllegalArgumentException("layer index out of range");
+            }
+        }
+
+        private void validateHiddenLayer(int hiddenLayer) {
+            if (hiddenLayer < 0 || hiddenLayer >= hiddenLayerCount()) {
+                throw new IllegalArgumentException("hidden layer index out of range");
+            }
         }
     }
 
@@ -100,39 +190,39 @@ final class NeuroXorDiagnostics {
     static Snapshot capture(Neuro network, int epoch, double error) {
         Objects.requireNonNull(network, "network");
         var topology = network.topology();
-        if (topology.length != 3 || topology[0] != 2 || topology[2] != 1) {
-            throw new IllegalArgumentException("diagnostics require topology 2-hidden-1");
+        if (topology.length < 2 || topology[0] != 2 || topology[topology.length - 1] != 1) {
+            throw new IllegalArgumentException("diagnostics require topology 2-...-1");
         }
 
-        var inputWeights = network.backendWeights(0);
-        var hiddenBiases = network.backendBiases(0);
-        var outputWeights = network.backendWeights(1);
-        var outputBiases = network.backendBiases(1);
+        var weights = new double[topology.length - 1][];
+        var biases = new double[topology.length - 1][];
+        for (int layer = 0; layer < weights.length; layer++) {
+            weights[layer] = network.backendWeights(layer);
+            biases[layer] = network.backendBiases(layer);
+        }
         return new Snapshot(
                 epoch,
                 error,
                 network.hyperParameters().beta(),
-                inputWeights,
-                hiddenBiases,
-                outputWeights,
-                outputBiases[0]);
+                topology,
+                weights,
+                biases);
     }
 
     static Probe probe(Snapshot snapshot, double x, double y) {
         Objects.requireNonNull(snapshot, "snapshot");
-        var hidden = new double[snapshot.hiddenCount()];
-        var contributions = new double[hidden.length];
-        var outputZ = snapshot.outputBias();
-
-        for (int neuron = 0; neuron < hidden.length; neuron++) {
-            var z = Math.fma(snapshot.inputWeight(neuron, 0), x, snapshot.hiddenBias(neuron));
-            z = Math.fma(snapshot.inputWeight(neuron, 1), y, z);
-            hidden[neuron] = sigmoid(snapshot.beta * z);
-            contributions[neuron] = hidden[neuron] * snapshot.outputWeight(neuron);
-            outputZ += contributions[neuron];
+        var activations = forward(snapshot, x, y);
+        var outputLayer = snapshot.layerCount() - 1;
+        var source = outputLayer == 0
+                ? new double[]{x, y}
+                : activations[outputLayer - 1];
+        var contributions = new double[source.length];
+        var outputZ = snapshot.layerBias(outputLayer, 0);
+        for (int input = 0; input < source.length; input++) {
+            contributions[input] = source[input] * snapshot.layerWeight(outputLayer, 0, input);
+            outputZ += contributions[input];
         }
-
-        return new Probe(hidden, sigmoid(snapshot.beta * outputZ), contributions, outputZ);
+        return new Probe(activations, activations[activations.length - 1][0], contributions, outputZ);
     }
 
     static BufferedImage renderOutputMap(Snapshot snapshot, int size) {
@@ -188,11 +278,11 @@ final class NeuroXorDiagnostics {
         Objects.requireNonNull(snapshot, "snapshot");
         validateSize(size);
 
-        var images = new BufferedImage[snapshot.hiddenCount()];
+        var images = new BufferedImage[snapshot.hiddenNeuronCount()];
         var pixels = new int[images.length][];
-        for (int neuron = 0; neuron < images.length; neuron++) {
-            images[neuron] = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
-            pixels[neuron] = ((DataBufferInt) images[neuron].getRaster().getDataBuffer()).getData();
+        for (int index = 0; index < images.length; index++) {
+            images[index] = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
+            pixels[index] = ((DataBufferInt) images[index].getRaster().getDataBuffer()).getData();
         }
 
         var scale = 1.0 / (size - 1);
@@ -200,26 +290,42 @@ final class NeuroXorDiagnostics {
             var y = 1.0 - yPixel * scale;
             for (int xPixel = 0; xPixel < size; xPixel++) {
                 var x = xPixel * scale;
-                var index = yPixel * size + xPixel;
-                for (int neuron = 0; neuron < images.length; neuron++) {
-                    var z = Math.fma(snapshot.inputWeight(neuron, 0), x, snapshot.hiddenBias(neuron));
-                    z = Math.fma(snapshot.inputWeight(neuron, 1), y, z);
-                    pixels[neuron][index] = NeuroXorGrid.grayRgb(sigmoid(snapshot.beta * z));
+                var activations = forward(snapshot, x, y);
+                var mapIndex = 0;
+                for (int hiddenLayer = 0; hiddenLayer < snapshot.hiddenLayerCount(); hiddenLayer++) {
+                    for (var activation : activations[hiddenLayer]) {
+                        pixels[mapIndex++][yPixel * size + xPixel] = NeuroXorGrid.grayRgb(activation);
+                    }
                 }
             }
         }
         return images;
     }
 
+    static int hiddenMapOffset(Snapshot snapshot, int hiddenLayer) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        if (hiddenLayer < 0 || hiddenLayer >= snapshot.hiddenLayerCount()) {
+            throw new IllegalArgumentException("hidden layer index out of range");
+        }
+        var offset = 0;
+        for (int layer = 0; layer < hiddenLayer; layer++) {
+            offset += snapshot.hiddenLayerSize(layer);
+        }
+        return offset;
+    }
+
     static Boundary boundary(Snapshot snapshot, int neuron) {
         Objects.requireNonNull(snapshot, "snapshot");
-        if (neuron < 0 || neuron >= snapshot.hiddenCount()) {
+        if (snapshot.hiddenLayerCount() == 0) {
+            return null;
+        }
+        if (neuron < 0 || neuron >= snapshot.hiddenLayerSize(0)) {
             throw new IllegalArgumentException("hidden neuron index out of range");
         }
 
-        var wx = snapshot.inputWeight(neuron, 0);
-        var wy = snapshot.inputWeight(neuron, 1);
-        var bias = snapshot.hiddenBias(neuron);
+        var wx = snapshot.layerWeight(0, neuron, 0);
+        var wy = snapshot.layerWeight(0, neuron, 1);
+        var bias = snapshot.layerBias(0, neuron);
         var intersections = new ArrayList<double[]>(4);
 
         if (Math.abs(wy) > 1.0e-12) {
@@ -243,10 +349,10 @@ final class NeuroXorDiagnostics {
     static double maxAbsWeight(Snapshot snapshot) {
         Objects.requireNonNull(snapshot, "snapshot");
         var max = 0.0;
-        for (int neuron = 0; neuron < snapshot.hiddenCount(); neuron++) {
-            max = Math.max(max, Math.abs(snapshot.inputWeight(neuron, 0)));
-            max = Math.max(max, Math.abs(snapshot.inputWeight(neuron, 1)));
-            max = Math.max(max, Math.abs(snapshot.outputWeight(neuron)));
+        for (int layer = 0; layer < snapshot.layerCount(); layer++) {
+            for (var weight : snapshot.layerWeights(layer)) {
+                max = Math.max(max, Math.abs(weight));
+            }
         }
         return max;
     }
@@ -254,17 +360,8 @@ final class NeuroXorDiagnostics {
     static double weightNorm(Snapshot snapshot, int layer) {
         Objects.requireNonNull(snapshot, "snapshot");
         var sum = 0.0;
-        if (layer == 0) {
-            for (int neuron = 0; neuron < snapshot.hiddenCount(); neuron++) {
-                sum += square(snapshot.inputWeight(neuron, 0));
-                sum += square(snapshot.inputWeight(neuron, 1));
-            }
-        } else if (layer == 1) {
-            for (int neuron = 0; neuron < snapshot.hiddenCount(); neuron++) {
-                sum += square(snapshot.outputWeight(neuron));
-            }
-        } else {
-            throw new IllegalArgumentException("layer must be 0 or 1");
+        for (var value : snapshot.layerWeights(layer)) {
+            sum += square(value);
         }
         return Math.sqrt(sum);
     }
@@ -272,16 +369,33 @@ final class NeuroXorDiagnostics {
     static double biasNorm(Snapshot snapshot, int layer) {
         Objects.requireNonNull(snapshot, "snapshot");
         var sum = 0.0;
-        if (layer == 0) {
-            for (int neuron = 0; neuron < snapshot.hiddenCount(); neuron++) {
-                sum += square(snapshot.hiddenBias(neuron));
-            }
-        } else if (layer == 1) {
-            sum = square(snapshot.outputBias());
-        } else {
-            throw new IllegalArgumentException("layer must be 0 or 1");
+        for (var value : snapshot.layerBiases(layer)) {
+            sum += square(value);
         }
         return Math.sqrt(sum);
+    }
+
+    private static double[][] forward(Snapshot snapshot, double x, double y) {
+        var activations = new double[snapshot.layerCount()][];
+        double[] source = {x, y};
+
+        for (int layer = 0; layer < snapshot.layerCount(); layer++) {
+            var outputs = snapshot.layerOutputSize(layer);
+            var destination = new double[outputs];
+            for (int output = 0; output < outputs; output++) {
+                var sum = snapshot.layerBias(layer, output);
+                for (int input = 0; input < source.length; input++) {
+                    sum = Math.fma(
+                            source[input],
+                            snapshot.layerWeight(layer, output, input),
+                            sum);
+                }
+                destination[output] = sigmoid(snapshot.beta * sum);
+            }
+            activations[layer] = destination;
+            source = destination;
+        }
+        return activations;
     }
 
     private static void validateSize(int size) {
@@ -315,5 +429,9 @@ final class NeuroXorDiagnostics {
         }
         var exp = Math.exp(value);
         return exp / (1.0 + exp);
+    }
+
+    private static double[][] deepCopy(double[][] values) {
+        return Arrays.stream(values).map(double[]::clone).toArray(double[][]::new);
     }
 }
