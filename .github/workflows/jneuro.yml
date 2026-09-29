@@ -1,4 +1,4 @@
-name: JNeuro Java 27
+name: JNeuro Kotlin 2.4.20 / Java 27
 
 on:
   push:
@@ -13,19 +13,50 @@ on:
       - 'build.gradle'
       - '.github/workflows/jneuro.yml'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: jneuro-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '27'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Verify JNeuro
-        run: ./gradlew --no-daemon :jneuro:check
+      - name: Require Kotlin-only module sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(find jneuro/src -name '*.java' -print -quit)"
+          test -f jneuro/src/main/kotlin/com/lis/neuro/Neuro.kt
+          test -f jneuro/src/jmh/kotlin/com/lis/neuro/NeuroInferenceJmhBenchmark.kt
+      - name: Install OpenBLAS for native verification
+        run: sudo apt-get update && sudo apt-get install -y libopenblas0-pthread
+      - name: Verify JNeuro and coverage
+        run: ./gradlew --no-daemon :jneuro:check :jneuro:jacocoTestReport
+      - name: Compile pinned Java baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/jneuro-java-baseline"
+          mkdir -p "$BASELINE/source" "$BASELINE/classes"
+          git archive 75f8d619975bca7d2cbac141fc8bfaff2d8ff03d jneuro/src/main/java | tar -x -C "$BASELINE/source"
+          "$JAVA_HOME/bin/javac" --add-modules jdk.incubator.vector -d "$BASELINE/classes" "$BASELINE/source/jneuro/src/main/java/com/lis/neuro/"*.java
+      - name: Differential Java and Kotlin verification
+        run: ./gradlew --no-daemon :jneuro:migrationParity -PneuroJavaBaseline="$RUNNER_TEMP/jneuro-java-baseline/classes"
+      - name: Render implemented studio views
+        run: ./gradlew --no-daemon :jneuro:renderStudio
       - name: JMH smoke
         run: ./gradlew --no-daemon :jneuro:jmhSmoke
       - name: JMH inference comparison
@@ -34,11 +65,19 @@ jobs:
         run: ./gradlew --no-daemon :jneuro:jmhBatchCompare
       - name: JMH training comparison
         run: ./gradlew --no-daemon :jneuro:jmhTrainingCompare
-      - name: Install OpenBLAS for native benchmark
-        run: sudo apt-get update && sudo apt-get install -y libopenblas0-pthread
       - name: Native BLAS comparison
         run: ./gradlew --no-daemon :jneuro:nativeBlasBenchmark
       - name: Performance matrix smoke
         run: ./gradlew --no-daemon :jneuro:performanceMatrix -PneuroMatrixIterations=1000 -PneuroMatrixEpochs=2
       - name: Run example
         run: ./gradlew --no-daemon :jneuro:runExperiment
+      - name: Upload validation reports and studio screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-kotlin-validation
+          path: |
+            jneuro/build/reports/**
+            jneuro/build/screenshots/**
+          if-no-files-found: ignore
+          retention-days: 14
