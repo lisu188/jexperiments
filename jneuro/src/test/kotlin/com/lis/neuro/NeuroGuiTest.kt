@@ -346,7 +346,7 @@ class NeuroGuiTest {
         assertTrue(adaptive.lineage.size > 1)
         for ((index, proposal) in adaptive.lineage.withIndex()) {
             if (index == 0) continue
-            val selection = ArchitectureRanking.select(adaptive.candidates.take(index), adaptive.config)
+            val selection = ArchitectureRanking.select(adaptive.candidates.take(proposal.evaluatedCount), adaptive.config)
             assertTrue(proposal.parent in EliteParentSelection.rank(selection, adaptive.config))
         }
         val ancestry = edt { field(panel,"table") as JTable }
@@ -436,6 +436,35 @@ class NeuroGuiTest {
         click(button("Start search")); await("search before close") { field(ui,"searchRunning") == true }
         robot.keyPress(KeyEvent.VK_ALT); key(KeyEvent.VK_F4); robot.keyRelease(KeyEvent.VK_ALT)
         await("native window close") { !window.isDisplayable }
+    }
+
+    @Test fun parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization() {
+        configure("4,5,6,7,8", 1, 0.0)
+        tab("Architecture search"); searchSettings(100_000)
+        number("Max layers", "6", panel); number("Max width", "16", panel)
+        number("Max parameters", "2048", panel)
+        number("Parallel seed trials", "32", panel)
+        number("Required successes", "1", panel)
+        text(input("Seeds", panel), "42")
+        number("Check every (epochs)", "100", panel)
+        choose(combo("Search strategy", panel), ArchitectureSearchStrategy.ADAPTIVE.ordinal)
+        click(button("Start search"))
+        await("32 concurrent search trials") {
+            val text = (field(panel, "summary") as JLabel).text
+            val active = Regex("Active trials: (\\d+)/32").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            active == 32
+        }
+        val summary = edt { (field(panel, "summary") as JLabel).text }
+        assertTrue((Regex("(\\d+) architectures").find(summary)?.groupValues?.get(1)?.toInt() ?: 0) > 1)
+        assertEquals(32, edt { (field(panel, "config") as ArchitectureSearchConfig).parallelism })
+        assertEquals(listOf(42L), edt { (field(panel, "config") as ArchitectureSearchConfig).seeds })
+        screenshot("parallel-trials")
+        click(button("Cancel search"))
+        await("parallel cancellation") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertEquals(ArchitectureTermination.CANCELLED, report.termination)
+        assertEquals(32, report.peakParallelTrials)
+        assertTrue(edt { (field(panel, "progressBar") as JProgressBar).string.contains("peak ${report.peakParallelTrials}/32") })
     }
 
     private fun configure(hidden: String, epochs: Int, target: Double) {

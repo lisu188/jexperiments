@@ -95,6 +95,7 @@ internal class ArchitectureSearchPanel(
             "Search seed" to searchSeed, "Plateau length (architectures)" to restartAfter, "Max restarts" to restarts)) {
             advanced.add(field(name, component))
         }
+        threads.toolTipText = "Maximum concurrent architecture/seed trials. Adaptive search fills spare slots with elite offspring after bootstrap."
         advanced.isVisible = false
         controls.add(JCheckBox("Advanced search settings").apply {
             isOpaque = false
@@ -218,7 +219,9 @@ internal class ArchitectureSearchPanel(
             lineageStatus.text = "Generation ${proposal.generation} · ${proposal.parent ?: "Start / exploration"} → ${proposal.architecture} · ${proposal.mutation}"
         }
         val trial = progress.running.firstOrNull()
-        summary.text = if (trial == null) "Collecting results…" else "Training ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch} · best ${scoreMode.label} ${number(trial.bestRmse)}"
+        val activeArchitectures = progress.running.map { it.architecture }.distinct().size
+        val workers = "Active trials: ${progress.running.size}/${config?.parallelism} · $activeArchitectures architectures · peak ${progress.peakParallelTrials}"
+        summary.text = if (trial == null) "$workers · Collecting results…" else "$workers · ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch}"
     }
 
     fun complete(report: ArchitectureSearchResult) {
@@ -229,7 +232,7 @@ internal class ArchitectureSearchPanel(
         lineage = report.lineage.associateBy { it.architecture }
         showCandidates(report.candidates)
         progressBar.maximum = maxOf(1, report.generated); progressBar.value = report.evaluated
-        progressBar.string = "${report.termination} · ${report.evaluated}/${report.generated} ${if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposals" else "architectures"} evaluated · ${report.partial} partial"
+        progressBar.string = "${report.termination} · peak ${report.peakParallelTrials}/${report.config.parallelism} trials · ${report.evaluated}/${report.generated} ${if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposals" else "architectures"} evaluated · ${report.partial} partial"
         lineageStatus.text = if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE)
             "Adaptive search finished. Counts cover generated proposals, not the entire space; no global minimum is claimed."
         else "${report.untested} enumerated architectures untested."
