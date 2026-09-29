@@ -162,7 +162,25 @@ final class NeuroXorDiagnostics {
         }
 
         int parameterCount() {
-            return parameters().length;
+            var count = 0;
+            for (int layer = 0; layer < weights.length; layer++) {
+                count += weights[layer].length + biases[layer].length;
+            }
+            return count;
+        }
+
+        int layerParameterOffset(int layer) {
+            validateLayer(layer);
+            var offset = 0;
+            for (int index = 0; index < layer; index++) {
+                offset += weights[index].length + biases[index].length;
+            }
+            return offset;
+        }
+
+        int layerParameterCount(int layer) {
+            validateLayer(layer);
+            return weights[layer].length + biases[layer].length;
         }
 
         private void requireSingleFirstHiddenLayer() {
