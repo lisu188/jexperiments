@@ -502,15 +502,23 @@ Those omissions are deliberate boundaries rather than hot-path limitations: the 
 
 
 
-## Live XOR decision-surface visualizer
+## Live XOR learning dashboard
 
-JNeuro includes a small AWT Canvas demo that makes XOR training visible in real time.
+JNeuro includes an AWT Canvas dashboard that exposes how a small 2-6-1 network constructs XOR rather than only showing the final classifier.
 
-The horizontal and vertical axes are the two network inputs over the range 0 to 1. Every heatmap pixel is evaluated as one batched inference sample, and its grayscale brightness is the network output: black is 0, white is 1, and intermediate activations are gray.
+The main heatmap keeps the original interpretation: x and y are the two inputs over the range 0 to 1, and pixel brightness is the network output. Black is 0, white is 1, and intermediate activations are gray.
 
-Training runs on one worker thread in small epoch groups. Immediately after each group, that same worker evaluates the complete heatmap and publishes an immutable BufferedImage to the AWT event thread. The event thread never runs inference against weights while they are being updated.
+Below it, six smaller heatmaps show the activation surface of every hidden neuron. A red line overlays each neuron's first-layer z = 0 boundary, so movement of its weight vector and bias is visible geometrically while SGD trains.
 
-The visualizer uses the same deterministic 2-6-1 XOR configuration as the verification example and shows the epoch, RMSE, and predictions for 00, 01, 10, and 11 while the decision surface forms.
+A live network diagram shows the same snapshot structurally. Connection thickness is proportional to absolute weight magnitude, blue and orange distinguish positive and negative weights, and node brightness is the activation for the point currently selected on the main heatmap. Moving the mouse across the heatmap therefore acts as a forward-pass inspector.
+
+The diagram also shows each hidden neuron's signed contribution to the output pre-activation. This makes it possible to see which hidden features are reinforcing or suppressing the output for a selected point.
+
+A training-history chart records RMSE plus f(0,0), f(0,1), f(1,0), and f(1,1). The separation of the four XOR cases is visible alongside loss convergence instead of being reduced to the latest scalar values.
+
+Pause, single-epoch step, ten-epoch step, resume, and reset controls make the training trajectory inspectable rather than forcing a fixed-speed animation.
+
+Training, output rendering, parameter capture, and hidden-map generation all happen on the same worker thread. The AWT event thread only receives immutable post-update snapshots, so visualization never performs inference against weights while they are being mutated.
 
 Run it with:
 
