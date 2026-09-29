@@ -627,7 +627,7 @@ project(':jneuro') {
 
     tasks.register('runXorCanvas', JavaExec) {
         group = 'application'
-        description = 'Runs the live JNeuro XOR learning dashboard.'
+        description = 'Runs the interactive JNeuro visual learning playground.'
         classpath = sourceSets.main.runtimeClasspath
         mainClass = 'com.lis.neuro.NeuroXorCanvas'
         javaLauncher = java27
