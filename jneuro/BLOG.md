@@ -562,6 +562,22 @@ The toolbar also exposes pause/resume, one-epoch stepping, ten-epoch stepping, r
 
 All mutable model operations remain on the training worker. The AWT event thread receives immutable parameter/image/history snapshots, so rendering, hover inspection, timeline comparison, and step-difference views never race a weight update.
 
+The playground topology is configurable directly from the toolbar. The hidden-layer field accepts a comma-separated list of positive layer sizes:
+
+~~~text
+1
+2
+6
+4,3
+6,4,2
+~~~
+
+For example, `2` creates topology `2 → 2 → 1`, while `6,4,2` creates `2 → 6 → 4 → 2 → 1`. `+ layer` appends another hidden layer using the previous layer size, `- layer` removes the last hidden layer, and `Apply topology` rebuilds the network and restarts training on the current dataset.
+
+This makes the XOR view useful for architecture experiments: starting from a one-neuron hidden layer, increase width until the network can reliably reach the target RMSE, then compare that against deeper narrow configurations. Seed comparison, parameter trajectories, the live network graph, and timeline snapshots all use the selected topology rather than a fixed 2-6-1 network.
+
+The first hidden-layer heatmaps still have a direct two-dimensional geometric interpretation because they connect directly to x and y. For deeper networks the live graph shows every hidden layer and the forward-pass inspector propagates through the full topology.
+
 Run the playground with:
 
 ~~~text

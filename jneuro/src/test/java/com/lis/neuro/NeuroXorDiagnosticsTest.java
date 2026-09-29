@@ -206,6 +206,35 @@ final class NeuroXorDiagnosticsTest {
                 () -> NeuroXorDiagnostics.renderDifferenceMap(snapshot, snapshot, 1));
     }
 
+    @Test
+    void supportsMultipleHiddenLayers() {
+        var network = new Neuro(
+                new int[]{2, 4, 3, 2, 1},
+                Neuro.HyperParameters.defaults()
+                        .withLearningRate(0.6)
+                        .withMomentum(0.2)
+                        .withSeed(42));
+        network.addTrainingSample(new double[]{0, 0}, new double[]{0});
+        network.addTrainingSample(new double[]{0, 1}, new double[]{1});
+        network.addTrainingSample(new double[]{1, 0}, new double[]{1});
+        network.addTrainingSample(new double[]{1, 1}, new double[]{0});
+        network.train(20);
+
+        var snapshot = NeuroXorDiagnostics.capture(network, 20, network.trainingError());
+        var probe = NeuroXorDiagnostics.probe(snapshot, 0.31, 0.77);
+
+        assertArrayEquals(new int[]{2, 4, 3, 2, 1}, snapshot.topology());
+        assertEquals(3, snapshot.hiddenLayerCount());
+        assertEquals(4, snapshot.hiddenCount());
+        assertEquals(4, snapshot.layerCount());
+        assertEquals(4, probe.hiddenLayers()[0].length);
+        assertEquals(3, probe.hiddenLayers()[1].length);
+        assertEquals(2, probe.hiddenLayers()[2].length);
+        assertEquals(network.predict(new double[]{0.31, 0.77})[0], probe.output(), 1.0e-12);
+        assertTrue(snapshot.parameterCount() > 0);
+        assertTrue(NeuroXorDiagnostics.weightNorm(snapshot, 2) > 0.0);
+    }
+
     private static Neuro xorNetwork() {
         var network = new Neuro(
                 new int[]{2, 6, 1},
