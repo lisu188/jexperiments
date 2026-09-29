@@ -1,0 +1,36 @@
+name: Correct JNeuro GUI report input
+on:
+  push:
+    branches: [test/jneuro-gui-regressions]
+    paths: ['.github/workflows/jneuro-gui-report-fix.yml']
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: test/jneuro-gui-regressions
+      - name: Point the report at the actual JaCoCo agent destination
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p = Path('build.gradle')
+          original = p.read_text()
+          assert hashlib.sha256(original.encode()).hexdigest() == '111255a53e9e43be18cca0273d554a93c03fe6eba18f09b1c729212bdb922755'
+          old = '        executionData guiTest\n'
+          new = '        executionData(guiTest.map { it.extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension).destinationFile })\n'
+          assert original.count(old) == 1
+          p.write_text(original.replace(old, new))
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == 'f59e59ee49b471278a4b6d3b60eaae8ce0edb1837af6630678e3a109ac59f418'
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add build.gradle
+          git commit -m 'Resolve GUI JaCoCo execution data from the test agent destination'
+          git push origin HEAD:refs/heads/test/jneuro-gui-regressions
