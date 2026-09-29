@@ -602,11 +602,19 @@ project(':jneuro') {
 
     tasks.withType(JavaCompile).configureEach {
         options.release = 27
-        options.compilerArgs += ['-Xlint:all', '-Werror']
+        options.compilerArgs += ['--add-modules', 'jdk.incubator.vector', '-Xlint:all,-incubating', '-Werror']
     }
 
     def java27 = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(27)
+    }
+
+    tasks.withType(JavaExec).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
+    }
+
+    tasks.withType(Test).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
     }
 
     tasks.register('runExperiment', JavaExec) {
@@ -640,7 +648,7 @@ project(':jneuro') {
         classpath = sourceSets.main.runtimeClasspath
         mainClass = 'com.lis.neuro.NeuroPerformanceMatrix'
         javaLauncher = java27
-        jvmArgs = ['-Xms2g', '-Xmx2g']
+        jvmArgs '-Xms2g', '-Xmx2g'
         args providers.gradleProperty('neuroMatrixIterations').orElse('20000').get(),
                 providers.gradleProperty('neuroMatrixEpochs').orElse('20').get()
     }
@@ -652,7 +660,7 @@ project(':jneuro') {
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
         javaLauncher = java27
-        args 'com.lis.neuro.*JmhBenchmark.*'
+        args 'com.lis.neuro.*JmhBenchmark.*', '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
     }
 
     tasks.register('jmhSmoke', JavaExec) {
@@ -662,11 +670,70 @@ project(':jneuro') {
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
         javaLauncher = java27
-        args 'com.lis.neuro.NeuroInferenceJmhBenchmark.predictInto',
+        args 'com.lis.neuro.NeuroInferenceJmhBenchmark.vectorSession',
                 '-wi', '1',
                 '-i', '1',
                 '-f', '1',
-                '-p', 'topology=small'
+                '-p', 'topology=small',
+                '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
+    }
+
+    tasks.register('jmhCompare', JavaExec) {
+        group = 'verification'
+        description = 'Runs bounded scalar, SIMD, fast-sigmoid and float inference comparisons.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.neuro.NeuroInferenceJmhBenchmark.*',
+                '-wi', '2',
+                '-i', '3',
+                '-w', '300ms',
+                '-r', '300ms',
+                '-f', '1',
+                '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
+    }
+
+    tasks.register('jmhBatchCompare', JavaExec) {
+        group = 'verification'
+        description = 'Runs bounded vector, parallel and float batch comparisons.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.neuro.NeuroBatchJmhBenchmark.*',
+                '-wi', '1',
+                '-i', '2',
+                '-w', '300ms',
+                '-r', '300ms',
+                '-f', '1',
+                '-p', 'topology=medium',
+                '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
+    }
+
+    tasks.register('jmhTrainingCompare', JavaExec) {
+        group = 'verification'
+        description = 'Runs bounded scalar, SIMD and mini-batch training comparisons.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.neuro.NeuroTrainingJmhBenchmark.*',
+                '-wi', '1',
+                '-i', '2',
+                '-w', '300ms',
+                '-r', '300ms',
+                '-f', '1',
+                '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
+    }
+
+    tasks.register('nativeBlasBenchmark', JavaExec) {
+        group = 'verification'
+        description = 'Runs the optional FFM CBLAS batch-inference benchmark.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroNativeBlasBenchmark'
+        javaLauncher = java27
+        jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms2g', '-Xmx2g'
     }
 
     tasks.register('profileNeuro', JavaExec) {
@@ -955,6 +1022,8 @@ def coverageExcludes = [
         '**/NeuroBenchmark*',
         '**/NeuroExample*',
         '**/NeuroJfr*',
+        '**/NeuroNativeBlas*',
+        '**/NeuroNativeBlasBenchmark*',
         '**/NeuroPerformanceMatrix*',
         '**/NeuroVerification*'
     ],

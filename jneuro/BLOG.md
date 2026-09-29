@@ -373,92 +373,105 @@ record Statistics(
 
 This is useful for experiments and profiling without adding logging to the inner loops.
 
-## Performance layout
+## Aggressive execution engine
 
-The main hot-path design choices are:
+The current engine keeps the simple dense-network API but has several execution paths selected independently from model semantics.
 
-- flat weights per layer,
-- contiguous incoming weights per neuron,
-- reusable activation/delta arrays,
-- primitive shuffled indices,
-- no temporary hidden vectors,
-- Math.fma dot products,
-- four-way inner-loop unrolling,
-- reusable predictInto output,
-- no copied previous-weight tensor.
+Weights remain flat row-major primitive arrays. Training examples are lazily packed into contiguous input and target buffers, so the hot path does not chase Sample objects. Forward propagation reads the caller input directly and can write the final layer directly into a caller-provided destination.
 
-The model still uses one Layer object per edge between topology levels because that keeps dimension metadata explicit without putting object indirection inside individual weight accesses.
+For repeated inference, callers can retain the workspace explicitly:
 
-## Lightweight benchmark
-
-NeuroBenchmark compares:
-
-~~~text
-predict() allocating an output
-predictInto() reusing output
-100 training epochs
+~~~java
+var session = network.newInferenceSession();
+session.predictInto(input, output);
 ~~~
 
-using a representative 32-64-32-8 network.
+This avoids both intermediate allocation and the ThreadLocal lookup used by the convenience API.
 
-The benchmark validates a checksum to keep inference results observable.
+The AUTO, SCALAR and VECTOR kernel modes allow direct benchmarking and reliable fallback. VECTOR uses the JDK Vector API for dense dot products, hidden-delta propagation, output deltas, momentum updates and mini-batch gradient accumulation. AUTO keeps tiny layers scalar and vectorizes wider layers.
 
-It is useful for fast local regression detection.
+Fixed-epoch training no longer evaluates the entire training set after every epoch. train(n) computes the reported RMSE only after the final epoch. trainUntil retains exact checking by default and also exposes a checkEvery overload for workloads where evaluating the loss every epoch would dominate training time.
 
-It is not a replacement for JMH.
+Hidden-layer backpropagation initializes its delta buffer from the first next-layer weight row instead of clearing the buffer and then accumulating into it. Sample counters are updated once per epoch instead of once per sample.
 
-## Performance matrix
+## Batch and parallel execution
 
-NeuroPerformanceMatrix runs several topology shapes:
+Inference supports contiguous row-major batches:
 
-~~~text
-tiny    2-6-1
-small   32-64-32-8
-medium  128-256-128-32
-deep    64-128-128-64-32-8
+~~~java
+session.predictBatch(inputs, batchSize, outputs);
 ~~~
 
-For each it reports:
+A reusable ParallelInferenceSession partitions a batch deterministically over a persistent ForkJoinPool and retains one workspace per worker.
 
-- total parameter count,
-- predictInto nanoseconds per operation,
-- training milliseconds per epoch,
-- final training RMSE,
-- prediction checksum.
+Training supports mini-batches:
 
-That exposes both width and depth effects rather than reporting one synthetic network size.
-
-## JMH
-
-Two JMH surfaces are included.
-
-NeuroInferenceJmhBenchmark compares:
-
-~~~text
-predictAllocating
-predictInto
+~~~java
+network.trainMiniBatch(epochs, batchSize);
+network.trainMiniBatch(epochs, batchSize, parallelism);
 ~~~
 
-across small, medium, and deep networks.
+Parallel mini-batch workers accumulate private gradient arrays. Their gradients are reduced in a fixed worker order before one momentum update, avoiding concurrent writes to model parameters.
 
-NeuroTrainingJmhBenchmark measures one training epoch across small and medium topologies.
+## Fast sigmoid
 
-The normal JMH configuration uses multiple warmup iterations, measured iterations, and forks.
+SigmoidMode.EXACT uses Math.exp.
 
-The CI workflow runs only a bounded prediction smoke benchmark.
+SigmoidMode.FAST uses range reduction around powers of two plus a fifth-order polynomial approximation of exp. It avoids Math.exp while preserving substantially better numerical accuracy than a low-order direct sigmoid approximation. It remains opt-in because approximation changes floating-point results.
 
-Full JMH should be run on a quiet, stable machine when making performance claims.
+## Float inference
+
+toFloatModel() creates a compact inference snapshot with float weights, biases and workspaces. The float path uses FloatVector when the configured kernel selects SIMD.
+
+This halves parameter and activation storage versus double inference and doubles the preferred SIMD lane count on the same vector width.
+
+## Native BLAS experiment
+
+NeuroNativeBlas is an optional Java Foreign Function and Memory API backend for batched inference.
+
+It dynamically looks for cblas_dgemm in common OpenBLAS, BLAS and MKL library names. Weights are transposed and copied off-heap once when a native session is created. Input/output scratch buffers are reused across calls, and dense layers execute as row-major GEMM operations.
+
+The backend is optional: normal JNeuro has no native library dependency. Running it requires native access for the unnamed module.
+
+## Performance tooling
+
+NeuroInferenceJmhBenchmark compares, in the same fork and on the same topology:
+
+~~~text
+legacy copied-buffer scalar kernel
+new scalar kernel
+Vector API kernel
+AUTO kernel
+explicit InferenceSession
+fast-sigmoid SIMD session
+float SIMD inference
+~~~
+
+NeuroBatchJmhBenchmark compares vector batch inference, reusable parallel batch inference and float batch inference over several batch sizes.
+
+NeuroTrainingJmhBenchmark compares fixed-epoch scalar training, SIMD training, SIMD mini-batch training and deterministic parallel mini-batch training.
+
+A benchmark-only LegacyNeuroBaseline preserves the previous forward-path structure so the main comparison does not rely on results collected on a different machine.
+
+NeuroNativeBlasBenchmark checks native output against the Java vector backend before timing CBLAS on medium and large batched networks.
+
+Useful tasks are:
+
+~~~text
+:jneuro:jmh
+:jneuro:jmhCompare
+:jneuro:jmhBatchCompare
+:jneuro:jmhTrainingCompare
+:jneuro:nativeBlasBenchmark
+:jneuro:performanceMatrix
+:jneuro:profileNeuro
+~~~
+
+The module still retains the lightweight NeuroBenchmark and NeuroPerformanceMatrix utilities for fast local regression checks. JMH remains the source for performance comparisons.
 
 ## JFR
 
-JNeuro defines disabled-by-default JFR events for:
-
-- individual training epochs,
-- complete trainUntil runs.
-
-They record duration plus RMSE/convergence metadata.
-
-The profiling task is:
+JNeuro defines disabled-by-default JFR events for individual training epochs and complete trainUntil runs. The profiling task is:
 
 ~~~text
 ./gradlew :jneuro:profileNeuro
@@ -466,47 +479,24 @@ The profiling task is:
 
 The recording is written below build/jfr/.
 
-That makes it possible to correlate training time with allocation, GC, compilation, CPU sampling, and the topology matrix without putting timing calls inside every numeric loop.
-
 ## Java 27 build
 
-The module targets Java 27 and compiles with:
+The module targets Java 27, enables jdk.incubator.vector explicitly and compiles with strict warnings:
 
 ~~~text
--Xlint:all
+-Xlint:all,-incubating
 -Werror
 ~~~
 
-Available tasks include:
+The normal API remains pure Java. The native CBLAS benchmark additionally runs with:
 
 ~~~text
-:jneuro:runExperiment
-:jneuro:verifyExperiment
-:jneuro:benchmarkExperiment
-:jneuro:performanceMatrix
-:jneuro:jmh
-:jneuro:jmhSmoke
-:jneuro:profileNeuro
+--enable-native-access=ALL-UNNAMED
 ~~~
-
-The module-specific GitHub Actions workflow runs deterministic verification, JMH smoke, the performance matrix smoke run, and the full example.
 
 ## Remaining limitations
 
-JNeuro remains an educational feed-forward network rather than a general machine-learning system.
+JNeuro remains an educational dense feed-forward network rather than a general machine-learning framework. It still has only sigmoid activations, no softmax or cross-entropy objective, no regularization, no model persistence, no GPU backend, no gradient-check utility and no adaptive optimizer such as Adam.
 
-It currently has:
+Those omissions are deliberate boundaries rather than hot-path limitations: the numeric kernels remain visible as ordinary Java code and can be compared directly against SIMD, float, batch and native variants.
 
-- only sigmoid activations,
-- only dense fully-connected layers,
-- no softmax,
-- no cross-entropy objective,
-- no mini-batch gradient accumulation,
-- no regularization,
-- no model persistence,
-- no SIMD Vector API kernel,
-- no explicit parallelism inside one model,
-- no gradient-check utility,
-- no adaptive optimizer such as Adam.
-
-Those are useful future experiments only if they preserve the main value of this module: the entire training algorithm remains understandable by reading a few ordinary Java loops.
