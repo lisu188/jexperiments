@@ -445,3 +445,52 @@ Regression tests cover blank input, layer editing, numerical parity with the act
 forward kernel in both sigmoid modes, snapshot isolation, output/difference maps,
 training and seed-study isolation, deep-to-baseline resets, empty custom datasets,
 and offscreen rendering of every Studio tab. The per-module coverage threshold is unchanged.
+
+
+## Harder spatial learning sets
+
+Six additional presets stress repeated decision boundaries, narrow curved regions and disconnected components. They are available in the existing Dataset selector, all Studio views and Architecture search. Circle, Spiral and the boolean generators retain their original samples and behavior; no optimizer, topology default or dependency changes are needed.
+
+| Preset | Structure | Positive-label rule |
+|---|---|---|
+| Checkerboard 8×8 | 64 alternating cells | The sum of the two cell indices is odd. |
+| Concentric rings | Six alternating radial bands inside radius 0.5 | Radius below 0.5 and `floor(12 * radius)` even; exterior is negative. |
+| Tight spiral | Four windings out to radius 0.5, continuing into the square's corners | `sin(angle - 16 * PI * radius) >= 0`. |
+| Twisted pinwheel | Eight angular sectors, twisted with radius | `sin(4 * angle - 12 * PI * radius) >= 0`. |
+| Wave interference | Crossing, warped high-frequency waves | `wave(x, y) * wave(y, x) >= 0`. |
+| 16 islands | A 4×4 array of disconnected disks | Distance from the local cell center below 0.075 in input coordinates. |
+
+Radius and angle are measured around `(0.5, 0.5)`. In Concentric rings, the center is positive and successive bands alternate; the outermost band and the exterior are negative. Each island has radius 0.075 and neighboring centers are 0.25 apart, leaving a negative gap. The wave used by the interference preset is:
+
+~~~kotlin
+private fun wave(x: Double, y: Double): Double =
+    Math.sin(10 * Math.PI * x + 2 * Math.sin(4 * Math.PI * y))
+~~~
+
+### Sampling and reproducibility
+
+Every new preset contains exactly 1,024 binary-labeled points, one per cell of a 32×32 spatial grid. Sampling uses seeded jitter inside the central 80% of each cell. This provides spatial coverage without an unbounded rejection loop or duplicate coordinates. Targets are computed from the sampled coordinates; jitter changes positions, not the truth rule. There are no random label flips.
+
+~~~kotlin
+val random = SplittableRandom(seed)
+val side = 32
+val x = (index % side + 0.1 + 0.8 * random.nextDouble()) / side
+val y = (index / side + 0.1 + 0.8 * random.nextDouble()) / side
+Sample(x, y, if (positive(x, y)) 1.0 else 0.0)
+~~~
+
+`NeuroLearningSets.create(kind, seed)` reproduces the same ordered samples for the same seed. Different seeds change positions while preserving geometry. The Studio intentionally keeps its existing fixed dataset seed, `0xC0FFEE42L`; the sidebar's Random seed continues to control network initialization, not the learning set. This keeps architecture and initialization comparisons on identical data.
+
+### Training and architecture search
+
+Select a preset and press **Apply & restart**. The Learning set view overlays the actual targets; its background remains the network's prediction, not a reference solution. Hidden activation maps, parameter plots, checkpoints and seed comparisons use the same training path as before.
+
+Architecture search defaults these larger, non-boolean datasets to **Validation RMSE**. It uses the existing fixed, grouped train/validation split. Duplicate-coordinate protection, model ownership and replay behavior are unchanged. Validation still participates in selection and is not an untouched final test set.
+
+These examples are intentionally not guaranteed to reach RMSE 0.05 with the default six-neuron network. More local boundaries or more disconnected components motivate width/depth experiments; they do not define a universal difficulty ordering over all optimizers and seeds. Research on [spectral bias](https://proceedings.mlr.press/v97/rahaman19a.html) motivates the high-frequency cases, but does not establish a benchmark result for this particular sigmoid engine.
+
+An epoch now processes 1,024 points rather than Circle's 180 or Spiral's 220. Large multi-seed architecture sweeps therefore cost more even before increasing network size. Start with a restricted architecture range and epoch budget, inspect held-out error, and expand deliberately. Do not interpret failure of one small network as proof that a dataset is unlearnable, or a lower raw RMSE on an imbalanced dataset as a universal difficulty ranking.
+
+### Regression coverage
+
+Tests check reproducibility across ordinary and extreme seeds, distinct input coordinates, complete grid coverage, finite binary targets, nondegenerate class counts, all 64 checkerboard cells and all 16 islands. Independent geometric oracles check ring labels, rotated complex-coordinate spiral/pinwheel labels and wave-phase signs. Integration tests train every preset, run validation architecture searches without changing the Studio model, verify the real Dataset selector and its default scoring mode, and render each preset through the implemented Swing Learning set view. Existing regression tests continue to cover the original datasets.
