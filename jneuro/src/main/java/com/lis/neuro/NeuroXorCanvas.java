@@ -15,6 +15,7 @@ import java.util.Locale;
 import javax.swing.JFrame;
 import javax.swing.WindowConstants;
 
+@SuppressWarnings("serial")
 public final class NeuroXorCanvas extends Canvas {
     private static final long serialVersionUID = 1L;
     private static final int GRID_SIZE = 256;
