@@ -625,6 +625,14 @@ project(':jneuro') {
         javaLauncher = java27
     }
 
+    tasks.register('runXorCanvas', JavaExec) {
+        group = 'application'
+        description = 'Runs the live JNeuro XOR Canvas visualizer.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroXorCanvas'
+        javaLauncher = java27
+    }
+
     tasks.register('verifyExperiment', JavaExec) {
         group = 'verification'
         description = 'Runs deterministic JNeuro correctness verification.'
@@ -1025,7 +1033,8 @@ def coverageExcludes = [
         '**/NeuroNativeBlas*',
         '**/NeuroNativeBlasBenchmark*',
         '**/NeuroPerformanceMatrix*',
-        '**/NeuroVerification*'
+        '**/NeuroVerification*',
+        '**/NeuroXorCanvas*'
     ],
     observableconcurrenttree: [
         '**/ObservableConcurrentTreeBenchmark*',
