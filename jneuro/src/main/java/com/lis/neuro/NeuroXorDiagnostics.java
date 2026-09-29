@@ -176,13 +176,12 @@ final class NeuroXorDiagnostics {
             throw new IllegalArgumentException("difference must be finite");
         }
         var magnitude = Math.min(1.0, Math.abs(difference) * 4.0);
-        var neutral = 32;
-        var strong = 230;
-        var weak = (int) Math.round(neutral + (1.0 - magnitude) * 55.0);
+        var neutral = 45;
+        var strong = 235;
         var channel = (int) Math.round(neutral + magnitude * (strong - neutral));
         return difference >= 0.0
-                ? channel << 16 | weak << 8 | weak
-                : weak << 16 | weak << 8 | channel;
+                ? channel << 16 | neutral << 8 | neutral
+                : neutral << 16 | neutral << 8 | channel;
     }
 
     static BufferedImage[] renderHiddenMaps(Snapshot snapshot, int size) {
