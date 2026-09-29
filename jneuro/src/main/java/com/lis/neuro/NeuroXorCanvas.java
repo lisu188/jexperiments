@@ -997,6 +997,7 @@ public final class NeuroXorCanvas extends Canvas {
             int top,
             int size,
             int gap) {
+        var images = current.hiddenImages();
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
         g.setColor(FOREGROUND);
         g.drawString(
@@ -1006,8 +1007,6 @@ public final class NeuroXorCanvas extends Canvas {
                                 : ""),
                 left,
                 top - 21);
-
-        var images = current.hiddenImages();
         for (int neuron = 0; neuron < images.length; neuron++) {
             var x = left + neuron * (size + gap);
             drawHeatmap(g, images[neuron], x, top, size);
