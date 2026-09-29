@@ -717,7 +717,15 @@ project(':evolution') {
 
     tasks.withType(JavaCompile).configureEach {
         options.release = 27
-        options.compilerArgs += ['-Xlint:all', '-Werror']
+        options.compilerArgs += ['-Xlint:all', '-Xlint:-incubating', '-Werror', '--add-modules', 'jdk.incubator.vector']
+    }
+
+    tasks.withType(Test).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
+    }
+
+    tasks.withType(JavaExec).configureEach {
+        jvmArgs '--add-modules', 'jdk.incubator.vector'
     }
 
     def java27 = javaToolchains.launcherFor {
@@ -751,12 +759,23 @@ project(':evolution') {
 
     tasks.register('performanceMatrix', JavaExec) {
         group = 'verification'
-        description = 'Runs Evolution population and genome performance matrix.'
+        description = 'Runs Evolution population, genome, operator and parallel-fitness matrix.'
         classpath = sourceSets.main.runtimeClasspath
         mainClass = 'com.lis.EvolutionPerformanceMatrix'
         javaLauncher = java27
-        jvmArgs = ['-Xms2g', '-Xmx2g']
+        jvmArgs '-Xms2g', '-Xmx2g'
         args providers.gradleProperty('evolutionMatrixGenerations').orElse('500').get()
+    }
+
+    tasks.register('convergenceBenchmark', JavaExec) {
+        group = 'verification'
+        description = 'Runs multi-seed time-to-target convergence comparisons.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.EvolutionConvergenceBenchmark'
+        javaLauncher = java27
+        jvmArgs '-Xms2g', '-Xmx2g'
+        args providers.gradleProperty('evolutionConvergenceSeeds').orElse('100').get(),
+                providers.gradleProperty('evolutionConvergenceMaxGenerations').orElse('5000').get()
     }
 
     tasks.register('jmh', JavaExec) {
@@ -771,17 +790,26 @@ project(':evolution') {
 
     tasks.register('jmhSmoke', JavaExec) {
         group = 'verification'
-        description = 'Runs a bounded Evolution JMH smoke benchmark.'
+        description = 'Runs bounded Evolution JMH smoke benchmarks.'
         dependsOn tasks.named('jmhClasses')
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
         javaLauncher = java27
-        args 'com.lis.EvolutionJmhBenchmark.evolveGeneration',
+        args 'com.lis.EvolutionFitnessJmhBenchmark.*',
                 '-wi', '1',
                 '-i', '1',
                 '-f', '1',
-                '-p', 'populationSize=64',
-                '-p', 'geneCount=16'
+                '-p', 'geneCount=128'
+    }
+
+    tasks.register('jmhGc', JavaExec) {
+        group = 'verification'
+        description = 'Runs Evolution JMH with allocation and GC profiling.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'org.openjdk.jmh.Main'
+        javaLauncher = java27
+        args 'com.lis.*Evolution*JmhBenchmark.*', '-prof', 'gc'
     }
 
     tasks.register('profileEvolution', JavaExec) {
@@ -907,10 +935,10 @@ project(':blogsite') {
 def coverageExcludes = [
     evolution: [
         '**/EvolutionBenchmark*',
+        '**/EvolutionConvergenceBenchmark*',
         '**/EvolutionExample*',
         '**/EvolutionJfr*',
-        '**/EvolutionPerformanceMatrix*',
-        '**/EvolutionVerification*'
+        '**/EvolutionPerformanceMatrix*'
     ],
     distributedthreadpool: [
         '**/DistributedThreadPoolBenchmark*',
@@ -971,10 +999,10 @@ def coverageExcludes = [
 ]
 
 def coverageSmokeMains = [
+    evolution: 'com.lis.EvolutionVerification',
     bcel: 'com.company.Main',
     completeablefuture: 'Main',
     distributedthreadpool: 'com.lis.distributed.thread.pool.DistributedThreadPoolVerification',
-    evolution: 'com.lis.EvolutionVerification',
     flowpublisher: 'com.lis.flow.FlowPublisherExperiment',
     jneuro: 'com.lis.neuro.NeuroVerification',
     javakotlinbridges: 'experiments.kotlin.bridges.BridgeExperimentKt',

@@ -1,580 +1,425 @@
-# Evolution: A Deterministic Genetic Search over Dense Numeric Genomes
+# Evolution: An Extensible Genetic Search Engine in Plain Java
 
 ## Why this experiment exists
 
-This experiment implements a compact genetic algorithm over fixed-length arrays of doubles.
+This experiment started as a small 2016 program that evolved arrays of doubles toward an all-ones target. The modern implementation keeps the same transparent, low-level character, but now treats target matching as one specialization of a broader genetic search engine.
 
-The original 2016 version demonstrated selection, single-point crossover, mutation, and distance-to-goal with very little code. That made the mechanics easy to inspect, but several implementation choices obscured the actual algorithmic cost and made results difficult to reproduce:
+The current engine supports pluggable scalar fitness, scalar and Vector API MSE, tournament/rank/roulette/truncation selection, four crossover operators, random-reset and Gaussian mutation, geometric mutation skipping, multiple elites, adaptive mutation strength, stagnation restarts, parallel fitness, diversity metrics, island evolution, Pareto-ranked multi-objective evolution, deterministic replay, JFR phases and time-to-target benchmarks.
 
-- randomness came from a synchronized SecureRandom,
-- candidates were heap objects wrapping separate double arrays,
-- stream pipelines were used inside the hottest numeric loops,
-- population size changed indirectly and could collapse into an empty parent pool,
-- there was no guaranteed elitism,
-- there was no deterministic seed,
-- mutation could hit the same gene repeatedly while leaving others untouched,
-- population growth and shrinkage made performance hard to compare,
-- length checks relied on disabled-by-default assertions,
-- the demo printed one million lines,
-- there was no convergence API or hard generation limit.
+The implementation remains array-oriented. Genetic operators work directly on flat primitive buffers so the cost of selection, crossover, mutation and fitness stays visible.
 
-The modern version keeps the same educational goal — evolve numeric genomes toward a target — while turning the implementation into a deterministic, measurable, allocation-conscious genetic search.
+## Pluggable scalar fitness
 
-## Public shape
-
-A search is created from a goal vector and a configuration:
+The core objective abstraction is:
 
 ~~~java
-var evolution = new Evolution(
-        new double[]{1, 1, 1, 1},
-        Evolution.Config.defaults()
-                .withPopulationSize(512)
-                .withTournamentSize(6)
-                .withMutationProbability(0.08)
-                .withSeed(42));
+@FunctionalInterface
+public interface EvolutionFitness {
+    double evaluate(
+            double[] genome,
+            int offset,
+            int length);
+}
 ~~~
 
-The goal is defensively copied.
+Fitness receives the shared population array plus an offset. The engine does not allocate a temporary genome for every candidate.
 
-The default gene domain is:
+A custom sphere objective can therefore be written as:
+
+~~~java
+EvolutionFitness sphere =
+        (genome, offset, length) -> {
+            var sum = 0.0;
+            for (int i = 0; i < length; i++) {
+                var value = genome[offset + i];
+                sum = Math.fma(value, value, sum);
+            }
+            return sum;
+        };
+~~~
+
+Lower fitness is always better.
+
+## Goal matching and SIMD
+
+The original use case still has a direct constructor:
+
+~~~java
+var evolution =
+        new Evolution(
+                new double[]{1, 1, 1, 1});
+~~~
+
+Goal-backed searches use mean squared error. By default that fitness uses the Java Vector API. Callers can disable the SIMD specialization with Config.withVectorizedGoalFitness(false).
+
+The vector kernel loads candidate and goal vectors, subtracts them, squares lane-wise and reduces the result:
+
+~~~java
+var candidate =
+        DoubleVector.fromArray(
+                SPECIES,
+                genome,
+                offset + gene);
+
+var desired =
+        DoubleVector.fromArray(
+                SPECIES,
+                target,
+                gene);
+
+var difference = candidate.sub(desired);
+
+sum += difference
+        .mul(difference)
+        .reduceLanes(VectorOperators.ADD);
+~~~
+
+A scalar tail handles genomes whose length is not a multiple of the preferred vector species.
+
+The module runs with the incubator module enabled:
 
 ~~~text
-[0.0, 1.0]
+--add-modules jdk.incubator.vector
 ~~~
 
-Custom finite bounds can be supplied with:
+## Flat population and cached fitness
 
-~~~java
-config.withGeneBounds(-2.0, 2.0)
-~~~
-
-The target must lie inside those bounds.
-
-## Fixed-size population
-
-The original code used probabilistic deletion plus a generation factor.
-
-Population size could drift, small populations could generate zero children, and an empty crossover pool could make nextInt(0) fail.
-
-The modern algorithm keeps exactly:
-
-~~~java
-config.populationSize()
-~~~
-
-candidates every generation.
-
-One elite candidate is copied unchanged into the next generation, and every remaining slot is filled by reproduction.
-
-Fixed population size provides several useful invariants:
-
-- predictable memory use,
-- predictable work per generation,
-- no empty parent pool,
-- no accidental unbounded growth,
-- comparable benchmark runs.
-
-## Flat population layout
-
-Candidates are not separate Drone objects.
-
-All genes are stored in one flat primitive array:
+Population memory is two reusable primitive arrays:
 
 ~~~java
 double[] population;
 double[] nextPopulation;
 ~~~
 
-For candidate c and gene g:
+Candidate c starts at c * geneCount.
+
+Fitness is also double-buffered:
+
+~~~java
+double[] fitness;
+double[] nextFitness;
+~~~
+
+When elites are copied into the next generation, their fitness values are copied too. A generation with P candidates and E elites evaluates only P - E new candidates.
+
+This matters little for cheap MSE and matters a lot when fitness runs a simulation.
+
+## Policy configuration
+
+Selection, crossover and mutation are explicit policy records rather than unrelated fields in one large configuration.
+
+Selection supports:
 
 ~~~text
-index = c * geneCount + g
+TOURNAMENT
+RANK
+ROULETTE
+TRUNCATION
 ~~~
 
-This removes:
-
-- one object per candidate,
-- one double[] object per candidate,
-- pointer chasing through a List<Drone>,
-- temporary child objects during crossover.
-
-Two full buffers are allocated once and swapped after each generation.
-
-The next generation is therefore built without allocating one new genome object per child.
-
-## Fitness
-
-Fitness is mean squared error against the target:
+Crossover supports:
 
 ~~~text
-MSE =
-    sum((gene - goal)^2)
-    / geneCount
+SINGLE_POINT
+UNIFORM
+ARITHMETIC
+BLX_ALPHA
 ~~~
 
-Lower is better.
+Mutation supports:
 
-The hot kernel is a primitive loop using Math.fma:
-
-~~~java
-var difference =
-        genome[offset + gene]
-        - goal[gene];
-
-sum = Math.fma(
-        difference,
-        difference,
-        sum);
+~~~text
+RANDOM_RESET
+GAUSSIAN
 ~~~
 
-No streams, boxing, lambdas, or temporary collections are involved.
+The outer Config controls population size, elite count, gene bounds, seed, fitness parallelism, SIMD goal fitness and diversity tracking.
 
-The method accepts an offset into a flat genome buffer, which lets the same kernel evaluate every candidate without slicing arrays.
+## Selection strategies
 
-## Deterministic randomness
+Tournament selection samples several candidates and retains the lowest fitness. Tournament size directly controls selection pressure.
 
-Each Evolution instance owns one SplittableRandom seeded from Config.
+Rank selection uses the cached ranking and gives linearly decreasing weights from best to worst. It is insensitive to the numeric scale of the fitness values.
 
-~~~java
-var random =
-        new SplittableRandom(
-                config.seed());
+Roulette selection converts normalized distance from the current best into inverse weights. It is useful when the distribution itself should affect selection probability.
+
+Truncation selects uniformly from the configured best fraction of the population. It is intentionally aggressive and useful as an experimental extreme.
+
+## Multiple elites
+
+Config exposes eliteCount. The best E candidates are copied unchanged into the next generation before reproduction.
+
+That provides the invariant:
+
+~~~text
+best(generation + 1) <= best(generation)
 ~~~
 
-The same:
+for the normal scalar search.
 
-- goal,
-- configuration,
-- seed,
-- sequence of evolve calls
+Elitism is also a performance optimization because copied elite fitness values are reused.
 
-produces the same population trajectory.
+## Continuous crossover
 
-This is critical for correctness tests and performance experiments.
+Single-point crossover remains as the historical baseline.
 
-SecureRandom was removed because cryptographic unpredictability provides no benefit to this search while making experiments slower and irreproducible.
+Uniform crossover chooses one parent independently for every gene.
 
-## Tournament selection
+Arithmetic crossover samples alpha and creates:
 
-Parent selection uses a configurable tournament.
+~~~text
+child = alpha * A + (1 - alpha) * B
+~~~
 
-The algorithm starts with one random candidate, samples additional candidates, and keeps the one with the lowest fitness.
+BLX-alpha samples around the parent interval:
+
+~~~text
+[min(A,B) - alpha*d,
+ max(A,B) + alpha*d]
+~~~
+
+where d is the distance between both parent genes. The result is clipped to configured gene bounds.
+
+Arithmetic and BLX-alpha are more natural operators for continuous genomes than treating doubles like a bit string.
+
+## Gaussian mutation
+
+The default mutation is local Gaussian perturbation:
+
+~~~text
+x' = clamp(x + N(0, sigma))
+~~~
+
+A Box-Muller generator is implemented on top of the per-engine SplittableRandom and caches the second normal sample.
+
+Random reset remains available for exploration-heavy baselines.
+
+## Geometric mutation skipping
+
+At low mutation probability, checking every gene wastes random-number calls.
+
+When geometric skipping is enabled, the engine samples the number of unchanged genes before the next mutation event. The hot path becomes conceptually:
+
+~~~text
+skip N
+mutate
+skip M
+mutate
+~~~
+
+instead of one probability draw per gene.
+
+The normal per-gene path remains available and is used automatically for high mutation probabilities.
+
+## Adaptive sigma and stagnation restarts
+
+Gaussian mutation has a live mutation sigma.
+
+When the historical best improves, sigma decays toward minSigma. This gradually shifts from exploration toward local refinement.
+
+When the search stagnates for the configured number of generations, sigma is multiplied by stagnationBoost up to maxSigma.
+
+The engine can also reinitialize a configured fraction of the worst non-elite genomes. Elites survive the restart.
+
+Generation statistics expose:
+
+~~~text
+mutationSigma
+stagnantGenerations
+restarts
+~~~
+
+so convergence behavior is observable rather than hidden.
+
+## Diversity statistics
+
+GenerationStats now includes best, median, average and worst fitness, fitness standard deviation and average per-gene standard deviation.
+
+Gene diversity is the average standard deviation of each gene across the population.
+
+This distinguishes a population that is still exploring from one that has collapsed into a narrow region without reaching a good solution.
+
+Diversity measurement can be disabled in pure throughput benchmarks because it adds an O(P*G) observation pass.
+
+## Parallel fitness
+
+Config.fitnessParallelism controls optional parallel objective evaluation.
+
+Only fitness is parallelized. Selection, crossover, mutation and RNG remain on the orchestration thread, which preserves deterministic operator order.
+
+When parallelism is greater than one, the population is split into chunks evaluated on a fixed platform-thread pool.
+
+A custom EvolutionFitness must be safe for concurrent calls when this mode is enabled.
+
+For cheap MSE, parallelism is expected to lose. The performance matrix therefore uses a deliberately expensive synthetic fitness when measuring parallel scaling.
+
+## Shared ranking cache
+
+A primitive int[] ranking is refreshed after population evaluation.
+
+The same ranking is reused for:
+
+- multiple elites,
+- rank selection,
+- truncation selection,
+- median fitness,
+- stagnation restarts,
+- island migration.
+
+This avoids multiple boxed sorting structures.
+
+## Genome injection
+
+External algorithms can offer a candidate through:
 
 ~~~java
-var winner =
-        random.nextInt(
-                config.populationSize());
+boolean injectGenome(double[] genome)
+~~~
 
-for (int competitor = 1;
-        competitor < config.tournamentSize();
-        competitor++) {
-    var candidate =
-            random.nextInt(
-                    config.populationSize());
+The candidate is evaluated immediately and replaces the current worst candidate only if it is better.
 
-    if (fitness[candidate]
-            < winnerFitness) {
-        winner = candidate;
-        winnerFitness =
-                fitness[candidate];
-    }
+This is the bridge used by island migration and also makes the engine composable with other search techniques.
+
+## Island evolution
+
+IslandEvolution owns several independent Evolution populations with different deterministic seeds.
+
+Islands can evolve sequentially or concurrently.
+
+Every migration interval, the configured number of top genomes from island i are offered to island (i + 1) mod islandCount.
+
+Migration uses injectGenome, so weak migrants cannot degrade the destination population.
+
+The model preserves diversity naturally and parallelizes with very little coordination between generations.
+
+## Pareto multi-objective search
+
+MultiObjectiveFitness writes several objective values for one genome:
+
+~~~java
+@FunctionalInterface
+public interface MultiObjectiveFitness {
+    void evaluate(
+            double[] genome,
+            int offset,
+            int length,
+            double[] objectives,
+            int objectiveOffset);
 }
 ~~~
 
-Tournament size controls selection pressure without sorting the full population.
+ParetoEvolution minimizes every objective.
 
-That is useful both algorithmically and for performance.
+It constructs pairwise dominance relations, assigns Pareto fronts and calculates crowding distance inside every front.
 
-A full ranked sort would add O(P log P) work per generation; tournament selection stays O(P * tournamentSize) across offspring creation.
+Parent tournaments compare:
 
-## Elitism
+1. lower Pareto rank,
+2. higher crowding distance,
+3. deterministic random tie breaking.
 
-Candidate zero of the next buffer receives an exact copy of the current best genome.
+This is an NSGA-style experiment centered on dominance ranking and objective-space diversity. It is intentionally smaller than a production NSGA-II implementation with parent-plus-offspring environmental selection.
 
-~~~java
-copyGenome(
-        population,
-        bestIndex,
-        nextPopulation,
-        0);
-~~~
+The current non-dominated front can be exported as defensive genome copies.
 
-The elite is not mutated.
+## Phase-level JFR
 
-This guarantees:
+JFR events are disabled by default and include:
 
 ~~~text
-bestError(generation + 1)
-    <= bestError(generation)
+EvolutionGeneration
+EvolutionSearch
+EvolutionPhase
 ~~~
 
-The deterministic verification suite checks this property over hundreds of generations, including configurations with mutationProbability = 1.0.
+Generation events record fitness, diversity, live sigma and restart count.
 
-The old implementation could delete its best candidate.
-
-## Crossover
-
-Every non-elite child receives two tournament-selected parents.
-
-With configurable crossoverProbability, single-point crossover is performed:
-
-~~~java
-var cut =
-        random.nextInt(
-                geneCount + 1);
-~~~
-
-The prefix is copied from the first parent and the suffix from the second.
-
-System.arraycopy is used for both segments.
-
-The cut may be zero or geneCount, so exact parent copies remain possible.
-
-If crossover is skipped, the fitter of the two selected parents is copied directly.
-
-No child object is allocated.
-
-## Mutation
-
-Mutation is evaluated independently per gene:
-
-~~~java
-if (random.nextDouble()
-        < config.mutationProbability()) {
-    nextPopulation[offset + gene] =
-            randomGene();
-}
-~~~
-
-The mutation operator is a random reset inside the configured gene bounds.
-
-This differs from the original mutation-count rule, where:
+Phase events separate:
 
 ~~~text
-floor(geneCount * mutationFactor)
+reproduction
+fitness
+statistics
 ~~~
 
-random positions were selected and the same position could be chosen repeatedly.
+This makes it possible to see whether a workload is dominated by genetic operators, expensive objective evaluation or observation/restart logic.
 
-Per-gene probability has a clearer interpretation and does not need an intermediate set of positions.
+## Time-to-target benchmark
 
-## Generation lifecycle
+EvolutionConvergenceBenchmark runs multiple deterministic seeds and reports:
 
-One evolve() call performs:
+- success rate,
+- p50/p90/p99 generations to target,
+- median fitness evaluations,
+- p50/p90 wall time.
 
-1. copy the elite,
-2. select two parents for every remaining child,
-3. crossover or copy,
-4. mutate the child,
-5. swap current and next population buffers,
-6. evaluate all fitness values,
-7. update best and average statistics.
-
-The method returns:
-
-~~~java
-record GenerationStats(
-        long generation,
-        int populationSize,
-        int geneCount,
-        double bestError,
-        double averageError)
-~~~
-
-This makes the convergence curve observable without scanning the population from outside.
-
-## Bounded convergence
-
-The old example ran one million generations regardless of progress.
-
-The modern API supports:
-
-~~~java
-var result =
-        evolution.evolveUntil(
-                0.001,
-                10_000);
-~~~
-
-SearchResult contains:
-
-~~~java
-record SearchResult(
-        long generations,
-        double bestError,
-        boolean converged)
-~~~
-
-The hard generation limit prevents accidental infinite experiments.
-
-If the initial population already satisfies the target, zero generations are reported.
-
-## Defensive genome access
-
-bestGenome() returns a copy.
-
-~~~java
-double[] best =
-        evolution.bestGenome();
-~~~
-
-For allocation-sensitive code:
-
-~~~java
-evolution.copyBestInto(buffer);
-~~~
-
-The internal population arrays are never exposed.
-
-The same applies to goal().
-
-This prevents external code from silently corrupting search state.
-
-## Complexity
-
-Let:
+The benchmark compares:
 
 ~~~text
-P = population size
-G = gene count
-T = tournament size
+random-reset + single-point
+Gaussian + arithmetic
+adaptive Gaussian + BLX-alpha
+island evolution
 ~~~
 
-Fitness evaluation is:
+This is more informative than generations per second. A slower generation can still be the better optimizer if it needs far fewer generations or fitness evaluations.
+
+The default benchmark uses 100 seeds. CI uses a tiny smoke sample.
+
+## Expanded performance matrix
+
+The performance matrix contains four groups:
+
+1. population x genome scaling,
+2. every selection x crossover combination,
+3. expensive-fitness parallelism 1/2/4/8,
+4. sequential versus parallel islands.
+
+The scaling matrix still reports normalized nanoseconds per candidate-gene, while operator experiments report both cost and resulting best fitness.
+
+## JMH and GC profiling
+
+JMH now covers:
+
+- complete generations,
+- scalar versus Vector API MSE,
+- expensive-fitness parallelism.
+
+The dedicated task:
 
 ~~~text
-O(P * G)
+./gradlew :evolution:jmhGc
 ~~~
 
-Parent selection and offspring construction are:
+runs the Evolution JMH suite with the gc profiler so allocation rate and GC behavior can be measured directly.
+
+## Coverage
+
+The module is registered with the repository coverage smoke harness.
+
+EvolutionVerification executes operator variants, generic fitness, SIMD fitness, adaptive restart, parallel evaluation, migration and Pareto ranking under JaCoCo.
+
+Performance/example/JFR reporting classes are narrowly excluded from line-coverage enforcement, while the actual search engines remain subject to the repository-wide 90% module threshold.
+
+## Java 27 tasks
+
+The module targets Java 27 with warnings treated as errors and enables jdk.incubator.vector.
+
+Useful tasks include:
 
 ~~~text
-O(P * (T + G))
-~~~
-
-Memory is dominated by two population buffers:
-
-~~~text
-O(P * G)
-~~~
-
-plus:
-
-~~~text
-O(P)
-~~~
-
-fitness values.
-
-Because the population is fixed, these bounds are stable across generations.
-
-## Deterministic verification
-
-EvolutionVerification covers:
-
-- invalid configurations,
-- invalid and non-finite goals,
-- custom gene bounds,
-- defensive goal copies,
-- defensive best-genome copies,
-- deterministic reproduction from the same seed,
-- fixed population size,
-- monotonic best error from elitism,
-- gene-bound preservation,
-- convergence toward a multi-gene target,
-- single-gene convergence,
-- generation-limit enforcement,
-- the MSE offset kernel.
-
-The convergence tests use fixed seeds.
-
-A regression therefore produces a repeatable failing trajectory instead of a probabilistic test failure.
-
-## Lightweight benchmark
-
-EvolutionBenchmark measures complete generation loops for representative shapes:
-
-~~~text
-population 64,   genes 16
-population 512,  genes 16
-population 512,  genes 128
-~~~
-
-Each run constructs a deterministic search, evolves a fixed number of generations, and consumes bestError into a blackhole.
-
-This provides a quick regression signal.
-
-It is not intended to replace JMH.
-
-## Performance matrix
-
-EvolutionPerformanceMatrix explores:
-
-~~~text
-population:
-64
-256
-1024
-4096
-
-genes:
-8
-32
-128
-512
-~~~
-
-For each combination it reports:
-
-- nanoseconds per generation,
-- nanoseconds per candidate-gene,
-- final best error,
-- error improvement over the measured window.
-
-The per-candidate-gene number helps distinguish fixed generation overhead from actual genome-processing cost.
-
-## JMH
-
-EvolutionJmhBenchmark measures evolve() using:
-
-~~~text
-populationSize = 64, 512, 4096
-geneCount      = 16, 128
-~~~
-
-The benchmark uses AverageTime in microseconds.
-
-Each measured iteration begins with a fresh deterministic Evolution instance so one JMH iteration does not inherit the convergence state of a previous iteration.
-
-The normal benchmark uses multiple warmup iterations, measured iterations, and forks.
-
-CI runs only a small smoke case.
-
-## JFR
-
-Evolution defines disabled-by-default JFR events for:
-
-- each generation,
-- a complete evolveUntil search.
-
-Generation events record:
-
-- generation number,
-- population size,
-- gene count,
-- best MSE,
-- average MSE,
-- duration.
-
-Search events record:
-
-- target MSE,
-- maximum generations,
-- actual generations,
-- final error,
-- convergence,
-- duration.
-
-Profiling can be run with:
-
-~~~text
-./gradlew :evolution:profileEvolution
-~~~
-
-The recording is written under build/jfr/.
-
-This makes allocation, GC, JIT compilation, CPU sampling, and convergence behavior observable in one recording.
-
-## Java 27 build
-
-The module targets Java 27 with:
-
-~~~text
--Xlint:all
--Werror
-~~~
-
-Available tasks include:
-
-~~~text
-:evolution:runExperiment
 :evolution:verifyExperiment
 :evolution:benchmarkExperiment
 :evolution:performanceMatrix
+:evolution:convergenceBenchmark
 :evolution:jmh
 :evolution:jmhSmoke
+:evolution:jmhGc
 :evolution:profileEvolution
 ~~~
 
-The module-specific GitHub Actions workflow runs:
+## Remaining separate experiments
 
-- deterministic verification,
-- JMH smoke,
-- a bounded performance matrix,
-- the complete example.
+The engine now covers the enhancement set that naturally belongs in this module. Larger algorithm families are better kept separate: full NSGA-II environmental selection, CMA-ES, differential evolution, distributed islands across processes, checkpoint persistence and GPU/Panama-offloaded objectives.
 
-The normal check task depends on verifyExperiment.
-
-## What changed from the 2016 experiment
-
-The conceptual mapping is:
-
-~~~text
-Drone objects
-    ->
-flat population buffers
-
-SecureRandom
-    ->
-seeded SplittableRandom
-
-probabilistic delete/grow
-    ->
-fixed generation size
-
-ad-hoc parent eligibility list
-    ->
-tournament selection
-
-no elitism
-    ->
-one preserved elite
-
-mutation count with duplicate hits
-    ->
-independent per-gene mutation probability
-
-stream MSE
-    ->
-primitive Math.fma loop
-
-one-million-line main
-    ->
-bounded search + compact summary
-~~~
-
-The new implementation is intentionally more conventional because that makes the effect of each genetic operator easier to reason about and benchmark.
-
-## Remaining limitations
-
-This remains a compact educational genetic algorithm.
-
-It does not currently provide:
-
-- arbitrary user-defined fitness functions,
-- multi-objective optimization,
-- rank selection,
-- roulette-wheel selection,
-- multiple elites,
-- uniform crossover,
-- Gaussian mutation,
-- adaptive mutation rates,
-- parallel fitness evaluation,
-- island models,
-- checkpoint serialization.
-
-Parallel evaluation is deliberately not the first optimization here.
-
-The current target-distance kernel is extremely small, so parallelism can cost more than it saves for typical population sizes.
-
-A useful next experiment would first benchmark much more expensive fitness functions, then add parallel evaluation only when the objective dominates selection and memory traffic.
+Keeping those as distinct experiments preserves the main strength of this code: every algorithmic choice can still be understood and benchmarked without a framework hiding the hot path.

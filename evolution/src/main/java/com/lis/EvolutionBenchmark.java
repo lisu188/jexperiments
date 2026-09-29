@@ -64,7 +64,9 @@ public final class EvolutionBenchmark {
         Arrays.fill(goal, 1.0);
         var config = Evolution.Config.defaults()
                 .withPopulationSize(populationSize)
-                .withMutationProbability(0.05)
+                .withMutation(Evolution.MutationPolicy.defaults()
+                        .withProbability(0.05)
+                        .withAdaptation(false, 1.0, 1.0, 100, 0.0))
                 .withSeed(seed);
         return new Evolution(goal, config);
     }

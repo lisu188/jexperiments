@@ -3,220 +3,159 @@ package com.lis;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class EvolutionTest {
     @Test
-    void configValidationAndFluentCopiesAreCovered() {
-        var defaults = Evolution.Config.defaults();
+    void verificationHarnessPasses() {
+        EvolutionVerification.main(new String[0]);
+    }
 
-        assertEquals(256, defaults.populationSize());
-        assertEquals(4, defaults.tournamentSize());
-        assertEquals(0.05, defaults.mutationProbability());
-        assertEquals(0.9, defaults.crossoverProbability());
-        assertEquals(0.0, defaults.minGene());
-        assertEquals(1.0, defaults.maxGene());
-
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(1, 2, 0.1, 0.9, 0.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 1, 0.1, 0.9, 0.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 11, 0.1, 0.9, 0.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 2, -0.1, 0.9, 0.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 2, Double.NaN, 0.9, 0.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 2, 0.1, 1.1, 0.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 2, 0.1, Double.NaN, 0.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 2, 0.1, 0.9, 1.0, 1.0, 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> new Evolution.Config(10, 2, 0.1, 0.9, Double.NEGATIVE_INFINITY, 1.0, 1));
-
-        var config = defaults
-                .withPopulationSize(32)
+    @Test
+    void configurationBuildersPreserveAndReplaceExpectedValues() {
+        var selection = Evolution.SelectionPolicy.defaults()
+                .withType(Evolution.SelectionType.RANK)
                 .withTournamentSize(3)
-                .withMutationProbability(0.2)
-                .withCrossoverProbability(0.7)
-                .withGeneBounds(-2.0, 3.0)
-                .withSeed(1234L);
+                .withTruncationFraction(0.25);
+        var crossover = Evolution.CrossoverPolicy.defaults()
+                .withType(Evolution.CrossoverType.ARITHMETIC)
+                .withProbability(0.75)
+                .withBlxAlpha(0.4);
+        var mutation = Evolution.MutationPolicy.defaults()
+                .withType(Evolution.MutationType.RANDOM_RESET)
+                .withProbability(0.2)
+                .withSigma(0.2)
+                .withSigmaBounds(0.01, 0.5)
+                .withGeometricSkipping(false);
+
+        var config = Evolution.Config.defaults()
+                .withPopulationSize(32)
+                .withEliteCount(3)
+                .withGeneBounds(-1, 2)
+                .withSeed(123)
+                .withSelection(selection)
+                .withCrossover(crossover)
+                .withMutation(mutation)
+                .withFitnessParallelism(2)
+                .withVectorizedGoalFitness(false)
+                .withTrackDiversity(false);
 
         assertEquals(32, config.populationSize());
-        assertEquals(3, config.tournamentSize());
-        assertEquals(0.2, config.mutationProbability());
-        assertEquals(0.7, config.crossoverProbability());
-        assertEquals(-2.0, config.minGene());
-        assertEquals(3.0, config.maxGene());
-        assertEquals(1234L, config.seed());
-        assertEquals(2, defaults.withPopulationSize(2).tournamentSize());
+        assertEquals(3, config.eliteCount());
+        assertEquals(-1, config.minGene());
+        assertEquals(2, config.maxGene());
+        assertEquals(123, config.seed());
+        assertEquals(Evolution.SelectionType.RANK, config.selection().type());
+        assertEquals(Evolution.CrossoverType.ARITHMETIC, config.crossover().type());
+        assertEquals(Evolution.MutationType.RANDOM_RESET, config.mutation().type());
+        assertEquals(2, config.fitnessParallelism());
+        assertFalse(config.vectorizedGoalFitness());
+        assertFalse(config.trackDiversity());
     }
 
     @Test
-    void constructionAccessorsAndDefensiveCopiesAreCovered() {
-        var goal = new double[]{0.25, 0.75};
-        var evolution = new Evolution(goal);
-
-        assertSame(Evolution.Config.class, evolution.config().getClass());
-        assertEquals(256, evolution.populationSize());
-        assertEquals(2, evolution.geneCount());
-        assertEquals(0, evolution.generation());
-        assertTrue(Double.isFinite(evolution.bestError()));
-        assertTrue(Double.isFinite(evolution.averageError()));
-        assertEquals(evolution.bestError(), evolution.statistics().bestError());
-
-        goal[0] = 1.0;
-        assertArrayEquals(new double[]{0.25, 0.75}, evolution.goal());
-
-        var returnedGoal = evolution.goal();
-        returnedGoal[1] = 0.0;
-        assertArrayEquals(new double[]{0.25, 0.75}, evolution.goal());
-
-        var best = evolution.bestGenome();
-        var copied = new double[2];
-        evolution.copyBestInto(copied);
-        assertArrayEquals(best, copied);
-
-        best[0] = -100.0;
-        assertNotEquals(-100.0, evolution.bestGenome()[0]);
-
-        assertThrows(NullPointerException.class, () -> evolution.copyBestInto(null));
-        assertThrows(IllegalArgumentException.class, () -> evolution.copyBestInto(new double[1]));
-        assertThrows(NullPointerException.class, () -> new Evolution(null));
-        assertThrows(NullPointerException.class,
-                () -> new Evolution(new double[]{0.5}, null));
-        assertThrows(IllegalArgumentException.class, () -> new Evolution(new double[]{}));
-        assertThrows(IllegalArgumentException.class, () -> new Evolution(new double[]{Double.NaN}));
-        assertThrows(IllegalArgumentException.class, () -> new Evolution(new double[]{-0.1}));
-        assertThrows(IllegalArgumentException.class, () -> new Evolution(new double[]{1.1}));
-
-        var bounded = new Evolution(
-                new double[]{-1.5, 1.5},
-                Evolution.Config.defaults().withGeneBounds(-2.0, 2.0));
-        assertArrayEquals(new double[]{-1.5, 1.5}, bounded.goal());
-    }
-
-    @Test
-    void deterministicEvolutionCoversNoCrossoverAndNoMutationPaths() {
-        var config = Evolution.Config.defaults()
-                .withPopulationSize(32)
-                .withTournamentSize(3)
-                .withMutationProbability(0.0)
-                .withCrossoverProbability(0.0)
-                .withSeed(7);
-        var goal = new double[]{1.0, 0.5, 0.0, 0.25};
-        var first = new Evolution(goal, config);
-        var second = new Evolution(goal, config);
-
-        var previousBest = first.bestError();
-        for (int generation = 0; generation < 20; generation++) {
-            var firstStats = first.evolve();
-            var secondStats = second.evolve();
-
-            assertEquals(firstStats, secondStats);
-            assertArrayEquals(first.bestGenome(), second.bestGenome());
-            assertTrue(first.bestError() <= previousBest);
-            previousBest = first.bestError();
-        }
-
-        assertEquals(20, first.generation());
-        assertEquals(32, first.statistics().populationSize());
-        assertEquals(4, first.statistics().geneCount());
-    }
-
-    @Test
-    void crossoverAndMutationPathsStayWithinBounds() {
-        var config = Evolution.Config.defaults()
-                .withPopulationSize(48)
-                .withTournamentSize(4)
-                .withMutationProbability(1.0)
-                .withCrossoverProbability(1.0)
-                .withGeneBounds(-2.0, 2.0)
-                .withSeed(99);
-        var evolution = new Evolution(new double[]{1.5, -1.0, 0.25}, config);
-
-        var stats = evolution.evolve(25);
-
-        assertEquals(25, stats.generation());
-        assertEquals(25, evolution.generation());
-        for (var value : evolution.bestGenome()) {
-            assertTrue(value >= -2.0 && value <= 2.0);
+    void callerOwnedFitnessExecutorIsNotClosedByEvolution() {
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var config = Evolution.Config.defaults()
+                    .withPopulationSize(32)
+                    .withFitnessParallelism(2)
+                    .withTrackDiversity(false);
+            try (var evolution = new Evolution(
+                    8,
+                    (genome, offset, length) -> {
+                        var sum = 0.0;
+                        for (int i = 0; i < length; i++) {
+                            sum += genome[offset + i];
+                        }
+                        return sum;
+                    },
+                    config,
+                    executor)) {
+                evolution.evolve(2);
+            }
+            assertFalse(executor.isShutdown());
+        } finally {
+            executor.close();
         }
     }
 
     @Test
-    void evolveCountValidationAndZeroGenerationPathAreCovered() {
-        var evolution = new Evolution(new double[]{0.5});
+    void genericIslandEvolutionMigratesCustomFitness() {
+        EvolutionFitness fitness = (genome, offset, length) -> {
+            var sum = 0.0;
+            for (int i = 0; i < length; i++) {
+                var difference = genome[offset + i] - 0.25;
+                sum = Math.fma(difference, difference, sum);
+            }
+            return sum;
+        };
 
-        assertThrows(IllegalArgumentException.class, () -> evolution.evolve(-1));
-
-        var before = evolution.statistics();
-        assertEquals(before, evolution.evolve(0));
-
-        var after = evolution.evolve(3);
-        assertEquals(3, after.generation());
+        try (var islands = new IslandEvolution(
+                4,
+                fitness,
+                Evolution.Config.defaults().withPopulationSize(32).withSeed(44),
+                new IslandEvolution.Config(3, 1, 1, false))) {
+            var before = islands.bestError();
+            islands.evolve(5);
+            assertTrue(islands.bestError() <= before);
+            assertEquals(5, islands.statistics().migrations());
+            assertEquals(4, islands.bestGenome().length);
+        }
     }
 
     @Test
-    void evolveUntilValidationImmediateSuccessAndLimitAreCovered() {
-        var evolution = new Evolution(
-                new double[]{1.0, 1.0, 1.0, 1.0},
-                Evolution.Config.defaults()
-                        .withPopulationSize(16)
-                        .withMutationProbability(0.0)
-                        .withCrossoverProbability(0.0)
-                        .withSeed(2));
+    void paretoFrontReturnsDefensiveGenomesAndRejectsNonFiniteObjectives() {
+        MultiObjectiveFitness objectives = (genome, offset, length, output, objectiveOffset) -> {
+            var x = genome[offset];
+            output[objectiveOffset] = x * x;
+            var inverse = 1.0 - x;
+            output[objectiveOffset + 1] = inverse * inverse;
+        };
 
-        assertThrows(IllegalArgumentException.class, () -> evolution.evolveUntil(-1.0, 1));
-        assertThrows(IllegalArgumentException.class, () -> evolution.evolveUntil(Double.NaN, 1));
-        assertThrows(IllegalArgumentException.class, () -> evolution.evolveUntil(0.0, -1));
+        var pareto = new ParetoEvolution(
+                1,
+                2,
+                objectives,
+                Evolution.Config.defaults().withPopulationSize(32).withSeed(55));
+        pareto.evolve(10);
 
-        var immediate = evolution.evolveUntil(evolution.bestError(), 100);
-        assertTrue(immediate.converged());
-        assertEquals(0, immediate.generations());
+        var front = pareto.paretoFront();
+        assertFalse(front.isEmpty());
+        var original = front.get(0).clone();
+        front.get(0)[0] = -100;
+        assertFalse(Arrays.equals(front.get(0), original));
+        assertTrue(pareto.paretoFront().stream().allMatch(genome -> genome[0] >= 0));
 
-        var limited = evolution.evolveUntil(0.0, 3);
-        assertFalse(limited.converged());
-        assertEquals(3, limited.generations());
-        assertEquals(3, evolution.generation());
-
-        var zeroLimit = evolution.evolveUntil(0.0, 0);
-        assertFalse(zeroLimit.converged());
-        assertEquals(0, zeroLimit.generations());
+        MultiObjectiveFitness invalid = (genome, offset, length, output, objectiveOffset) -> {
+            output[objectiveOffset] = Double.NaN;
+            output[objectiveOffset + 1] = 0;
+        };
+        assertThrows(
+                IllegalStateException.class,
+                () -> new ParetoEvolution(
+                        1,
+                        2,
+                        invalid,
+                        Evolution.Config.defaults().withPopulationSize(8)));
     }
 
     @Test
-    void meanSquaredErrorSupportsOffsets() {
-        var genome = new double[]{99.0, 99.0, 1.0, 2.0, 3.0};
-        var goal = new double[]{1.0, 1.0, 1.0};
+    void vectorAndScalarGoalSearchesProduceFiniteResults() {
+        var goal = new double[129];
+        Arrays.fill(goal, 1.0);
 
-        assertEquals(5.0 / 3.0, Evolution.meanSquaredError(genome, 2, goal), 1.0e-15);
-    }
-
-    @Test
-    void recordsRetainTheirValues() {
-        var stats = new Evolution.GenerationStats(4, 8, 2, 0.1, 0.2);
-        var result = new Evolution.SearchResult(5, 0.01, true);
-
-        assertEquals(4, stats.generation());
-        assertEquals(8, stats.populationSize());
-        assertEquals(2, stats.geneCount());
-        assertEquals(0.1, stats.bestError());
-        assertEquals(0.2, stats.averageError());
-        assertEquals(5, result.generations());
-        assertEquals(0.01, result.bestError());
-        assertTrue(result.converged());
-        assertEquals(stats, new Evolution.GenerationStats(4, 8, 2, 0.1, 0.2));
-        assertEquals(result, new Evolution.SearchResult(5, 0.01, true));
-        assertTrue(Arrays.toString(evolutionArray(stats, result)).contains("GenerationStats"));
-    }
-
-    private static Object[] evolutionArray(
-            Evolution.GenerationStats stats,
-            Evolution.SearchResult result) {
-        return new Object[]{stats, result};
+        for (var vectorized : new boolean[]{false, true}) {
+            var config = Evolution.Config.defaults()
+                    .withPopulationSize(32)
+                    .withVectorizedGoalFitness(vectorized)
+                    .withSeed(vectorized ? 2 : 1);
+            try (var evolution = new Evolution(goal, config)) {
+                evolution.evolve(3);
+                assertTrue(Double.isFinite(evolution.bestError()));
+            }
+        }
     }
 }
