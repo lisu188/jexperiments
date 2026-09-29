@@ -905,6 +905,13 @@ project(':blogsite') {
 }
 
 def coverageExcludes = [
+    evolution: [
+        '**/EvolutionBenchmark*',
+        '**/EvolutionExample*',
+        '**/EvolutionJfr*',
+        '**/EvolutionPerformanceMatrix*',
+        '**/EvolutionVerification*'
+    ],
     distributedthreadpool: [
         '**/DistributedThreadPoolBenchmark*',
         '**/DistributedThreadPoolExample*',
@@ -915,6 +922,13 @@ def coverageExcludes = [
     ],
     hashlife: [
         '**/Driver*'
+    ],
+    jneuro: [
+        '**/NeuroBenchmark*',
+        '**/NeuroExample*',
+        '**/NeuroJfr*',
+        '**/NeuroPerformanceMatrix*',
+        '**/NeuroVerification*'
     ],
     observableconcurrenttree: [
         '**/ObservableConcurrentTreeBenchmark*',
