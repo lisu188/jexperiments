@@ -500,3 +500,20 @@ JNeuro remains an educational dense feed-forward network rather than a general m
 
 Those omissions are deliberate boundaries rather than hot-path limitations: the numeric kernels remain visible as ordinary Java code and can be compared directly against SIMD, float, batch and native variants.
 
+
+
+## Live XOR decision-surface visualizer
+
+JNeuro includes a small AWT Canvas demo that makes XOR training visible in real time.
+
+The horizontal and vertical axes are the two network inputs over the range 0 to 1. Every heatmap pixel is evaluated as one batched inference sample, and its grayscale brightness is the network output: black is 0, white is 1, and intermediate activations are gray.
+
+Training runs on one worker thread in small epoch groups. Immediately after each group, that same worker evaluates the complete heatmap and publishes an immutable BufferedImage to the AWT event thread. The event thread never runs inference against weights while they are being updated.
+
+The visualizer uses the same deterministic 2-6-1 XOR configuration as the verification example and shows the epoch, RMSE, and predictions for 00, 01, 10, and 11 while the decision surface forms.
+
+Run it with:
+
+~~~text
+./gradlew :jneuro:runXorCanvas
+~~~
