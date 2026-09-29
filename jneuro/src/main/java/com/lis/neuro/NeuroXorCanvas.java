@@ -25,6 +25,7 @@ import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.WindowConstants;
 
 @SuppressWarnings("serial")
@@ -93,13 +94,23 @@ public final class NeuroXorCanvas extends Canvas {
             double output01,
             double output10,
             double output11,
-            double weightNorm0,
-            double biasNorm0,
-            double weightNorm1,
-            double biasNorm1,
+            double[] weightNorms,
+            double[] biasNorms,
             double[] parameters) {
         HistoryPoint {
+            weightNorms = weightNorms.clone();
+            biasNorms = biasNorms.clone();
             parameters = parameters.clone();
+        }
+
+        @Override
+        public double[] weightNorms() {
+            return weightNorms.clone();
+        }
+
+        @Override
+        public double[] biasNorms() {
+            return biasNorms.clone();
         }
 
         @Override
@@ -109,6 +120,14 @@ public final class NeuroXorCanvas extends Canvas {
 
         double parameter(int index) {
             return parameters[index];
+        }
+
+        double weightNorm(int layer) {
+            return weightNorms[layer];
+        }
+
+        double biasNorm(int layer) {
+            return biasNorms[layer];
         }
     }
 
@@ -157,6 +176,7 @@ public final class NeuroXorCanvas extends Canvas {
     private volatile boolean paused;
     private volatile ViewMode viewMode = ViewMode.OVERVIEW;
     private volatile NeuroLearningSets.Kind selectedDataset = NeuroLearningSets.Kind.XOR;
+    private volatile int[] hiddenTopology = {6};
     private volatile int speed = 10;
 
     private int pendingSteps;
@@ -164,6 +184,8 @@ public final class NeuroXorCanvas extends Canvas {
     private Thread trainingThread;
     private JButton pauseButton;
     private JComboBox<NeuroLearningSets.Kind> datasetBox;
+    private JTextField topologyField;
+    private JLabel topologyStatus;
     private Neuro network;
     private List<NeuroLearningSets.Sample> trainingSamples = List.of();
     private List<SeedResult> seedResults = List.of();
@@ -232,6 +254,27 @@ public final class NeuroXorCanvas extends Canvas {
         var clear = new JButton("Clear custom");
         clear.addActionListener(event -> clearCustomSamples());
         panel.add(clear);
+
+        panel.add(new JLabel("  Hidden:"));
+        topologyField = new JTextField(NeuroTopologyConfig.format(hiddenTopology), 10);
+        topologyField.setToolTipText("Comma-separated hidden layer sizes, e.g. 2 or 6,4,2");
+        topologyField.addActionListener(event -> applyTopologyFromField());
+        panel.add(topologyField);
+
+        var applyTopology = new JButton("Apply topology");
+        applyTopology.addActionListener(event -> applyTopologyFromField());
+        panel.add(applyTopology);
+
+        var removeLayer = new JButton("- layer");
+        removeLayer.addActionListener(event -> removeHiddenLayer());
+        panel.add(removeLayer);
+
+        var addLayer = new JButton("+ layer");
+        addLayer.addActionListener(event -> addHiddenLayer());
+        panel.add(addLayer);
+
+        topologyStatus = new JLabel(topologyLabel(hiddenTopology));
+        panel.add(topologyStatus);
         return panel;
     }
 
@@ -362,6 +405,82 @@ public final class NeuroXorCanvas extends Canvas {
         }
     }
 
+    private void applyTopologyFromField() {
+        var field = topologyField;
+        if (field == null) {
+            return;
+        }
+        try {
+            var hidden = NeuroTopologyConfig.parseHidden(field.getText());
+            requestTopology(hidden);
+            field.setText(NeuroTopologyConfig.format(hidden));
+            field.setBackground(javax.swing.UIManager.getColor("TextField.background"));
+            field.setToolTipText("Comma-separated hidden layer sizes, e.g. 2 or 6,4,2");
+        } catch (IllegalArgumentException exception) {
+            field.setBackground(new Color(255, 210, 210));
+            field.setToolTipText(exception.getMessage());
+        }
+    }
+
+    private void addHiddenLayer() {
+        try {
+            var hidden = NeuroTopologyConfig.addLayer(hiddenTopology, hiddenTopology[hiddenTopology.length - 1]);
+            requestTopology(hidden);
+            if (topologyField != null) {
+                topologyField.setText(NeuroTopologyConfig.format(hidden));
+            }
+        } catch (IllegalArgumentException exception) {
+            if (topologyField != null) {
+                topologyField.setToolTipText(exception.getMessage());
+            }
+        }
+    }
+
+    private void removeHiddenLayer() {
+        try {
+            var hidden = NeuroTopologyConfig.removeLayer(hiddenTopology);
+            requestTopology(hidden);
+            if (topologyField != null) {
+                topologyField.setText(NeuroTopologyConfig.format(hidden));
+            }
+        } catch (IllegalArgumentException exception) {
+            if (topologyField != null) {
+                topologyField.setToolTipText(exception.getMessage());
+            }
+        }
+    }
+
+    private void requestTopology(int[] hidden) {
+        var copy = hidden.clone();
+        NeuroTopologyConfig.topology(copy);
+        synchronized (trainingLock) {
+            hiddenTopology = copy;
+            resetRequested = true;
+            pendingSteps = 0;
+            trainingLock.notifyAll();
+        }
+        updateTopologyStatus(copy);
+    }
+
+    private void updateTopologyStatus(int[] hidden) {
+        var status = topologyStatus;
+        if (status != null) {
+            status.setText(topologyLabel(hidden));
+        }
+    }
+
+    private static String topologyLabel(int[] hidden) {
+        var topology = NeuroTopologyConfig.topology(hidden);
+        var builder = new StringBuilder();
+        for (int i = 0; i < topology.length; i++) {
+            if (i > 0) {
+                builder.append("→");
+            }
+            builder.append(topology[i]);
+        }
+        return builder.toString();
+    }
+
     private void clearCustomSamples() {
         synchronized (trainingLock) {
             customSamples.clear();
@@ -471,7 +590,8 @@ public final class NeuroXorCanvas extends Canvas {
                     : NeuroLearningSets.create(dataset, DATASET_SEED);
         }
 
-        network = createNetwork(42L, samples);
+        var hidden = hiddenTopology.clone();
+        network = createNetwork(42L, samples, hidden);
         trainingSamples = samples;
         epoch = 0;
         error = samples.isEmpty() ? Double.NaN : network.trainingError();
@@ -485,9 +605,12 @@ public final class NeuroXorCanvas extends Canvas {
         EventQueue.invokeLater(this::updatePauseButton);
     }
 
-    private static Neuro createNetwork(long seed, List<NeuroLearningSets.Sample> samples) {
+    private static Neuro createNetwork(
+            long seed,
+            List<NeuroLearningSets.Sample> samples,
+            int[] hidden) {
         var result = new Neuro(
-                new int[]{2, 6, 1},
+                NeuroTopologyConfig.topology(hidden),
                 Neuro.HyperParameters.defaults()
                         .withLearningRate(0.6)
                         .withMomentum(0.2)
@@ -503,7 +626,7 @@ public final class NeuroXorCanvas extends Canvas {
         var epochs = samples.size() <= 8 ? 600 : 180;
         var results = new ArrayList<SeedResult>(STUDY_SEEDS.length);
         for (var seed : STUDY_SEEDS) {
-            var study = createNetwork(seed, samples);
+            var study = createNetwork(seed, samples, hiddenTopology);
             study.train(epochs);
             var studyError = study.trainingError();
             var diagnostics = NeuroXorDiagnostics.capture(study, epochs, studyError);
@@ -534,6 +657,12 @@ public final class NeuroXorCanvas extends Canvas {
         var output11 = gridOutputs[OUTPUT_GRID_SIZE - 1];
 
         if (history.isEmpty() || history.get(history.size() - 1).epoch() != epoch) {
+            var weightNorms = new double[diagnostics.layerCount()];
+            var biasNorms = new double[diagnostics.layerCount()];
+            for (int layer = 0; layer < diagnostics.layerCount(); layer++) {
+                weightNorms[layer] = NeuroXorDiagnostics.weightNorm(diagnostics, layer);
+                biasNorms[layer] = NeuroXorDiagnostics.biasNorm(diagnostics, layer);
+            }
             history.add(new HistoryPoint(
                     epoch,
                     error,
@@ -541,10 +670,8 @@ public final class NeuroXorCanvas extends Canvas {
                     output01,
                     output10,
                     output11,
-                    NeuroXorDiagnostics.weightNorm(diagnostics, 0),
-                    NeuroXorDiagnostics.biasNorm(diagnostics, 0),
-                    NeuroXorDiagnostics.weightNorm(diagnostics, 1),
-                    NeuroXorDiagnostics.biasNorm(diagnostics, 1),
+                    weightNorms,
+                    biasNorms,
                     diagnostics.parameters()));
         }
 
@@ -628,8 +755,9 @@ public final class NeuroXorCanvas extends Canvas {
         drawNetwork(g, current, networkLeft, mainTop, networkWidth, mainSize);
 
         var hiddenTop = mainTop + mainSize + 70;
-        var hiddenGap = 12;
-        var hiddenSize = Math.min(132, Math.max(70, (getWidth() - 2 * margin - hiddenGap * 5) / 6));
+        var hiddenGap = 10;
+        var visibleHidden = Math.max(1, current.hiddenImages().length);
+        var hiddenSize = Math.min(112, Math.max(52, (getWidth() - 2 * margin - hiddenGap * (visibleHidden - 1)) / visibleHidden));
         drawHiddenMaps(g, current, margin, hiddenTop, hiddenSize, hiddenGap);
 
         var historyTop = hiddenTop + hiddenSize + 66;
@@ -724,22 +852,39 @@ public final class NeuroXorCanvas extends Canvas {
     }
 
     private void drawParameters(Graphics2D g, FrameSnapshot current) {
-        drawTitle(g, "Weight and bias evolution", 28, 36);
+        drawTitle(g, "Parameter evolution — " + topologyLabel(hiddenTopology), 28, 36);
         var historyData = current.history();
         if (historyData.isEmpty()) {
             return;
         }
 
         var margin = 46;
-        var gap = 28;
-        var width = (getWidth() - 2 * margin - gap) / 2;
-        var height = (getHeight() - 125 - gap) / 2;
-        var top = 72;
+        var gap = 34;
+        var top = 78;
+        var upperHeight = Math.max(260, (getHeight() - 150 - gap) * 2 / 3);
+        var lowerHeight = Math.max(150, getHeight() - top - upperHeight - gap - 25);
 
-        drawParameterChart(g, historyData, margin, top, width, height, 0, 12, "Input → hidden weights");
-        drawParameterChart(g, historyData, margin + width + gap, top, width, height, 18, 6, "Hidden → output weights");
-        drawParameterChart(g, historyData, margin, top + height + gap, width, height, 12, 6, "Hidden biases");
-        drawNormChart(g, historyData, margin + width + gap, top + height + gap, width, height);
+        var parameterCount = current.diagnostics().parameterCount();
+        var visibleParameters = Math.min(parameterCount, 48);
+        drawParameterChart(
+                g,
+                historyData,
+                margin,
+                top,
+                getWidth() - 2 * margin,
+                upperHeight,
+                0,
+                visibleParameters,
+                "Parameters (showing " + visibleParameters + "/" + parameterCount + ")");
+
+        drawNormChart(
+                g,
+                historyData,
+                margin,
+                top + upperHeight + gap,
+                getWidth() - 2 * margin,
+                lowerHeight,
+                current.diagnostics().layerCount());
     }
 
     private void drawSeeds(Graphics2D g, FrameSnapshot current) {
@@ -854,7 +999,13 @@ public final class NeuroXorCanvas extends Canvas {
             int gap) {
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
         g.setColor(FOREGROUND);
-        g.drawString("Hidden neuron activations and z = 0 boundaries", left, top - 21);
+        g.drawString(
+                "First hidden layer activations and z = 0 boundaries"
+                        + (current.diagnostics().hiddenCount() > images.length
+                                ? " (showing " + images.length + "/" + current.diagnostics().hiddenCount() + ")"
+                                : ""),
+                left,
+                top - 21);
 
         var images = current.hiddenImages();
         for (int neuron = 0; neuron < images.length; neuron++) {
@@ -897,74 +1048,84 @@ public final class NeuroXorCanvas extends Canvas {
             int height) {
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 17));
         g.setColor(FOREGROUND);
-        g.drawString("Live forward pass and weights", left, top - 18);
+        g.drawString("Live forward pass — " + topologyLabel(hiddenTopology), left, top - 18);
 
         var diagnostics = current.diagnostics();
         var probe = NeuroXorDiagnostics.probe(diagnostics, hoverX, hoverY);
-        var hidden = probe.hidden();
-        var contributions = probe.contributions();
+        var topology = diagnostics.topology();
+        var hiddenLayers = probe.hiddenLayers();
+        var activations = new double[topology.length][];
+        activations[0] = new double[]{hoverX, hoverY};
+        for (int layer = 0; layer < hiddenLayers.length; layer++) {
+            activations[layer + 1] = hiddenLayers[layer];
+        }
+        activations[activations.length - 1] = new double[]{probe.output()};
+
+        var layerCount = topology.length;
+        var xStep = Math.max(70, (width - 70) / Math.max(1, layerCount - 1));
         var maxWeight = Math.max(1.0e-9, NeuroXorDiagnostics.maxAbsWeight(diagnostics));
+        var maxVisibleNodes = 14;
 
-        var inputX = left + 38;
-        var hiddenX = left + width / 2;
-        var outputX = left + width - 48;
-        var inputY0 = top + height / 3;
-        var inputY1 = top + 2 * height / 3;
-        var outputY = top + height / 2;
-        var hiddenTop = top + 28;
-        var hiddenBottom = top + height - 92;
-        var hiddenStep = (hiddenBottom - hiddenTop) / Math.max(1, diagnostics.hiddenCount() - 1);
-
-        for (int neuron = 0; neuron < diagnostics.hiddenCount(); neuron++) {
-            var hiddenY = hiddenTop + neuron * hiddenStep;
-            drawWeightEdge(g, inputX, inputY0, hiddenX, hiddenY, diagnostics.inputWeight(neuron, 0), maxWeight);
-            drawWeightEdge(g, inputX, inputY1, hiddenX, hiddenY, diagnostics.inputWeight(neuron, 1), maxWeight);
-            drawWeightEdge(g, hiddenX, hiddenY, outputX, outputY, diagnostics.outputWeight(neuron), maxWeight);
+        for (int layer = 0; layer < diagnostics.layerCount(); layer++) {
+            var sourceVisible = Math.min(topology[layer], maxVisibleNodes);
+            var destinationVisible = Math.min(topology[layer + 1], maxVisibleNodes);
+            var sourceX = left + 30 + layer * xStep;
+            var destinationX = left + 30 + (layer + 1) * xStep;
+            for (int output = 0; output < destinationVisible; output++) {
+                var destinationY = nodeY(top, height - 70, output, destinationVisible);
+                for (int input = 0; input < sourceVisible; input++) {
+                    var sourceY = nodeY(top, height - 70, input, sourceVisible);
+                    drawWeightEdge(
+                            g,
+                            sourceX,
+                            sourceY,
+                            destinationX,
+                            destinationY,
+                            diagnostics.weight(layer, output, input),
+                            maxWeight);
+                }
+            }
         }
 
-        drawActivationNode(g, inputX, inputY0, hoverX, "x");
-        drawActivationNode(g, inputX, inputY1, hoverY, "y");
-        for (int neuron = 0; neuron < diagnostics.hiddenCount(); neuron++) {
-            var hiddenY = hiddenTop + neuron * hiddenStep;
-            drawActivationNode(g, hiddenX, hiddenY, hidden[neuron], "H" + neuron);
+        for (int layer = 0; layer < layerCount; layer++) {
+            var visible = Math.min(topology[layer], maxVisibleNodes);
+            var x = left + 30 + layer * xStep;
+            for (int neuron = 0; neuron < visible; neuron++) {
+                var y = nodeY(top, height - 70, neuron, visible);
+                var activation = activations[layer][neuron];
+                var label = layer == 0
+                        ? (neuron == 0 ? "x" : "y")
+                        : layer == layerCount - 1
+                                ? "out"
+                                : "L" + layer + "." + neuron;
+                drawActivationNode(g, x, y, activation, label);
+            }
+            if (topology[layer] > visible) {
+                g.setColor(MUTED);
+                g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 10));
+                g.drawString("+" + (topology[layer] - visible), x - 8, top + height - 58);
+            }
         }
-        drawActivationNode(g, outputX, outputY, probe.output(), "out");
 
         g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         g.setColor(FOREGROUND);
         g.drawString(
                 String.format(
                         Locale.ROOT,
-                        "probe (%.3f, %.3f) -> %.6f    output z = %.4f    bias = %.4f",
+                        "probe (%.3f, %.3f) -> %.6f    params %,d",
                         hoverX,
                         hoverY,
                         probe.output(),
-                        probe.outputPreActivation(),
-                        diagnostics.outputBias()),
+                        diagnostics.parameterCount()),
                 left,
-                top + height - 48);
+                top + height - 28);
+    }
 
-        var barLeft = left + 18;
-        var barTop = top + height - 31;
-        var available = Math.max(180, width - 36);
-        var barWidth = available / diagnostics.hiddenCount();
-        var maxContribution = 1.0e-9;
-        for (var contribution : contributions) {
-            maxContribution = Math.max(maxContribution, Math.abs(contribution));
+    private static int nodeY(int top, int usableHeight, int neuron, int visibleCount) {
+        if (visibleCount <= 1) {
+            return top + usableHeight / 2;
         }
-        for (int neuron = 0; neuron < contributions.length; neuron++) {
-            var center = barLeft + neuron * barWidth + barWidth / 2;
-            var length = (int) Math.round((barWidth * 0.38) * Math.abs(contributions[neuron]) / maxContribution);
-            g.setColor(contributions[neuron] >= 0.0 ? POSITIVE : NEGATIVE);
-            if (contributions[neuron] >= 0.0) {
-                g.fillRect(center, barTop - 5, length, 10);
-            } else {
-                g.fillRect(center - length, barTop - 5, length, 10);
-            }
-            g.setColor(MUTED);
-            g.drawLine(center, barTop - 7, center, barTop + 7);
-            g.drawString("H" + neuron, center - 7, barTop + 22);
-        }
+        return top + 18 + neuron * (usableHeight - 36) / (visibleCount - 1);
     }
 
     private void drawHistory(Graphics2D g, List<HistoryPoint> data, int left, int top, int width, int height) {
@@ -1052,50 +1213,45 @@ public final class NeuroXorCanvas extends Canvas {
             int left,
             int top,
             int width,
-            int height) {
+            int height,
+            int layerCount) {
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
         g.setColor(FOREGROUND);
-        g.drawString("Parameter norms", left, top - 10);
+        g.drawString("Layer weight/bias norms", left, top - 10);
         drawChartBackground(g, left, top, width, height);
 
         var maxEpoch = Math.max(1, data.get(data.size() - 1).epoch());
         var max = 1.0e-9;
         for (var point : data) {
-            max = Math.max(max, point.weightNorm0());
-            max = Math.max(max, point.biasNorm0());
-            max = Math.max(max, point.weightNorm1());
-            max = Math.max(max, point.biasNorm1());
-        }
-
-        for (int series = 0; series < 4; series++) {
-            var color = SERIES_COLORS[series];
-            g.setColor(color);
-            g.setStroke(new BasicStroke(1.8f));
-            var previousX = -1;
-            var previousY = -1;
-            for (var point : data) {
-                var value = switch (series) {
-                    case 0 -> point.weightNorm0();
-                    case 1 -> point.biasNorm0();
-                    case 2 -> point.weightNorm1();
-                    case 3 -> point.biasNorm1();
-                    default -> throw new IllegalArgumentException("unknown norm series");
-                };
-                var x = left + (int) Math.round(width * point.epoch() / (double) maxEpoch);
-                var y = top + height - (int) Math.round(height * 0.9 * value / max);
-                if (previousX >= 0) {
-                    g.drawLine(previousX, previousY, x, y);
-                }
-                previousX = x;
-                previousY = y;
+            for (int layer = 0; layer < layerCount; layer++) {
+                max = Math.max(max, point.weightNorm(layer));
+                max = Math.max(max, point.biasNorm(layer));
             }
         }
 
-        g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
-        legendItem(g, "||W1||", SERIES_COLORS[0], left + 8, top + 16);
-        legendItem(g, "||b1||", SERIES_COLORS[1], left + 88, top + 16);
-        legendItem(g, "||W2||", SERIES_COLORS[2], left + 168, top + 16);
-        legendItem(g, "||b2||", SERIES_COLORS[3], left + 248, top + 16);
+        for (int layer = 0; layer < layerCount; layer++) {
+            for (int kind = 0; kind < 2; kind++) {
+                var series = layer * 2 + kind;
+                g.setColor(SERIES_COLORS[series % SERIES_COLORS.length]);
+                g.setStroke(new BasicStroke(kind == 0 ? 1.9f : 1.2f));
+                var previousX = -1;
+                var previousY = -1;
+                for (var point : data) {
+                    var value = kind == 0 ? point.weightNorm(layer) : point.biasNorm(layer);
+                    var x = left + (int) Math.round(width * point.epoch() / (double) maxEpoch);
+                    var y = top + height - (int) Math.round(height * 0.88 * value / max);
+                    if (previousX >= 0) {
+                        g.drawLine(previousX, previousY, x, y);
+                    }
+                    previousX = x;
+                    previousY = y;
+                }
+            }
+        }
+
+        g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 10));
+        g.setColor(MUTED);
+        g.drawString("solid = ||W||, thin = ||b||; color pairs follow layers", left + 8, top + 16);
     }
 
     private static void drawHistorySeries(
