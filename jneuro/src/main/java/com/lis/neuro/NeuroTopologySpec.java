@@ -17,10 +17,14 @@ final class NeuroTopologySpec {
         }
 
         var parts = trimmed.split(",");
+        if (parts.length > 8) {
+            throw new IllegalArgumentException("at most 8 hidden layers are supported by the visualizer");
+        }
         var topology = new int[parts.length + 2];
         topology[0] = 2;
         topology[topology.length - 1] = 1;
 
+        var hiddenTotal = 0;
         for (int index = 0; index < parts.length; index++) {
             var token = parts[index].trim();
             if (token.isEmpty()) {
@@ -41,6 +45,10 @@ final class NeuroTopologySpec {
                 throw new IllegalArgumentException("hidden layer sizes must be <= 256");
             }
             topology[index + 1] = size;
+            hiddenTotal += size;
+        }
+        if (hiddenTotal > 64) {
+            throw new IllegalArgumentException("at most 64 hidden neurons are supported by the visualizer");
         }
         return topology;
     }
@@ -76,6 +84,15 @@ final class NeuroTopologySpec {
     static int hiddenNeuronCount(int[] topology) {
         validateTopology(topology);
         return Arrays.stream(topology, 1, topology.length - 1).sum();
+    }
+
+    static int parameterCount(int[] topology) {
+        validateTopology(topology);
+        var count = 0;
+        for (int layer = 0; layer < topology.length - 1; layer++) {
+            count += topology[layer] * topology[layer + 1] + topology[layer + 1];
+        }
+        return count;
     }
 
     private static void validateTopology(int[] topology) {
