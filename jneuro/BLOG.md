@@ -185,7 +185,7 @@ RMSE: 0.04997028695977735
 
 Cross-kernel/batch tests use a small numerical tolerance rather than requiring bitwise equality from different reduction orders. Same-path deterministic behavior remains tested exactly. The native backend has its own equivalence tests.
 
-JUnit tests also cover malformed topologies including trailing commas, defensive copies, later-layer activation maps, boundary clipping, empty datasets, terminal states, cancellation, bounded history, seed-study isolation, and UI control/worker interaction. The UI smoke test renders all seven implemented Swing views to PNG; these are application renders, not generated design mockups.
+JUnit tests also cover malformed topologies including trailing commas, defensive copies, later-layer activation maps, boundary clipping, empty datasets, terminal states, cancellation, bounded history, seed-study isolation, and UI control/worker interaction. The UI smoke test renders all eight implemented Swing views to PNG; these are application renders, not generated design mockups.
 
 The repository's per-module 90% line-coverage rule remains enabled, with no additional production exclusions. The pre-existing environment-bound GUI/benchmark/JFR/native entrypoint exclusions are unchanged. The numerical engine, state machine, dataset generators, topology validation, and diagnostics remain subject to the gate.
 
@@ -211,7 +211,7 @@ Verification and image rendering:
 ./gradlew :jneuro:migrationParity -PneuroJavaBaseline=/path/to/compiled/java/classes
 ~~~
 
-The renderer works without a graphical desktop and writes the seven application views under `jneuro/build/screenshots`. The normal interactive launcher requires a display. Save PNG exports the currently visible studio panel.
+The renderer works without a graphical desktop and writes the eight application views under `jneuro/build/screenshots`. The normal interactive launcher requires a display. Save PNG exports the currently visible studio panel.
 
 All existing JMH scenarios and task names are retained. Kotlin benchmark classes are open where the JMH harness subclasses them, and their parameter fields use `@JvmField`. Kapt generates the Java harness and benchmark metadata; generated Java is not manually maintained.
 
@@ -247,3 +247,123 @@ These accessibility principles inform the redesign; they are not a claim that a 
 JNeuro remains an educational dense network, not a tensor framework. It still uses sigmoid activations, lacks automatic differentiation, softmax/cross-entropy, regularization, persistence, GPU execution, and adaptive optimizers such as Adam. Circle and Spiral can expose the limits of a narrow network and the training budget rather than guaranteeing a low error.
 
 Training-set fit is not generalization evidence. The studio does not silently manufacture a validation set or claim calibrated probabilities. Its role is to expose the actual computation and make controlled architecture experiments easier to run and inspect.
+
+
+## Automatic architecture search
+
+The **Architecture search** tab, also reachable through **Auto search…** in the architecture sidebar, compares network sizes without changing the active model whenever a better candidate appears. Its initial policy is **Smallest meeting target**: first require the requested median RMSE and observed seed-success count, then minimize trainable parameters. Equal-size candidates are ordered by median error, depth and a stable topology order.
+
+The two other policies are **Smallest near best**, which chooses the smallest fully evaluated model within an absolute RMSE tolerance of the best median, and **Lowest RMSE**, which prioritizes the lowest median error. These policies can be changed after training without rerunning trials. They do not require meeting the target; success counts remain visible so their different semantics are explicit. No weighted sum such as `RMSE + lambda * parameterCount` is used.
+
+The engine is separate from Swing:
+
+~~~kotlin
+val data = ArchitectureSearchData.fitting(
+    NeuroLearningSets.create(NeuroLearningSets.Kind.XOR, 42),
+    "XOR"
+)
+val result = NeuroArchitectureSearch().search(
+    data,
+    ArchitectureSearchConfig()
+)
+val winner = result.selection.recommended
+~~~
+
+This API is module-internal, like the Studio model. It deliberately searches the Studio's two-input, one-output dense networks, not arbitrary input/output feature schemas.
+
+### Search space and resource limits
+
+The default search enumerates 1–3 hidden layers, each 1–8 neurons wide, with at most 256 trainable values. There are 584 candidates under this preset. Parameter count includes biases:
+
+~~~text
+parameters = sum((inputWidth + 1) * outputWidth)
+2 → 1 → 1       = 5
+2 → 2 → 1       = 9
+2 → 3 → 1       = 13
+2 → 2 → 2 → 1   = 15
+2 → 6 → 1       = 25
+~~~
+
+Candidates are enumerated with a parameter lower-bound check and sorted by parameter count before scheduling. Ordered layer sequences remain distinct: `4,2` is not deduplicated with `2,4`. `NetworkArchitecture` owns an unmodifiable copy of its widths and uses value equality, avoiding the reference equality of Kotlin arrays.
+
+Enumeration rejects more than 4,096 candidates or 100,000 visited prefixes. A separate trial budget selects a deterministic prefix of complete architecture/seed groups, never a collection of partly funded candidates just to fill the final slots. The initial budget is 10,000 trials; the maximum is 20,000. The planned retained checkpoints must contain at most eight million parameter values. Checkpoint curves are compacted to at most 128 entries per seed while preserving the initial, final and current best checkpoints. These limits bound stored model state; actual JVM overhead also includes objects, datasets and temporary training workspaces.
+
+Depth/width controls support the Studio's existing limits of eight hidden layers and 128 neurons per layer, provided the chosen search remains within the enumeration and storage limits. The UI previews the candidate/trial count before work is submitted. An optional wall-clock limit is a safety stop, not a reproducibility promise: it can leave different subsets evaluated on different machines.
+
+### Full-budget training, checkpoints and seed aggregation
+
+Each architecture uses the same seed list, initially `1,42,123,999,2026`, and the same optimizer settings and dataset partition. The default is 10,000 epochs per seed, with scoring at initialization, every 25 epochs, and the final epoch. The active Studio's learning rate and momentum are captured with the request. Search does not tune those hyperparameters.
+
+The normal Studio stops when its target is reached. Search intentionally does not:
+
+~~~kotlin
+while (epoch < config.maxEpochs) {
+    if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
+    val training = model.trainEpoch()
+    epoch++
+    check(training.isFinite()) { "Training produced a non-finite RMSE." }
+    if (epoch % config.checkEvery == 0 || epoch == config.maxEpochs) checkPoint()
+}
+~~~
+
+Every completed seed therefore receives its full common epoch budget. A trial retains the best *evaluated checkpoint*, its training RMSE, final score, epoch, elapsed time, sample-update count and diagnostic parameter snapshot. Scores between evaluation checkpoints are not silently treated as measured. The architecture's score is the median of these best checkpoint scores over **all configured seeds**, including seeds that failed to reach the target. It is not the lowest single-seed error. The inspector initially selects the seed nearest the median; its image is a real seed checkpoint, not an averaged model.
+
+The default recommendation requires at least four of five seeds to reach the threshold, as well as a median within the threshold. That is an observed reproducibility screen, not a confidence interval or a proof of an 80% probability of success. Numerical failures are recorded explicitly and exclude that architecture from final recommendations. Cancelled/incomplete seed groups remain provisional and are also excluded.
+
+The Pareto frontier retains every fully evaluated, finite architecture not strictly dominated in parameter count and median RMSE. Equal objective values are retained as ties. A second reliable frontier is computed only among architectures meeting the target and success-count requirement. This prevents an unreliable architecture with a lower median from disqualifying a reliable recommendation merely because it dominates on two objectives. Frontier calculation sorts by parameter count and scans groups rather than doing an all-pairs dominance check on every repaint.
+
+### Training fit versus validation
+
+Boolean truth tables use **Training RMSE**. All four labeled points are used, and there is no claim that the continuous XOR heatmap has a uniquely defined ground truth away from those points.
+
+For larger datasets, **Validation RMSE** creates one fixed split for the complete search:
+
+~~~kotlin
+val data = ArchitectureSearchData.split(
+    samples,
+    validationFraction = 0.2,
+    seed = 42,
+    label = "Circle"
+)
+~~~
+
+The split requires at least ten distinct input coordinates and at least two coordinate groups in each observed target stratum. Groups are stratified around target 0.5. Duplicate coordinates, including differently labeled duplicates, always stay in the same partition. This avoids leaking the same input into both training and validation. Sampling is deterministic under the split seed, and the original order within the resulting partitions is preserved. A SHA-256 fingerprint covers the evaluation mode and actual ordered training/validation values.
+
+Only the training partition is added as training samples. Validation samples are attached through `addTestSample` and scored through `testError`; despite the existing method name, they are **selection validation data**, not an untouched final test set. Best checkpoint selection and architecture ranking both consume these validation scores. Their winning error is consequently not an independent estimate of generalization. No holdout is regenerated for different architectures or seeds, and there is no undisclosed final-test feedback loop.
+
+### Cancellation and model ownership
+
+`ExecutorCompletionService` manages a bounded number of outstanding seed trials. Each worker owns a fresh `Neuro`; there is no nested parallel training pool and no inference against a network another thread is updating. Completed results are assembled in canonical architecture/seed order, so completion order does not alter rankings. Progress contains copied lists and immutable diagnostic snapshots, published at most about ten times per second apart from the initial/final events.
+
+Cancellation is cooperative between epochs. A cancelled search drains its submitted jobs, retains completed candidates and explicitly reports partial and untested counts. The pool is shut down in `finally`, including when a progress callback fails. Cancellation latency is bounded by the current epoch's work, not by a hard millisecond guarantee.
+
+The UI has a search-specific generation token. Cancelling retains the token so the partial result can still be displayed; changing the active configuration or dataset invalidates it. Late callbacks from an invalidated job cannot repopulate results. Tab changes and purely visual inspections do not cancel the search. The active configuration and sample list are checked again when a queued search starts, so settings from an old display frame cannot be combined with a newly applied dataset.
+
+### Inspect, apply and replay
+
+The scatter plot uses parameter count horizontally and the selected RMSE vertically, with a target line and the Pareto frontier. Circles indicate fully evaluated candidates; squares show the current observed median of provisional groups and never enter the final recommendation. The table retains failed groups with explicit status. Clicking a point or a row opens per-seed inspection, including the output surface and training/selection curves. The seed drop-down can inspect every retained checkpoint.
+
+**Apply architecture** starts a fresh model on the active full dataset. Epoch and metrics reset. It does not present a newly initialized network as if it already had the winning score.
+
+**Replay selected run** constructs an independent model with the recorded architecture, seed, optimizer settings and training partition, trains to its best checkpoint epoch, verifies that the recorded selection RMSE is reproduced within `1e-10`, and only then installs it in the Studio. Cancellation before installation leaves the old model intact. Validation examples remain held out on replay. The Studio continues to label its main metric as training RMSE and separately displays the replay's selection metric and held-out count. Reset returns to the regular full-dataset Studio configuration.
+
+The result distinguishes `COMPLETED`, `TRIAL_BUDGET`, `TIME_LIMIT` and `CANCELLED`. An absent recommendation is not silently replaced by a target-violating model; `bestError`, evaluated/partial/untested counts and numerical failures remain available.
+
+### Verification and interpretation
+
+Tests cover enumeration, parameter counts, defensive copies, grouped holdouts, deterministic single-thread/multithread results, ties, unreliable lucky seeds, all three policies, numerical failure handling, budgets, deadlines, cancellation, pool cleanup, stale generations and replay parity. Headless Swing tests exercise configuration errors, sorting, selection, policy changes, partial results and the real worker/control integration. The standard screenshot task now includes `search.png`, generated from an actual small architecture sweep.
+
+A repeatable shallow XOR test (widths 1–4, five default seeds, 10,000 epochs each, default optimizer, training-fit scoring) found:
+
+| Hidden widths | Parameters | Median best checkpoint RMSE | Successful seeds at 0.05 |
+|---|---:|---:|---:|
+| 1 | 5 | 0.40862641 | 0/5 |
+| 2 | 9 | 0.01388392 | 4/5 |
+| 3 | 13 | 0.01371784 | 5/5 |
+| 4 | 17 | 0.01242154 | 5/5 |
+
+The default policy chooses width two in this measured sweep. Increasing the required success count to five would instead require a different eligible candidate. These are results for this protocol, not a mathematical proof that no other initialization or training procedure could change a failure into a success.
+
+This release implements bounded exhaustive search. Hyperband-style screening/pruning is intentionally not enabled: eliminating slow-starting candidates would weaken the interpretation of a minimal-network experiment. Exhaustive means every architecture inside the configured, fully funded bounds was tested with the chosen seeds and training protocol—not that all possible weights or optimizers were searched.
+
+Primary references for these boundaries are [Kotlin array equality and defensive copies](https://kotlinlang.org/docs/arrays.html), [ExecutorService lifecycle and interruption](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/ExecutorService.html), and [Cawley and Talbot on model-selection bias](https://www.jmlr.org/papers/v11/cawley10a.html). [Hyperband](https://www.jmlr.org/papers/v18/16-558.html) describes the resource-allocation approach deliberately left for a separate optional fast mode.
