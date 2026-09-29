@@ -25,6 +25,7 @@ import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.WindowConstants;
 
 @SuppressWarnings("serial")
@@ -93,18 +94,36 @@ public final class NeuroXorCanvas extends Canvas {
             double output01,
             double output10,
             double output11,
-            double weightNorm0,
-            double biasNorm0,
-            double weightNorm1,
-            double biasNorm1,
+            double[] weightNorms,
+            double[] biasNorms,
             double[] parameters) {
         HistoryPoint {
+            weightNorms = weightNorms.clone();
+            biasNorms = biasNorms.clone();
             parameters = parameters.clone();
+        }
+
+        @Override
+        public double[] weightNorms() {
+            return weightNorms.clone();
+        }
+
+        @Override
+        public double[] biasNorms() {
+            return biasNorms.clone();
         }
 
         @Override
         public double[] parameters() {
             return parameters.clone();
+        }
+
+        double weightNorm(int layer) {
+            return weightNorms[layer];
+        }
+
+        double biasNorm(int layer) {
+            return biasNorms[layer];
         }
 
         double parameter(int index) {
@@ -158,12 +177,15 @@ public final class NeuroXorCanvas extends Canvas {
     private volatile ViewMode viewMode = ViewMode.OVERVIEW;
     private volatile NeuroLearningSets.Kind selectedDataset = NeuroLearningSets.Kind.XOR;
     private volatile int speed = 10;
+    private volatile int[] topology = {2, 6, 1};
 
     private int pendingSteps;
     private boolean resetRequested;
     private Thread trainingThread;
     private JButton pauseButton;
     private JComboBox<NeuroLearningSets.Kind> datasetBox;
+    private JTextField topologyField;
+    private JLabel topologyStatus;
     private Neuro network;
     private List<NeuroLearningSets.Sample> trainingSamples = List.of();
     private List<SeedResult> seedResults = List.of();
@@ -232,6 +254,20 @@ public final class NeuroXorCanvas extends Canvas {
         var clear = new JButton("Clear custom");
         clear.addActionListener(event -> clearCustomSamples());
         panel.add(clear);
+
+        panel.add(new JLabel("  Hidden layers:"));
+        topologyField = new JTextField(NeuroTopologySpec.hiddenLayersText(topology), 9);
+        topologyField.setToolTipText("Comma-separated hidden layer sizes, e.g. 1, 2, 3,2, 8,4,2. Empty = no hidden layer.");
+        topologyField.addActionListener(event -> applyTopologyFromField());
+        panel.add(topologyField);
+
+        var applyTopology = new JButton("Apply architecture");
+        applyTopology.addActionListener(event -> applyTopologyFromField());
+        panel.add(applyTopology);
+
+        topologyStatus = new JLabel();
+        updateTopologyStatus(null);
+        panel.add(topologyStatus);
         return panel;
     }
 
@@ -362,6 +398,48 @@ public final class NeuroXorCanvas extends Canvas {
         }
     }
 
+    private void applyTopologyFromField() {
+        var field = topologyField;
+        if (field == null) {
+            return;
+        }
+
+        final int[] parsed;
+        try {
+            parsed = NeuroTopologySpec.parseHiddenLayers(field.getText());
+        } catch (IllegalArgumentException exception) {
+            updateTopologyStatus(exception.getMessage());
+            return;
+        }
+
+        synchronized (trainingLock) {
+            topology = parsed;
+            resetRequested = true;
+            pendingSteps = 0;
+            trainingLock.notifyAll();
+        }
+        field.setText(NeuroTopologySpec.hiddenLayersText(parsed));
+        updateTopologyStatus(null);
+    }
+
+    private void updateTopologyStatus(String errorMessage) {
+        var label = topologyStatus;
+        if (label == null) {
+            return;
+        }
+        if (errorMessage != null) {
+            label.setForeground(NEGATIVE);
+            label.setText(errorMessage);
+            return;
+        }
+
+        var current = topology;
+        label.setForeground(MUTED);
+        label.setText(
+                NeuroTopologySpec.display(current)
+                        + "  (" + NeuroTopologySpec.parameterCount(current) + " params)");
+    }
+
     private void clearCustomSamples() {
         synchronized (trainingLock) {
             customSamples.clear();
@@ -414,7 +492,10 @@ public final class NeuroXorCanvas extends Canvas {
                     synchronized (trainingLock) {
                         paused = true;
                     }
-                    EventQueue.invokeLater(this::updatePauseButton);
+                    EventQueue.invokeLater(() -> {
+            updatePauseButton();
+            updateTopologyStatus(null);
+        });
                 } else if (!paused) {
                     Thread.sleep(16);
                 }
@@ -471,7 +552,8 @@ public final class NeuroXorCanvas extends Canvas {
                     : NeuroLearningSets.create(dataset, DATASET_SEED);
         }
 
-        network = createNetwork(42L, samples);
+        var currentTopology = topology.clone();
+        network = createNetwork(42L, samples, currentTopology);
         trainingSamples = samples;
         epoch = 0;
         error = samples.isEmpty() ? Double.NaN : network.trainingError();
@@ -485,9 +567,12 @@ public final class NeuroXorCanvas extends Canvas {
         EventQueue.invokeLater(this::updatePauseButton);
     }
 
-    private static Neuro createNetwork(long seed, List<NeuroLearningSets.Sample> samples) {
+    private static Neuro createNetwork(
+            long seed,
+            List<NeuroLearningSets.Sample> samples,
+            int[] topology) {
         var result = new Neuro(
-                new int[]{2, 6, 1},
+                topology,
                 Neuro.HyperParameters.defaults()
                         .withLearningRate(0.6)
                         .withMomentum(0.2)
@@ -503,7 +588,7 @@ public final class NeuroXorCanvas extends Canvas {
         var epochs = samples.size() <= 8 ? 600 : 180;
         var results = new ArrayList<SeedResult>(STUDY_SEEDS.length);
         for (var seed : STUDY_SEEDS) {
-            var study = createNetwork(seed, samples);
+            var study = createNetwork(seed, samples, topology.clone());
             study.train(epochs);
             var studyError = study.trainingError();
             var diagnostics = NeuroXorDiagnostics.capture(study, epochs, studyError);
@@ -534,6 +619,12 @@ public final class NeuroXorCanvas extends Canvas {
         var output11 = gridOutputs[OUTPUT_GRID_SIZE - 1];
 
         if (history.isEmpty() || history.get(history.size() - 1).epoch() != epoch) {
+            var weightNorms = new double[diagnostics.layerCount()];
+            var biasNorms = new double[diagnostics.layerCount()];
+            for (int layer = 0; layer < diagnostics.layerCount(); layer++) {
+                weightNorms[layer] = NeuroXorDiagnostics.weightNorm(diagnostics, layer);
+                biasNorms[layer] = NeuroXorDiagnostics.biasNorm(diagnostics, layer);
+            }
             history.add(new HistoryPoint(
                     epoch,
                     error,
@@ -541,10 +632,8 @@ public final class NeuroXorCanvas extends Canvas {
                     output01,
                     output10,
                     output11,
-                    NeuroXorDiagnostics.weightNorm(diagnostics, 0),
-                    NeuroXorDiagnostics.biasNorm(diagnostics, 0),
-                    NeuroXorDiagnostics.weightNorm(diagnostics, 1),
-                    NeuroXorDiagnostics.biasNorm(diagnostics, 1),
+                    weightNorms,
+                    biasNorms,
                     diagnostics.parameters()));
         }
 
