@@ -38,7 +38,7 @@ internal class ArchitectureSearchPanel(
     private val searchSeed = JTextField("42", 10)
     private val restartAfter = NumericInputs.spinner(12, 1)
     private val restarts = NumericInputs.spinner(4, 1)
-    private val lineageStatus = JLabel("Adaptive search mutates completed leaders; it does not enumerate a grid.")
+    private val lineageStatus = JLabel("Parents are selected by fitness from current elites; restarts also mutate elites.")
     private var lineage = emptyMap<NetworkArchitecture, ArchitectureProposal>()
     private val evaluation = JComboBox(ArchitectureEvaluation.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Scoring mode" }
     private val start = JButton("Start search")
@@ -133,7 +133,7 @@ internal class ArchitectureSearchPanel(
         policy.addActionListener { if (!changing) { updateSummary(); plot.repaint() } }
         strategy.addActionListener {
             if (!running) lineageStatus.text = if (strategy.selectedItem == ArchitectureSearchStrategy.ADAPTIVE)
-                "Adaptive search mutates completed leaders; it does not enumerate a grid."
+                "Parents are selected by fitness from current elites; restarts also mutate elites."
             else "Reference search evaluates a pre-enumerated grid."
         }
         table.selectionModel.addListSelectionListener { event ->
@@ -182,7 +182,7 @@ internal class ArchitectureSearchPanel(
             started(next, mode)
             summary.text = "${next.strategy}: up to $trialLimit seed trials. Main run paused."
             lineageStatus.text = if (next.strategy == ArchitectureSearchStrategy.ADAPTIVE)
-                "Starting from ${next.startingArchitecture()}; new leaders and Pareto trade-offs become mutation parents."
+                "Starting from ${next.startingArchitecture()}; fitness tournaments select current elite parents, including for restarts."
             else "Reference mode: all candidates are enumerated in advance."
             startSearch(next, mode, decimal(fraction), split)
         } catch (exception: Exception) { failed(exception.message ?: "Check search settings.") }

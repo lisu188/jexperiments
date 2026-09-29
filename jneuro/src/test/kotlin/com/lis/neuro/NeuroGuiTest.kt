@@ -341,7 +341,19 @@ class NeuroGuiTest {
         tab("Architecture search"); searchSettings(50)
         choose(combo("Search strategy",panel),ArchitectureSearchStrategy.ADAPTIVE.ordinal)
         click(button("Start search")); await("new sweep") { field(panel,"result") != null }
-        assertTrue(edt { (field(panel,"result") as ArchitectureSearchResult).lineage.isNotEmpty() })
+        val adaptive = edt { field(panel,"result") as ArchitectureSearchResult }
+        assertEquals(ArchitectureSearchStrategy.ADAPTIVE, adaptive.config.strategy)
+        assertTrue(adaptive.lineage.size > 1)
+        for ((index, proposal) in adaptive.lineage.withIndex()) {
+            if (index == 0) continue
+            val selection = ArchitectureRanking.select(adaptive.candidates.take(index), adaptive.config)
+            assertTrue(proposal.parent in EliteParentSelection.rank(selection, adaptive.config))
+        }
+        val ancestry = edt { field(panel,"table") as JTable }
+        for (row in adaptive.candidates.indices) {
+            val proposal = adaptive.lineage.first { it.architecture == adaptive.candidates[row].architecture }
+            assertEquals(proposal.parent?.toString() ?: "—", edt { ancestry.model.getValueAt(row, 7) })
+        }
         click(button("Apply architecture"))
         await("fresh chosen model") { current.config.maxEpochs == 50 && current.diagnostics.epoch() == 0 && current.replayNote.isEmpty() }
     }
