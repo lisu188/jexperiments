@@ -752,27 +752,29 @@ public final class NeuroXorCanvas extends Canvas {
 
         g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
         g.setColor(MUTED);
-        g.drawString("samples: " + current.samples().size(), right, top + 36);
-        g.drawString("epoch: " + current.diagnostics().epoch(), right, top + 58);
+        g.drawString("topology: " + NeuroTopologySpec.display(current.diagnostics().topology()), right, top + 36);
+        g.drawString("parameters: " + current.diagnostics().parameterCount(), right, top + 58);
+        g.drawString("samples: " + current.samples().size(), right, top + 80);
+        g.drawString("epoch: " + current.diagnostics().epoch(), right, top + 102);
         g.drawString(
                 "RMSE: " + (Double.isFinite(current.diagnostics().error())
                         ? String.format(Locale.ROOT, "%.6f", current.diagnostics().error())
                         : "n/a"),
                 right,
-                top + 80);
+                top + 124);
 
         g.setColor(POSITIVE);
-        g.fillOval(right, top + 112, 12, 12);
+        g.fillOval(right, top + 156, 12, 12);
         g.setColor(FOREGROUND);
-        g.drawString("target 1", right + 21, top + 123);
+        g.drawString("target 1", right + 21, top + 167);
         g.setColor(NEGATIVE);
-        g.fillOval(right, top + 141, 12, 12);
+        g.fillOval(right, top + 185, 12, 12);
         g.setColor(FOREGROUND);
-        g.drawString("target 0", right + 21, top + 152);
+        g.drawString("target 0", right + 21, top + 196);
 
         g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
         g.setColor(MUTED);
-        var textY = top + 200;
+        var textY = top + 240;
         if (current.dataset() == NeuroLearningSets.Kind.CUSTOM) {
             g.drawString("Custom playground:", right, textY);
             g.drawString("left click adds class 1", right, textY + 25);
@@ -1207,6 +1209,33 @@ public final class NeuroXorCanvas extends Canvas {
         legendItem(g, "11", OUTPUT_11_COLOR, legendX + 205, legendY);
     }
 
+    private void drawLayerParameterChart(
+            Graphics2D g,
+            List<HistoryPoint> data,
+            NeuroXorDiagnostics.Snapshot diagnostics,
+            int layer,
+            int left,
+            int top,
+            int width,
+            int height) {
+        var total = diagnostics.layerParameterCount(layer);
+        var count = Math.min(12, total);
+        var title = "Layer " + layer
+                + "  " + diagnostics.layerInputSize(layer)
+                + " → " + diagnostics.layerOutputSize(layer)
+                + "  parameters " + count + "/" + total;
+        drawParameterChart(
+                g,
+                data,
+                left,
+                top,
+                width,
+                height,
+                diagnostics.layerParameterOffset(layer),
+                count,
+                title);
+    }
+
     private void drawParameterChart(
             Graphics2D g,
             List<HistoryPoint> data,
@@ -1225,9 +1254,8 @@ public final class NeuroXorCanvas extends Canvas {
         var maxEpoch = Math.max(1, data.get(data.size() - 1).epoch());
         var maxAbs = 1.0e-9;
         for (var point : data) {
-            var parameters = point.parameters();
             for (int index = 0; index < count; index++) {
-                maxAbs = Math.max(maxAbs, Math.abs(parameters[start + index]));
+                maxAbs = Math.max(maxAbs, Math.abs(point.parameter(start + index)));
             }
         }
 
@@ -1255,56 +1283,97 @@ public final class NeuroXorCanvas extends Canvas {
         g.drawString(String.format(Locale.ROOT, "-%.2f", maxAbs), left + 5, top + height - 5);
     }
 
+    private void drawArchitectureSummary(
+            Graphics2D g,
+            NeuroXorDiagnostics.Snapshot diagnostics,
+            int left,
+            int top,
+            int width,
+            int height) {
+        drawChartBackground(g, left, top, width, height);
+        g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
+        g.setColor(FOREGROUND);
+        g.drawString("Architecture", left + 18, top + 30);
+        g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
+        g.drawString(
+                NeuroTopologySpec.display(diagnostics.topology()),
+                left + 18,
+                top + 62);
+        g.setColor(MUTED);
+        g.drawString("layers: " + diagnostics.layerCount(), left + 18, top + 90);
+        g.drawString("hidden neurons: " + diagnostics.hiddenNeuronCount(), left + 18, top + 114);
+        g.drawString("parameters: " + diagnostics.parameterCount(), left + 18, top + 138);
+        g.drawString("Edit Hidden layers in the toolbar.", left + 18, top + 174);
+        g.drawString("Examples: 1   2   3,2   8,4,2", left + 18, top + 198);
+    }
+
     private void drawNormChart(
             Graphics2D g,
             List<HistoryPoint> data,
+            NeuroXorDiagnostics.Snapshot diagnostics,
             int left,
             int top,
             int width,
             int height) {
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 15));
         g.setColor(FOREGROUND);
-        g.drawString("Parameter norms", left, top - 10);
+        g.drawString("Layer weight / bias norms", left, top - 10);
         drawChartBackground(g, left, top, width, height);
 
         var maxEpoch = Math.max(1, data.get(data.size() - 1).epoch());
         var max = 1.0e-9;
         for (var point : data) {
-            max = Math.max(max, point.weightNorm0());
-            max = Math.max(max, point.biasNorm0());
-            max = Math.max(max, point.weightNorm1());
-            max = Math.max(max, point.biasNorm1());
-        }
-
-        for (int series = 0; series < 4; series++) {
-            var color = SERIES_COLORS[series];
-            g.setColor(color);
-            g.setStroke(new BasicStroke(1.8f));
-            var previousX = -1;
-            var previousY = -1;
-            for (var point : data) {
-                var value = switch (series) {
-                    case 0 -> point.weightNorm0();
-                    case 1 -> point.biasNorm0();
-                    case 2 -> point.weightNorm1();
-                    case 3 -> point.biasNorm1();
-                    default -> throw new IllegalArgumentException("unknown norm series");
-                };
-                var x = left + (int) Math.round(width * point.epoch() / (double) maxEpoch);
-                var y = top + height - (int) Math.round(height * 0.9 * value / max);
-                if (previousX >= 0) {
-                    g.drawLine(previousX, previousY, x, y);
-                }
-                previousX = x;
-                previousY = y;
+            for (int layer = 0; layer < diagnostics.layerCount(); layer++) {
+                max = Math.max(max, point.weightNorm(layer));
+                max = Math.max(max, point.biasNorm(layer));
             }
         }
 
-        g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
-        legendItem(g, "||W1||", SERIES_COLORS[0], left + 8, top + 16);
-        legendItem(g, "||b1||", SERIES_COLORS[1], left + 88, top + 16);
-        legendItem(g, "||W2||", SERIES_COLORS[2], left + 168, top + 16);
-        legendItem(g, "||b2||", SERIES_COLORS[3], left + 248, top + 16);
+        for (int layer = 0; layer < diagnostics.layerCount(); layer++) {
+            for (int kind = 0; kind < 2; kind++) {
+                var series = layer * 2 + kind;
+                g.setColor(SERIES_COLORS[series % SERIES_COLORS.length]);
+                g.setStroke(new BasicStroke(kind == 0 ? 1.9f : 1.3f));
+                var previousX = -1;
+                var previousY = -1;
+                for (var point : data) {
+                    var value = kind == 0 ? point.weightNorm(layer) : point.biasNorm(layer);
+                    var x = left + (int) Math.round(width * point.epoch() / (double) maxEpoch);
+                    var y = top + height - (int) Math.round(height * 0.9 * value / max);
+                    if (previousX >= 0) {
+                        g.drawLine(previousX, previousY, x, y);
+                    }
+                    previousX = x;
+                    previousY = y;
+                }
+            }
+        }
+
+        g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 10));
+        var legendX = left + 8;
+        var legendY = top + 16;
+        var shownLayers = Math.min(diagnostics.layerCount(), 4);
+        for (int layer = 0; layer < shownLayers; layer++) {
+            legendItem(
+                    g,
+                    "W" + layer,
+                    SERIES_COLORS[(layer * 2) % SERIES_COLORS.length],
+                    legendX + layer * 90,
+                    legendY);
+            legendItem(
+                    g,
+                    "b" + layer,
+                    SERIES_COLORS[(layer * 2 + 1) % SERIES_COLORS.length],
+                    legendX + layer * 90 + 42,
+                    legendY);
+        }
+        if (diagnostics.layerCount() > shownLayers) {
+            g.setColor(MUTED);
+            g.drawString(
+                    "+" + (diagnostics.layerCount() - shownLayers) + " layers",
+                    legendX,
+                    legendY + 18);
+        }
     }
 
     private static void drawHistorySeries(
@@ -1415,6 +1484,13 @@ public final class NeuroXorCanvas extends Canvas {
         g.drawString(label, x + 17, y - 3);
     }
 
+    private static int nodeY(int top, int bottom, int index, int count) {
+        if (count <= 1) {
+            return (top + bottom) / 2;
+        }
+        return top + (bottom - top) * index / (count - 1);
+    }
+
     private static void drawWeightEdge(
             Graphics2D g,
             int x1,
@@ -1442,7 +1518,12 @@ public final class NeuroXorCanvas extends Canvas {
 
     private static BufferedImage copyImage(BufferedImage source) {
         var result = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_RGB);
-        result.getGraphics().drawImage(source, 0, 0, null);
+        var graphics = result.createGraphics();
+        try {
+            graphics.drawImage(source, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
         return result;
     }
 
