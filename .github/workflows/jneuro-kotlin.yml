@@ -17,10 +17,30 @@ jobs:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Export migration baseline
-        run: git archive --format=zip HEAD -o /tmp/jexperiments-baseline.zip
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '27'
+      - name: Prepare portable verification tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/verification-tools
+          cd /tmp/verification-tools
+          curl -fLsS --retry 3 https://github.com/JetBrains/kotlin/releases/download/v2.4.20/kotlin-compiler-2.4.20.zip -o kotlin.zip
+          curl -fLsS --retry 3 https://github.com/JetBrains/kotlin/releases/download/v2.4.20/kotlin-compiler-2.4.20.zip.sha256 -o kotlin.sha256
+          printf '%s  kotlin.zip\n' "$(cat kotlin.sha256 | awk '{print $1}')" | sha256sum -c -
+          tar -C "$JAVA_HOME" -czf jdk.tar.gz .
+          curl -fLsS --retry 3 https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-console-standalone/6.1.2/junit-platform-console-standalone-6.1.2.jar -o junit.jar
+          curl -fLsS --retry 3 https://repo.maven.apache.org/maven2/com/formdev/flatlaf/3.7.2/flatlaf-3.7.2.jar -o flatlaf.jar
+          curl -fLsS --retry 3 https://repo.maven.apache.org/maven2/org/openjdk/jmh/jmh-core/1.37/jmh-core-1.37.jar -o jmh-core.jar
+          curl -fLsS --retry 3 https://repo.maven.apache.org/maven2/org/openjdk/jmh/jmh-generator-annprocess/1.37/jmh-generator-annprocess-1.37.jar -o jmh-generator.jar
+          curl -fLsS --retry 3 https://repo.maven.apache.org/maven2/org/jacoco/org.jacoco.agent/0.8.15/org.jacoco.agent-0.8.15-runtime.jar -o jacoco-agent.jar
+          curl -fLsS --retry 3 https://repo.maven.apache.org/maven2/org/jacoco/org.jacoco.cli/0.8.15/org.jacoco.cli-0.8.15-nodeps.jar -o jacoco-cli.jar
+          sha256sum *.jar > checksums.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: jneuro-migration-baseline
-          path: /tmp/jexperiments-baseline.zip
+          name: jneuro-verification-tools
+          path: /tmp/verification-tools
           retention-days: 1
+          compression-level: 0
