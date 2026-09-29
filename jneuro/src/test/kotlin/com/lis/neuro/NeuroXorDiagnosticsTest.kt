@@ -112,7 +112,7 @@ class NeuroXorDiagnosticsTest {
 
     @Test fun validatesDiagnosticArguments() {
         val valid = NeuroXorDiagnostics.capture(NeuroTest.xor(), 0, 0.5)
-        for (shape in listOf(intArrayOf(2, 1), intArrayOf(3, 2, 1), intArrayOf(2, 2, 2)))
+        for (shape in listOf(intArrayOf(3, 2, 1), intArrayOf(2, 2, 2)))
             assertThrows(IllegalArgumentException::class.java) { NeuroXorDiagnostics.capture(Neuro(shape), 0, 0.5) }
         for (size in listOf(1, 1025)) {
             assertThrows(IllegalArgumentException::class.java) { NeuroXorDiagnostics.renderOutputMap(valid, size) }

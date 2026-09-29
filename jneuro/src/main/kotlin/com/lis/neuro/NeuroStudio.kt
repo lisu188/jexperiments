@@ -264,9 +264,10 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
 
     fun frame(): StudioFrame {
         val current = ensureRender()
-        val images = layerImages ?: NeuroXorDiagnostics.renderHiddenMaps(current.diagnostics,
-            resolution(network.parameterCount(), 96), selectedLayer, hiddenStart,
-            minOf(8, current.diagnostics.layerOutputCount(selectedLayer) - hiddenStart)).toList().also { layerImages = it }
+        val images = layerImages ?: (if (current.diagnostics.hiddenLayerCount() == 0) emptyList()
+            else NeuroXorDiagnostics.renderHiddenMaps(current.diagnostics,
+                resolution(network.parameterCount(), 96), selectedLayer, hiddenStart,
+                minOf(8, current.diagnostics.layerOutputCount(selectedLayer) - hiddenStart)).toList()).also { layerImages = it }
         val delta = difference ?: renderDifference(previousValues ?: current.values, current.values,
             current.image.width).also { difference = it }
         return StudioFrame(config, state, current.diagnostics, samples, current.image,

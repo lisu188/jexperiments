@@ -13,7 +13,7 @@ internal object NeuroXorDiagnostics {
         private val parts = contributions.copyOf()
         fun hiddenLayers(): Array<DoubleArray> = Array(layers.size) { layers[it].copyOf() }
         fun hiddenLayer(index: Int): DoubleArray = layers[index].copyOf()
-        fun hidden(): DoubleArray = layers.last().copyOf()
+        fun hidden(): DoubleArray = layers.lastOrNull()?.copyOf() ?: doubleArrayOf()
         fun output(): Double = result
         fun contributions(): DoubleArray = parts.copyOf()
         fun outputPreActivation(): Double = preActivation
@@ -32,7 +32,7 @@ internal object NeuroXorDiagnostics {
         fun error(): Double = errorValue
         fun topology(): IntArray = shape.copyOf()
         fun hiddenLayerCount(): Int = shape.size - 2
-        fun hiddenCount(): Int = shape[1]
+        fun hiddenCount(): Int = if (hiddenLayerCount() == 0) 0 else shape[1]
         fun layerCount(): Int = weights.size
         fun layerInputCount(layer: Int): Int = shape[layer]
         fun layerOutputCount(layer: Int): Int = shape[layer + 1]
@@ -80,7 +80,7 @@ internal object NeuroXorDiagnostics {
 
     fun capture(network: Neuro, epoch: Int, error: Double): Snapshot {
         val topology = network.topology()
-        require(topology.size >= 3 && topology[0] == 2 && topology.last() == 1) { "diagnostics require topology 2-hidden...-1" }
+        require(topology.size >= 2 && topology[0] == 2 && topology.last() == 1) { "diagnostics require topology 2-...-1" }
         return Snapshot(epoch, error, network.hyperParameters().beta, network.hyperParameters().sigmoidMode,
             topology, Array(topology.size - 1) { network.backendWeights(it) },
             Array(topology.size - 1) { network.backendBiases(it) })
@@ -137,8 +137,11 @@ internal object NeuroXorDiagnostics {
         else (neutral shl 16) or (neutral shl 8) or channel
     }
 
-    fun renderHiddenMaps(snapshot: Snapshot, size: Int): Array<BufferedImage> =
-        renderHiddenMaps(snapshot, size, 0, 0, minOf(snapshot.hiddenCount(), 12))
+    fun renderHiddenMaps(snapshot: Snapshot, size: Int): Array<BufferedImage> {
+        validateSize(size)
+        if (snapshot.hiddenLayerCount() == 0) return emptyArray()
+        return renderHiddenMaps(snapshot, size, 0, 0, minOf(snapshot.hiddenCount(), 12))
+    }
 
     fun renderHiddenMaps(snapshot: Snapshot, size: Int, layer: Int, start: Int, count: Int): Array<BufferedImage> {
         validateSize(size)

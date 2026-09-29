@@ -126,8 +126,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
         sidebar.add(Box.createVerticalStrut(22))
         section("02  ARCHITECTURE")
         field("Hidden layers", hidden)
-        hidden.toolTipText = "Comma-separated widths: 2 or 6,4,2. Up to 8 layers; 1–128 neurons each."
-        sidebar.add(note("One width per hidden layer.<br>Example: 4,3 means 2 → 4 → 3 → 1."))
+        hidden.toolTipText = "Comma-separated widths: 2 or 6,4,2. Empty = 2 → 1 baseline. Up to 8 layers; 1–128 neurons each."
+        sidebar.add(note("One width per hidden layer.<br>Example: 4,3 means 2 → 4 → 3 → 1.<br>Leave empty for 2 → 1 (no hidden layer)."))
         val layerButtons = JPanel(GridLayout(1, 2, 8, 0)).apply {
             isOpaque = false; alignmentX = 0f; maximumSize = Dimension(242, 34)
             add(JButton("− Layer").apply { addActionListener { editLayers(false) } })
@@ -272,7 +272,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     private fun editLayers(add: Boolean) {
         try {
             val values = NeuroTopologyConfig.parseHidden(hidden.text)
-            hidden.text = NeuroTopologyConfig.format(if (add) NeuroTopologyConfig.addLayer(values, values.last()) else NeuroTopologyConfig.removeLayer(values))
+            hidden.text = NeuroTopologyConfig.format(if (add) NeuroTopologyConfig.addLayer(values, values.lastOrNull() ?: 6) else NeuroTopologyConfig.removeLayer(values))
             configError.text = " "
         } catch (exception: IllegalArgumentException) { showConfigError(exception.message) }
     }
@@ -403,6 +403,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
     }
 
     private fun requestHidden(start: Int) {
+        if (frame?.diagnostics?.hiddenLayerCount() == 0) return
         val layer = hiddenLayer.selectedIndex.coerceAtLeast(0)
         frame?.let {
             val maximum = it.diagnostics.layerOutputCount(layer) - 1
@@ -470,7 +471,10 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             for (layer in 0 until next.diagnostics.hiddenLayerCount()) hiddenLayer.addItem("H${layer + 1} · ${next.diagnostics.layerOutputCount(layer)} neurons")
             for (layer in 0 until next.diagnostics.layerCount()) parameterLayer.addItem("${layer + 1}: ${next.diagnostics.layerInputCount(layer)} → ${next.diagnostics.layerOutputCount(layer)}")
             selectedParameterLayer = 0; selectedParameterStart = 0
-            neuronPage.model = SpinnerNumberModel(0, 0, next.diagnostics.hiddenCount() - 1, 8)
+            val hasHidden = next.diagnostics.hiddenLayerCount() > 0
+            hiddenLayer.isEnabled = hasHidden
+            neuronPage.isEnabled = hasHidden
+            neuronPage.model = SpinnerNumberModel(0, 0, maxOf(0, next.diagnostics.hiddenCount() - 1), 8)
             updating = false
             updateParameterPage(); updateContextBar()
         }
@@ -639,6 +643,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, startWork
             networkGraph(g, current, 42, 84, width - 84, 195)
             val probe = NeuroXorDiagnostics.probe(current.diagnostics, hoverX, hoverY)
             text(g, "Probe (${number(hoverX, 3)}, ${number(hoverY, 3)}) → ${number(probe.output(), 6)}   |   output z ${number(probe.outputPreActivation(), 4)}", 30, 306, 13, TEXT)
+            if (current.diagnostics.hiddenLayerCount() == 0) {
+                text(g, "No hidden layers · direct 2 → 1 baseline", 14, 375, 16, TEXT, true)
+                text(g, "The output uses two input weights and one bias. There are no hidden activation maps.", 14, 399, 12, MUTED)
+                return
+            }
             val layer = current.hiddenLayer
             val all = current.diagnostics.layerOutputCount(layer)
             text(g, "H${layer + 1} activations · neurons ${current.hiddenStart + 1}–${current.hiddenStart + current.hiddenImages.size} of $all", 14, 375, 16, TEXT, true)

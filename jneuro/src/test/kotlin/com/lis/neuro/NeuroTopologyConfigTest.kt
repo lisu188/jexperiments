@@ -22,11 +22,11 @@ class NeuroTopologyConfigTest {
         assertArrayEquals(intArrayOf(3), original)
     }
     @Test fun rejectsMalformedOrExcessiveTopology() {
-        for (text in listOf("", " ", "0", "-2", "129", "2,,3", "a", "2,", ",2", "9999999999999", "1,1,1,1,1,1,1,1,1"))
+        for (text in listOf("0", "-2", "129", "2,,3", "a", "2,", ",2", "9999999999999", "1,1,1,1,1,1,1,1,1"))
             assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.parseHidden(text) }
-        for (hidden in listOf(intArrayOf(), intArrayOf(0), IntArray(9) { 1 }, intArrayOf(129)))
+        for (hidden in listOf(intArrayOf(0), IntArray(9) { 1 }, intArrayOf(129)))
             assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.topology(hidden) }
-        assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.removeLayer(intArrayOf(2)) }
+        assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.removeLayer(intArrayOf()) }
         assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.addLayer(IntArray(8) { 1 }, 1) }
         assertThrows(IllegalArgumentException::class.java) { NeuroTopologyConfig.addLayer(intArrayOf(2), 0) }
     }

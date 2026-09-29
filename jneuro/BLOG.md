@@ -367,3 +367,38 @@ The default policy chooses width two in this measured sweep. Increasing the requ
 This release implements bounded exhaustive search. Hyperband-style screening/pruning is intentionally not enabled: eliminating slow-starting candidates would weaken the interpretation of a minimal-network experiment. Exhaustive means every architecture inside the configured, fully funded bounds was tested with the chosen seeds and training protocol—not that all possible weights or optimizers were searched.
 
 Primary references for these boundaries are [Kotlin array equality and defensive copies](https://kotlinlang.org/docs/arrays.html), [ExecutorService lifecycle and interruption](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/ExecutorService.html), and [Cawley and Talbot on model-selection bias](https://www.jmlr.org/papers/v11/cawley10a.html). [Hyperband](https://www.jmlr.org/papers/v18/16-558.html) describes the resource-allocation approach deliberately left for a separate optional fast mode.
+
+## Direct 2 → 1 baseline and PR #46 integration
+
+Leaving **Hidden layers** empty (or whitespace-only) now selects the direct two-input,
+one-output network with no hidden layer. It has three trainable parameters: two weights
+and one bias. Removing the final hidden layer selects this baseline; adding a layer to
+an empty editor starts with six neurons. Malformed comma-separated input is still rejected.
+
+This restores the missing baseline from the original configurable-topology Java PR while
+preserving the later Kotlin-only implementation, FlatLaf UI and architecture-search tools.
+The newer Studio limits remain eight hidden layers and 128 neurons per layer; the earlier
+Java visualizer's 64-total-neuron cap is not reintroduced. Search enumeration still uses
+its configured positive hidden-layer bounds; the zero-hidden-layer baseline is selected
+manually in the Studio rather than silently changing the search space.
+
+~~~kotlin
+val baseline = NeuroStudio(StudioConfig(hidden = ""))
+val initial = baseline.frame()
+check(initial.diagnostics.parameterCount() == 3)
+check(initial.hiddenImages.isEmpty())
+baseline.step(1)
+baseline.advance()
+~~~
+
+The output graph, probe, learning curve, parameter/norm plots, update differences,
+checkpoints and same-topology seed comparisons still operate. Probe contributions are
+now the two input-weight products, not fabricated hidden activations. The Neurons view
+shows a direct input/output graph and an explanatory empty state; hidden-layer paging
+controls are disabled until a hidden layer is restored. Applying another topology resets
+the model, history, snapshots and seed results together, as for all other configurations.
+
+Regression tests cover blank input, layer editing, numerical parity with the actual
+forward kernel in both sigmoid modes, snapshot isolation, output/difference maps,
+training and seed-study isolation, deep-to-baseline resets, empty custom datasets,
+and offscreen rendering of every Studio tab. The per-module coverage threshold is unchanged.
