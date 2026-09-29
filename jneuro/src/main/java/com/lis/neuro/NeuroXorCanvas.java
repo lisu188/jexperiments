@@ -462,7 +462,7 @@ public final class NeuroXorCanvas extends Canvas {
 
     private void trainingLoop() {
         try {
-            seedResults = computeSeedStudy(trainingSamples);
+            seedResults = computeSeedStudy(trainingSamples, topology.clone());
             publishSnapshot();
             while (running) {
                 if (consumeReset()) {
@@ -492,10 +492,7 @@ public final class NeuroXorCanvas extends Canvas {
                     synchronized (trainingLock) {
                         paused = true;
                     }
-                    EventQueue.invokeLater(() -> {
-            updatePauseButton();
-            updateTopologyStatus(null);
-        });
+                    EventQueue.invokeLater(this::updatePauseButton);
                 } else if (!paused) {
                     Thread.sleep(16);
                 }
@@ -561,10 +558,13 @@ public final class NeuroXorCanvas extends Canvas {
         timeline.clear();
         timelineTargetIndex = 0;
         previousDiagnostics = null;
-        seedResults = computeSeeds ? computeSeedStudy(samples) : List.of();
+        seedResults = computeSeeds ? computeSeedStudy(samples, currentTopology) : List.of();
         paused = samples.isEmpty();
         publishSnapshot();
-        EventQueue.invokeLater(this::updatePauseButton);
+        EventQueue.invokeLater(() -> {
+            updatePauseButton();
+            updateTopologyStatus(null);
+        });
     }
 
     private static Neuro createNetwork(
@@ -581,14 +581,16 @@ public final class NeuroXorCanvas extends Canvas {
         return result;
     }
 
-    private List<SeedResult> computeSeedStudy(List<NeuroLearningSets.Sample> samples) {
+    private List<SeedResult> computeSeedStudy(
+            List<NeuroLearningSets.Sample> samples,
+            int[] studyTopology) {
         if (samples.isEmpty()) {
             return List.of();
         }
         var epochs = samples.size() <= 8 ? 600 : 180;
         var results = new ArrayList<SeedResult>(STUDY_SEEDS.length);
         for (var seed : STUDY_SEEDS) {
-            var study = createNetwork(seed, samples, topology.clone());
+            var study = createNetwork(seed, samples, studyTopology);
             study.train(epochs);
             var studyError = study.trainingError();
             var diagnostics = NeuroXorDiagnostics.capture(study, epochs, studyError);
@@ -819,20 +821,51 @@ public final class NeuroXorCanvas extends Canvas {
             return;
         }
 
+        var diagnostics = current.diagnostics();
         var margin = 46;
         var gap = 28;
         var width = (getWidth() - 2 * margin - gap) / 2;
         var height = (getHeight() - 125 - gap) / 2;
         var top = 72;
 
-        drawParameterChart(g, historyData, margin, top, width, height, 0, 12, "Input → hidden weights");
-        drawParameterChart(g, historyData, margin + width + gap, top, width, height, 18, 6, "Hidden → output weights");
-        drawParameterChart(g, historyData, margin, top + height + gap, width, height, 12, 6, "Hidden biases");
-        drawNormChart(g, historyData, margin + width + gap, top + height + gap, width, height);
+        drawLayerParameterChart(g, historyData, diagnostics, 0, margin, top, width, height);
+        var lastLayer = diagnostics.layerCount() - 1;
+        if (lastLayer != 0) {
+            drawLayerParameterChart(
+                    g,
+                    historyData,
+                    diagnostics,
+                    lastLayer,
+                    margin + width + gap,
+                    top,
+                    width,
+                    height);
+        } else {
+            drawArchitectureSummary(g, diagnostics, margin + width + gap, top, width, height);
+        }
+
+        if (diagnostics.layerCount() > 2) {
+            drawLayerParameterChart(
+                    g,
+                    historyData,
+                    diagnostics,
+                    1,
+                    margin,
+                    top + height + gap,
+                    width,
+                    height);
+        } else {
+            drawArchitectureSummary(g, diagnostics, margin, top + height + gap, width, height);
+        }
+        drawNormChart(g, historyData, diagnostics, margin + width + gap, top + height + gap, width, height);
     }
 
     private void drawSeeds(Graphics2D g, FrameSnapshot current) {
-        drawTitle(g, "Different initializations, same architecture", 28, 36);
+        drawTitle(
+                g,
+                "Different initializations — " + NeuroTopologySpec.display(current.diagnostics().topology()),
+                28,
+                36);
         var results = current.seedResults();
         if (results.isEmpty()) {
             g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 16));
@@ -923,8 +956,9 @@ public final class NeuroXorCanvas extends Canvas {
         g.drawString(
                 String.format(
                         Locale.ROOT,
-                        "%s   epoch %,d   RMSE %s   %s",
+                        "%s   %s   epoch %,d   RMSE %s   %s",
                         current.dataset(),
+                        NeuroTopologySpec.display(current.diagnostics().topology()),
                         current.diagnostics().epoch(),
                         formatError(current.diagnostics().error()),
                         current.converged() ? "converged" : paused ? "paused" : "training"),
