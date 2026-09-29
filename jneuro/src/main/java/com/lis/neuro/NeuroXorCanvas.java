@@ -106,6 +106,10 @@ public final class NeuroXorCanvas extends Canvas {
         public double[] parameters() {
             return parameters.clone();
         }
+
+        double parameter(int index) {
+            return parameters[index];
+        }
     }
 
     private record TimelineFrame(int epoch, BufferedImage image) {
@@ -426,15 +430,26 @@ public final class NeuroXorCanvas extends Canvas {
                 return 0;
             }
             if (pendingSteps > 0) {
-                var result = Math.min(pendingSteps, 100);
+                var result = capAtNextTimeline(Math.min(pendingSteps, 100));
                 pendingSteps -= result;
                 return result;
             }
             if (!paused && !convergedOrFinished()) {
-                return Math.min(speed, MAX_EPOCHS - epoch);
+                return capAtNextTimeline(Math.min(speed, MAX_EPOCHS - epoch));
             }
             return 0;
         }
+    }
+
+    private int capAtNextTimeline(int epochs) {
+        if (timelineTargetIndex >= TIMELINE_TARGETS.length) {
+            return epochs;
+        }
+        var target = TIMELINE_TARGETS[timelineTargetIndex];
+        if (target <= epoch) {
+            return epochs;
+        }
+        return Math.min(epochs, target - epoch);
     }
 
     private boolean consumeReset() {
@@ -1013,7 +1028,7 @@ public final class NeuroXorCanvas extends Canvas {
             var previousX = -1;
             var previousY = -1;
             for (var point : data) {
-                var value = point.parameters()[start + series];
+                var value = point.parameter(start + series);
                 var x = left + (int) Math.round(width * point.epoch() / (double) maxEpoch);
                 var y = top + height / 2 - (int) Math.round((height * 0.45) * value / maxAbs);
                 if (previousX >= 0) {
@@ -1107,6 +1122,9 @@ public final class NeuroXorCanvas extends Canvas {
                 case 4 -> point.output11();
                 default -> throw new IllegalArgumentException("unknown history series");
             };
+            if (!Double.isFinite(value)) {
+                continue;
+            }
             var y = top + (int) Math.round(height * (1.0 - clamp01(value)));
             if (previousX >= 0) {
                 g.drawLine(previousX, previousY, x, y);
