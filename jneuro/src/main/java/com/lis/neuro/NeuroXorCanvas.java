@@ -719,11 +719,19 @@ public final class NeuroXorCanvas extends Canvas {
         drawNetwork(g, current, networkLeft, mainTop, networkWidth, mainSize);
 
         var hiddenTop = mainTop + mainSize + 70;
-        var hiddenGap = 12;
-        var hiddenSize = Math.min(132, Math.max(70, (getWidth() - 2 * margin - hiddenGap * 5) / 6));
+        var hiddenGap = 10;
+        var visibleHidden = Math.min(8, current.diagnostics().hiddenNeuronCount());
+        var hiddenSize = visibleHidden == 0
+                ? 0
+                : Math.min(
+                        112,
+                        Math.max(
+                                56,
+                                (getWidth() - 2 * margin - hiddenGap * Math.max(0, visibleHidden - 1))
+                                        / visibleHidden));
         drawHiddenMaps(g, current, margin, hiddenTop, hiddenSize, hiddenGap);
 
-        var historyTop = hiddenTop + hiddenSize + 66;
+        var historyTop = hiddenTop + (visibleHidden == 0 ? 38 : hiddenSize + 58);
         var historyHeight = Math.max(105, getHeight() - historyTop - 20);
         drawHistory(g, current.history(), margin + 30, historyTop, getWidth() - 2 * margin - 30, historyHeight);
     }
@@ -975,39 +983,70 @@ public final class NeuroXorCanvas extends Canvas {
             int top,
             int size,
             int gap) {
+        var diagnostics = current.diagnostics();
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 16));
         g.setColor(FOREGROUND);
-        g.drawString("Hidden neuron activations and z = 0 boundaries", left, top - 21);
+
+        if (diagnostics.hiddenLayerCount() == 0) {
+            g.drawString("No hidden layer — direct 2 → 1 logistic model", left, top - 8);
+            return;
+        }
+
+        g.drawString(
+                "Hidden activations — red z = 0 boundary is exact only for layer 1",
+                left,
+                top - 21);
 
         var images = current.hiddenImages();
-        for (int neuron = 0; neuron < images.length; neuron++) {
-            var x = left + neuron * (size + gap);
-            drawHeatmap(g, images[neuron], x, top, size);
+        var visible = Math.min(8, images.length);
+        var mapIndex = 0;
+        var visibleIndex = 0;
+        for (int hiddenLayer = 0;
+                hiddenLayer < diagnostics.hiddenLayerCount() && visibleIndex < visible;
+                hiddenLayer++) {
+            var layerOffset = NeuroXorDiagnostics.hiddenMapOffset(diagnostics, hiddenLayer);
+            for (int neuron = 0;
+                    neuron < diagnostics.hiddenLayerSize(hiddenLayer) && visibleIndex < visible;
+                    neuron++) {
+                mapIndex = layerOffset + neuron;
+                var x = left + visibleIndex * (size + gap);
+                drawHeatmap(g, images[mapIndex], x, top, size);
 
-            var boundary = NeuroXorDiagnostics.boundary(current.diagnostics(), neuron);
-            if (boundary != null) {
-                var x1 = x + (int) Math.round(boundary.x1() * size);
-                var y1 = top + (int) Math.round((1.0 - boundary.y1()) * size);
-                var x2 = x + (int) Math.round(boundary.x2() * size);
-                var y2 = top + (int) Math.round((1.0 - boundary.y2()) * size);
-                g.setColor(BOUNDARY);
-                g.setStroke(new BasicStroke(2.0f));
-                g.drawLine(x1, y1, x2, y2);
+                if (hiddenLayer == 0) {
+                    var boundary = NeuroXorDiagnostics.boundary(diagnostics, neuron);
+                    if (boundary != null) {
+                        var x1 = x + (int) Math.round(boundary.x1() * size);
+                        var y1 = top + (int) Math.round((1.0 - boundary.y1()) * size);
+                        var x2 = x + (int) Math.round(boundary.x2() * size);
+                        var y2 = top + (int) Math.round((1.0 - boundary.y2()) * size);
+                        g.setColor(BOUNDARY);
+                        g.setStroke(new BasicStroke(2.0f));
+                        g.drawLine(x1, y1, x2, y2);
+                    }
+                }
+
+                g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 10));
+                g.setColor(FOREGROUND);
+                g.drawString("L" + (hiddenLayer + 1) + " H" + neuron, x, top + size + 14);
+                g.setColor(MUTED);
+                g.drawString(
+                        "b " + String.format(
+                                Locale.ROOT,
+                                "%.2f",
+                                diagnostics.layerBias(hiddenLayer, neuron)),
+                        x,
+                        top + size + 28);
+                visibleIndex++;
             }
+        }
 
-            g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
-            g.setColor(FOREGROUND);
-            g.drawString("H" + neuron, x, top + size + 16);
+        if (images.length > visible) {
             g.setColor(MUTED);
+            g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 12));
             g.drawString(
-                    String.format(
-                            Locale.ROOT,
-                            "w %.1f %.1f  b %.1f",
-                            current.diagnostics().inputWeight(neuron, 0),
-                            current.diagnostics().inputWeight(neuron, 1),
-                            current.diagnostics().hiddenBias(neuron)),
-                    x,
-                    top + size + 31);
+                    "+" + (images.length - visible) + " more hidden neurons",
+                    left + visible * (size + gap),
+                    top + Math.max(18, size / 2));
         }
     }
 
@@ -1023,70 +1062,117 @@ public final class NeuroXorCanvas extends Canvas {
         g.drawString("Live forward pass and weights", left, top - 18);
 
         var diagnostics = current.diagnostics();
+        var topologyValues = diagnostics.topology();
         var probe = NeuroXorDiagnostics.probe(diagnostics, hoverX, hoverY);
-        var hidden = probe.hidden();
+        var activations = probe.activations();
         var contributions = probe.contributions();
         var maxWeight = Math.max(1.0e-9, NeuroXorDiagnostics.maxAbsWeight(diagnostics));
 
-        var inputX = left + 38;
-        var hiddenX = left + width / 2;
-        var outputX = left + width - 48;
-        var inputY0 = top + height / 3;
-        var inputY1 = top + 2 * height / 3;
-        var outputY = top + height / 2;
-        var hiddenTop = top + 28;
-        var hiddenBottom = top + height - 92;
-        var hiddenStep = (hiddenBottom - hiddenTop) / Math.max(1, diagnostics.hiddenCount() - 1);
+        var columnCount = topologyValues.length;
+        var xStart = left + 32;
+        var xEnd = left + width - 38;
+        var xStep = columnCount <= 1 ? 0 : (xEnd - xStart) / (columnCount - 1);
+        var nodeTop = top + 35;
+        var nodeBottom = top + height - 105;
+        var maxVisibleNodes = 10;
 
-        for (int neuron = 0; neuron < diagnostics.hiddenCount(); neuron++) {
-            var hiddenY = hiddenTop + neuron * hiddenStep;
-            drawWeightEdge(g, inputX, inputY0, hiddenX, hiddenY, diagnostics.inputWeight(neuron, 0), maxWeight);
-            drawWeightEdge(g, inputX, inputY1, hiddenX, hiddenY, diagnostics.inputWeight(neuron, 1), maxWeight);
-            drawWeightEdge(g, hiddenX, hiddenY, outputX, outputY, diagnostics.outputWeight(neuron), maxWeight);
+        for (int layer = 0; layer < diagnostics.layerCount(); layer++) {
+            var sourceSize = topologyValues[layer];
+            var destinationSize = topologyValues[layer + 1];
+            var visibleSource = Math.min(sourceSize, maxVisibleNodes);
+            var visibleDestination = Math.min(destinationSize, maxVisibleNodes);
+            var sourceX = xStart + layer * xStep;
+            var destinationX = xStart + (layer + 1) * xStep;
+
+            for (int destination = 0; destination < visibleDestination; destination++) {
+                var destinationY = nodeY(nodeTop, nodeBottom, destination, visibleDestination);
+                for (int source = 0; source < visibleSource; source++) {
+                    var sourceY = nodeY(nodeTop, nodeBottom, source, visibleSource);
+                    drawWeightEdge(
+                            g,
+                            sourceX,
+                            sourceY,
+                            destinationX,
+                            destinationY,
+                            diagnostics.layerWeight(layer, destination, source),
+                            maxWeight);
+                }
+            }
         }
 
-        drawActivationNode(g, inputX, inputY0, hoverX, "x");
-        drawActivationNode(g, inputX, inputY1, hoverY, "y");
-        for (int neuron = 0; neuron < diagnostics.hiddenCount(); neuron++) {
-            var hiddenY = hiddenTop + neuron * hiddenStep;
-            drawActivationNode(g, hiddenX, hiddenY, hidden[neuron], "H" + neuron);
+        drawActivationNode(g, xStart, nodeY(nodeTop, nodeBottom, 0, 2), hoverX, "x");
+        drawActivationNode(g, xStart, nodeY(nodeTop, nodeBottom, 1, 2), hoverY, "y");
+
+        for (int layer = 0; layer < diagnostics.layerCount(); layer++) {
+            var values = activations[layer];
+            var visible = Math.min(values.length, maxVisibleNodes);
+            var x = xStart + (layer + 1) * xStep;
+            for (int neuron = 0; neuron < visible; neuron++) {
+                var label = layer == diagnostics.layerCount() - 1
+                        ? "out"
+                        : "L" + (layer + 1) + ":" + neuron;
+                drawActivationNode(
+                        g,
+                        x,
+                        nodeY(nodeTop, nodeBottom, neuron, visible),
+                        values[neuron],
+                        label);
+            }
+            if (values.length > visible) {
+                g.setColor(MUTED);
+                g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 10));
+                g.drawString("+" + (values.length - visible), x - 8, nodeBottom + 27);
+            }
         }
-        drawActivationNode(g, outputX, outputY, probe.output(), "out");
+
+        g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
+        g.setColor(MUTED);
+        for (int column = 0; column < topologyValues.length; column++) {
+            var label = column == 0
+                    ? "input"
+                    : column == topologyValues.length - 1 ? "output" : "hidden " + column;
+            g.drawString(label, xStart + column * xStep - 18, top + 12);
+        }
 
         g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         g.setColor(FOREGROUND);
         g.drawString(
                 String.format(
                         Locale.ROOT,
-                        "probe (%.3f, %.3f) -> %.6f    output z = %.4f    bias = %.4f",
+                        "%s   probe (%.3f, %.3f) → %.6f   output z %.4f",
+                        NeuroTopologySpec.display(topologyValues),
                         hoverX,
                         hoverY,
                         probe.output(),
-                        probe.outputPreActivation(),
-                        diagnostics.outputBias()),
+                        probe.outputPreActivation()),
                 left,
-                top + height - 48);
+                top + height - 55);
 
         var barLeft = left + 18;
-        var barTop = top + height - 31;
+        var barTop = top + height - 29;
+        var visibleContributions = Math.min(contributions.length, 10);
         var available = Math.max(180, width - 36);
-        var barWidth = available / diagnostics.hiddenCount();
+        var barWidth = Math.max(1, available / Math.max(1, visibleContributions));
         var maxContribution = 1.0e-9;
-        for (var contribution : contributions) {
-            maxContribution = Math.max(maxContribution, Math.abs(contribution));
+        for (int index = 0; index < visibleContributions; index++) {
+            maxContribution = Math.max(maxContribution, Math.abs(contributions[index]));
         }
-        for (int neuron = 0; neuron < contributions.length; neuron++) {
-            var center = barLeft + neuron * barWidth + barWidth / 2;
-            var length = (int) Math.round((barWidth * 0.38) * Math.abs(contributions[neuron]) / maxContribution);
-            g.setColor(contributions[neuron] >= 0.0 ? POSITIVE : NEGATIVE);
-            if (contributions[neuron] >= 0.0) {
+        for (int index = 0; index < visibleContributions; index++) {
+            var center = barLeft + index * barWidth + barWidth / 2;
+            var length = (int) Math.round(
+                    (barWidth * 0.38) * Math.abs(contributions[index]) / maxContribution);
+            g.setColor(contributions[index] >= 0.0 ? POSITIVE : NEGATIVE);
+            if (contributions[index] >= 0.0) {
                 g.fillRect(center, barTop - 5, length, 10);
             } else {
                 g.fillRect(center - length, barTop - 5, length, 10);
             }
             g.setColor(MUTED);
             g.drawLine(center, barTop - 7, center, barTop + 7);
-            g.drawString("H" + neuron, center - 7, barTop + 22);
+            var label = diagnostics.hiddenLayerCount() == 0
+                    ? (index == 0 ? "x" : "y")
+                    : "H" + index;
+            g.drawString(label, center - 7, barTop + 22);
         }
     }
 
