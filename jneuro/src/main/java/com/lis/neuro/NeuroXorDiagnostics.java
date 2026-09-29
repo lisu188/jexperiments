@@ -269,7 +269,7 @@ final class NeuroXorDiagnostics {
         Objects.requireNonNull(snapshot, "snapshot");
         validateSize(size);
 
-        var images = new BufferedImage[snapshot.hiddenCount()];
+        var images = new BufferedImage[Math.min(snapshot.hiddenCount(), 12)];
         var pixels = new int[images.length][];
         for (int neuron = 0; neuron < images.length; neuron++) {
             images[neuron] = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
