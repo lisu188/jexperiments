@@ -1,0 +1,22 @@
+name: Export JNeuro concurrency baseline
+on:
+  push:
+    branches: [fix/jneuro-parallel-search-workers]
+    paths: ['.github/workflows/jneuro-parallel-source.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: git bundle create /tmp/jneuro-parallel-source.bundle --all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-parallel-source
+          path: /tmp/jneuro-parallel-source.bundle
+          retention-days: 1
