@@ -79,13 +79,13 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
         val result = LinkedHashMap<NetworkArchitecture, ArchitectureProposal>()
         fun add(widths: List<Int>, operation: String) {
             if (widths.size !in config.minLayers..config.maxLayers || widths.any { it !in config.minWidth..config.maxWidth }) return
-            val architecture = NetworkArchitecture(widths)
+            val architecture = try { NetworkArchitecture(widths) } catch (_: IllegalArgumentException) { return }
             if (architecture == parent.architecture || architecture.parameters > config.maxParameters) return
             result.putIfAbsent(architecture, ArchitectureProposal(architecture, parent.architecture, operation, parent.generation + 1))
         }
         for (layer in shape.indices) {
-            for (width in listOf(shape[layer] - 1, shape[layer] + 1, maxOf(config.minWidth, shape[layer] / 2),
-                minOf(config.maxWidth, shape[layer] * 2)).distinct()) {
+            for (width in listOf(shape[layer] - 1, (shape[layer].toLong() + 1).coerceAtMost(config.maxWidth.toLong()).toInt(), maxOf(config.minWidth, shape[layer] / 2),
+                minOf(config.maxWidth, (shape[layer].toLong() * 2).coerceAtMost(config.maxWidth.toLong()).toInt())).distinct()) {
                 val widths = shape.toMutableList(); widths[layer] = width
                 add(widths, "H${layer + 1}: ${shape[layer]} → $width")
             }
@@ -124,8 +124,9 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
             val minimum = config.minimumArchitecture()
             if (minimum !in issued) return ArchitectureProposal(minimum, mutation = "Minimum-size exploration")
             repeat(256) {
-                val depth = random.nextInt(config.minLayers, config.maxLayers + 1)
-                val architecture = NetworkArchitecture(List(depth) { random.nextInt(config.minWidth, config.maxWidth + 1) })
+                val depth = random.nextLong(config.minLayers.toLong(), config.maxLayers.toLong() + 1).toInt()
+                if (depth.toLong() * 2 + 3 > config.maxParameters) return@repeat
+                val architecture = try { NetworkArchitecture(List(depth) { random.nextLong(config.minWidth.toLong(), config.maxWidth.toLong() + 1).toInt() }) } catch (_: IllegalArgumentException) { return@repeat }
                 if (architecture.parameters <= config.maxParameters && architecture !in issued) {
                     return ArchitectureProposal(architecture, mutation = "Exploration restart $restarts")
                 }

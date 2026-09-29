@@ -18,7 +18,7 @@ class AdaptiveArchitectureSearchTest {
         assertEquals(NetworkArchitecture(listOf(1)), ArchitectureSearchConfig(initialHidden = listOf(8, 8, 8), maxParameters = 9).startingArchitecture())
         assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(maxParameters = 4).plannedTrials() }
         assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(restartAfter = 0) }
-        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(maxRestarts = 101) }
+        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(maxRestarts = -1) }
         assertTrue(ArchitectureSearchStrategy.ADAPTIVE.toString().contains("evolve"))
         assertEquals(2920, ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE).plannedTrials())
         val huge = ArchitectureSearchConfig(maxLayers = 8, maxWidth = 128, maxParameters = 1_000_000, maxTrials = 5)

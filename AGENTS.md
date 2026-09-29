@@ -35,6 +35,15 @@
 - Run the module's coverage verification task for focused changes and the repository-wide coverage verification as part of the full build.
 - The standalone Android project under `tesseractviewer` follows the same 90% requirement for JVM-testable production logic.
 
+## GUI test coverage
+- Every GUI module must cover at least 90% of its documented user-visible UI paths with automated GUI tests, independently of the per-module 90% line-coverage requirement.
+- Maintain a reviewed `GUI_PATHS.md` inventory with stable IDs, meaningful actions/state transitions and links to asserting test methods. Include navigation, valid and invalid input, empty/failure/completed states, training controls, cancellation, replay, resizing/scrolling, export and window shutdown.
+- Enforce the path ratio in CI from the current run's successful GUI test results. Failed, skipped, aborted, missing, stale or non-GUI results must not count. Verify the verifier with negative tests. Do not remove paths, weaken assertions, retry away failures, or change the denominator to make a failing build pass.
+- Exercise real windows and user input (for Swing, AWT Robot with Xvfb and a window manager on Linux CI). Invoke native input outside the EDT and read or change Swing fixtures on the EDT. Use bounded state-based waits, not fixed sleep durations as the synchronization strategy.
+- GUI changes must update regression tests and the inventory in the same PR. Screenshots alone and direct model calls are not GUI-path coverage.
+- Publish GUI reports, path-coverage results and diagnostic screenshots. Keep UI line/branch reports separate from scenario coverage; 90% line coverage does not mean 90% of UI paths.
+- For JNeuro run `:jneuro:guiCheck` in a graphical session (Linux CI: `xvfb-run`), in addition to `:jneuro:check`. A missing display must fail, not silently skip the GUI suite.
+
 ## Safety rules
 - Do not merge pull requests.
 - Do not delete branches unless explicitly asked.

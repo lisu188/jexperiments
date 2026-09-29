@@ -17,30 +17,30 @@ internal class ArchitectureSearchPanel(
     private val applyArchitecture: (ArchitectureSearchResult, ArchitectureCandidate) -> Unit,
     private val replayRun: (ArchitectureSearchResult, ArchitectureCandidate, ArchitectureTrial) -> Unit
 ) : JPanel(BorderLayout(12, 12)) {
-    private val minLayers = JSpinner(SpinnerNumberModel(1, 1, 8, 1))
-    private val maxLayers = JSpinner(SpinnerNumberModel(3, 1, 8, 1))
-    private val minWidth = JSpinner(SpinnerNumberModel(1, 1, 128, 1))
-    private val maxWidth = JSpinner(SpinnerNumberModel(8, 1, 128, 1))
-    private val parameters = JSpinner(SpinnerNumberModel(256, 1, 1_000_000, 16))
-    private val target = JSpinner(SpinnerNumberModel(0.05, 0.000001, 0.999, 0.01))
-    private val epochs = JSpinner(SpinnerNumberModel(10_000, 1, 1_000_000, 1000))
-    private val checkEvery = JSpinner(SpinnerNumberModel(25, 1, 1_000_000, 1))
+    private val minLayers = NumericInputs.spinner(1, 1)
+    private val maxLayers = NumericInputs.spinner(3, 1)
+    private val minWidth = NumericInputs.spinner(1, 1)
+    private val maxWidth = NumericInputs.spinner(8, 1)
+    private val parameters = NumericInputs.spinner(256, 16)
+    private val target = NumericInputs.spinner(0.05, 0.01)
+    private val epochs = NumericInputs.spinner(10_000, 1000)
+    private val checkEvery = NumericInputs.spinner(25, 1)
     private val seeds = JTextField("1,42,123,999,2026", 17)
-    private val successes = JSpinner(SpinnerNumberModel(4, 1, 20, 1))
-    private val tolerance = JSpinner(SpinnerNumberModel(0.005, 0.0, 1.0, 0.001))
-    private val threads = JSpinner(SpinnerNumberModel(minOf(4, maxOf(1, Runtime.getRuntime().availableProcessors() - 1)), 1, 32, 1))
-    private val trials = JSpinner(SpinnerNumberModel(10_000, 1, 20_000, 100))
-    private val seconds = JSpinner(SpinnerNumberModel(0, 0, 86_400, 60))
-    private val fraction = JSpinner(SpinnerNumberModel(0.2, 0.1, 0.5, 0.05))
+    private val successes = NumericInputs.spinner(4, 1)
+    private val tolerance = NumericInputs.spinner(0.005, 0.001)
+    private val threads = NumericInputs.spinner(minOf(4, maxOf(1, Runtime.getRuntime().availableProcessors() - 1)), 1)
+    private val trials = NumericInputs.spinner(10_000, 100)
+    private val seconds = NumericInputs.spinner(0L, 60L)
+    private val fraction = NumericInputs.spinner(0.2, 0.05)
     private val splitSeed = JTextField("42", 10)
-    private val policy = JComboBox(ArchitecturePolicy.entries.toTypedArray())
-    private val strategy = JComboBox(ArchitectureSearchStrategy.entries.toTypedArray())
+    private val policy = JComboBox(ArchitecturePolicy.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Recommendation policy" }
+    private val strategy = JComboBox(ArchitectureSearchStrategy.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Search strategy" }
     private val searchSeed = JTextField("42", 10)
-    private val restartAfter = JSpinner(SpinnerNumberModel(12, 1, 1000, 1))
-    private val restarts = JSpinner(SpinnerNumberModel(4, 0, 100, 1))
+    private val restartAfter = NumericInputs.spinner(12, 1)
+    private val restarts = NumericInputs.spinner(4, 1)
     private val lineageStatus = JLabel("Adaptive search mutates completed leaders; it does not enumerate a grid.")
     private var lineage = emptyMap<NetworkArchitecture, ArchitectureProposal>()
-    private val evaluation = JComboBox(ArchitectureEvaluation.entries.toTypedArray())
+    private val evaluation = JComboBox(ArchitectureEvaluation.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Scoring mode" }
     private val start = JButton("Start search")
     private val cancel = JButton("Cancel search")
     private val apply = JButton("Apply architecture")
@@ -49,7 +49,7 @@ internal class ArchitectureSearchPanel(
     private val summary = JLabel("Search the active dataset. Unapplied sidebar edits are not used.")
     private val sourceLabel = JLabel()
     private val progressBar = JProgressBar()
-    private val selectedSeed = JComboBox<String>()
+    private val selectedSeed = JComboBox<String>().apply { accessibleContext.accessibleName = "Result seed" }
     private val details = JLabel("Select a point or row to inspect a scored checkpoint.")
     private var results: List<ArchitectureCandidate> = emptyList()
     private val tableModel = CandidateTable()
@@ -125,7 +125,7 @@ internal class ArchitectureSearchPanel(
             details.foreground = MUTED; add(details, BorderLayout.SOUTH)
         }
         add(SearchSplit(upper, detailPanel, 0.58), BorderLayout.CENTER)
-        preferredSize = Dimension(1080, 920)
+        preferredSize = Dimension(1080, 1120)
         minimumSize = Dimension(640, 600)
         start.isEnabled = false; cancel.isEnabled = false; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false
         start.addActionListener { submit() }
@@ -166,7 +166,7 @@ internal class ArchitectureSearchPanel(
         return ArchitectureSearchConfig(integer(minLayers), integer(maxLayers), integer(minWidth), integer(maxWidth), integer(parameters),
             seeds.text.split(',').map { token -> token.trim().toLongOrNull() ?: throw IllegalArgumentException("Seeds must be comma-separated integers.") },
             integer(epochs), integer(checkEvery), decimal(target), integer(successes), decimal(tolerance), policy.selectedItem as ArchitecturePolicy,
-            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed), integer(threads), integer(trials), integer(seconds).toLong(),
+            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed), integer(threads), integer(trials), (seconds.value as Number).toLong(),
             strategy.selectedItem as ArchitectureSearchStrategy, NeuroTopologyConfig.parseHidden(source.hidden).toList(),
             searchSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Search seed must be an integer."),
             integer(restartAfter), integer(restarts))
@@ -195,7 +195,7 @@ internal class ArchitectureSearchPanel(
         epochs.value = next.maxEpochs; checkEvery.value = next.checkEvery
         seeds.text = next.seeds.joinToString(","); successes.value = next.requiredSuccesses
         tolerance.value = next.nearBestTolerance; threads.value = next.parallelism
-        trials.value = next.maxTrials; seconds.value = next.timeLimitSeconds.toInt()
+        trials.value = next.maxTrials; seconds.value = next.timeLimitSeconds
         searchSeed.text = next.searchSeed.toString(); restartAfter.value = next.restartAfter; restarts.value = next.maxRestarts
         changing = true; strategy.selectedItem = next.strategy; policy.selectedItem = next.policy; evaluation.selectedItem = mode; changing = false
         running = true; config = next; scoreMode = mode; result = null; selected = null

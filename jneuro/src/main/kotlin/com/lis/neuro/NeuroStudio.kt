@@ -15,8 +15,8 @@ internal data class StudioConfig(
 ) {
     init {
         NeuroTopologyConfig.parseHidden(hidden)
-        require(maxEpochs in 1..1_000_000) { "Epoch limit must be between 1 and 1,000,000." }
-        require(targetError.isFinite() && targetError > 0.0 && targetError < 1.0) { "Target RMSE must be between 0 and 1." }
+        require(maxEpochs > 0) { "Epoch limit must be positive." }
+        require(targetError.isFinite() && targetError >= 0.0) { "Target RMSE must be finite and non-negative." }
         Neuro.HyperParameters(learningRate, momentum, 1.0, seed)
     }
     fun topology(): IntArray = NeuroTopologyConfig.topology(NeuroTopologyConfig.parseHidden(hidden))
@@ -108,9 +108,11 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
     }
 
     fun apply(next: StudioConfig, run: Boolean = false) {
+        val nextSamples = samplesFor(next, custom)
+        val nextNetwork = createNetwork(next, next.seed, nextSamples)
         config = next
-        samples = samplesFor(next, custom)
-        network = createNetwork(next, next.seed, samples)
+        samples = nextSamples
+        network = nextNetwork
         epoch = 0
         error = network.trainingError()
         automatic = run && samples.isNotEmpty()
@@ -137,10 +139,10 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
     }
 
     fun step(count: Int) {
-        require(count in 1..10_000) { "Step count must be between 1 and 10,000." }
+        require(count > 0) { "Step count must be positive." }
         automatic = false
         if (!canTrain()) { pendingEpochs = 0; return }
-        pendingEpochs = minOf(config.maxEpochs - epoch, pendingEpochs + count)
+        pendingEpochs = minOf((config.maxEpochs - epoch).toLong(), pendingEpochs.toLong() + count).toInt()
         stepped = true
     }
 
@@ -172,7 +174,7 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
     }
 
     fun advance(speed: Int = 10, cancelled: () -> Boolean = { false }): Int {
-        require(speed in 1..1000) { "Speed must be between 1 and 1000 epochs per refresh." }
+        require(speed > 0) { "Speed must be positive." }
         if (!hasWork || cancelled()) return 0
         ensureRender()
         val before = render!!
@@ -199,7 +201,7 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
     }
 
     fun compareSeeds(limit: Int = config.maxEpochs, cancelled: () -> Boolean = { false }): List<StudioSeed> {
-        require(limit in 1..1_000_000) { "Seed study epoch limit is invalid." }
+        require(limit > 0) { "Seed study epoch limit must be positive." }
         if (samples.isEmpty()) return emptyList()
         val results = ArrayList<StudioSeed>()
         for (seed in STUDY_SEEDS) {

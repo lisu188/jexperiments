@@ -28,7 +28,7 @@ internal enum class ArchitectureTrialState { COMPLETED, FAILED, CANCELLED }
 internal class NetworkArchitecture(hidden: List<Int>) {
     val hidden: List<Int> = java.util.List.copyOf(hidden)
     private val shape = NeuroTopologyConfig.topology(this.hidden.toIntArray())
-    val parameters: Int = (1 until shape.size).sumOf { (shape[it - 1] + 1) * shape[it] }
+    val parameters: Int = NumericInputs.parameterCount(shape)
     fun topology(): IntArray = shape.copyOf()
     override fun equals(other: Any?): Boolean = other is NetworkArchitecture && hidden == other.hidden
     override fun hashCode(): Int = hidden.hashCode()
@@ -61,23 +61,31 @@ internal class ArchitectureSearchConfig(
     val seeds: List<Long> = java.util.List.copyOf(seeds)
     val initialHidden: List<Int>? = initialHidden?.let { java.util.List.copyOf(it) }
     init {
-        require(minLayers in 1..8 && maxLayers in minLayers..8) { "Choose between 1 and 8 hidden layers." }
-        require(minWidth in 1..128 && maxWidth in minWidth..128) { "Choose widths between 1 and 128." }
-        require(maxParameters in 1..1_000_000) { "Parameter limit must be between 1 and 1,000,000." }
-        require(this.seeds.size in 1..20 && this.seeds.distinct().size == this.seeds.size) { "Use 1–20 distinct seeds." }
-        require(maxEpochs in 1..1_000_000 && checkEvery in 1..maxEpochs) { "Check interval must be within the epoch budget (1–1,000,000)." }
-        require(targetRmse.isFinite() && targetRmse > 0.0 && targetRmse < 1.0) { "Target RMSE must be between 0 and 1." }
+        require(minLayers > 0 && maxLayers >= minLayers) { "Hidden layer bounds must be positive and ordered." }
+        require(minWidth > 0 && maxWidth >= minWidth) { "Width bounds must be positive and ordered." }
+        require(maxParameters > 0) { "Parameter budget must be positive." }
+        require(this.seeds.isNotEmpty() && this.seeds.distinct().size == this.seeds.size) { "Use a nonempty list of distinct seeds." }
+        require(maxEpochs > 0 && checkEvery in 1..maxEpochs) { "Check interval must be positive and within the epoch budget." }
+        require(targetRmse.isFinite() && targetRmse >= 0.0) { "Target RMSE must be finite and non-negative." }
         require(requiredSuccesses in 1..this.seeds.size) { "Required successes must be between 1 and the seed count." }
         require(nearBestTolerance.isFinite() && nearBestTolerance >= 0.0) { "Near-best tolerance must be finite and non-negative." }
-        require(parallelism in 1..32) { "Parallelism must be between 1 and 32." }
-        require(maxTrials in this.seeds.size..20_000) { "Trial budget must fit at least one full seed group, up to 20,000 trials." }
-        require(restartAfter in 1..1000 && maxRestarts in 0..100) { "Restart interval must be 1–1,000; restart count 0–100." }
+        require(parallelism > 0) { "Parallelism must be positive." }
+        require(maxTrials >= this.seeds.size) { "Trial budget must fit at least one full seed group." }
+        require(restartAfter > 0 && maxRestarts >= 0) { "Restart interval must be positive and restart count non-negative." }
         this.initialHidden?.let { NeuroTopologyConfig.topology(it.toIntArray()) }
-        require(timeLimitSeconds in 0..86_400) { "Time limit must be 0 (unlimited) or at most 86,400 seconds." }
+        require(timeLimitSeconds >= 0) { "Time limit must be non-negative; 0 means unlimited." }
     }
 
-    fun minimumArchitecture(): NetworkArchitecture = NetworkArchitecture(List(minLayers) { minWidth }).also {
-        require(it.parameters <= maxParameters) { "No architecture fits these bounds and parameter limit." }
+    fun minimumArchitecture(): NetworkArchitecture {
+        val base = 4L * minWidth + 1
+        val added = (minWidth.toLong() + 1) * minWidth
+        require(base <= maxParameters && minLayers.toLong() - 1 <= (maxParameters - base) / added) {
+            "No architecture fits these bounds and parameter limit."
+        }
+        val runtime = Runtime.getRuntime()
+        val available = runtime.maxMemory() - runtime.totalMemory() + runtime.freeMemory()
+        require((base + (minLayers - 1) * added) * 64 <= available / 2) { "Insufficient JVM heap for the minimum topology." }
+        return NetworkArchitecture(List(minLayers) { minWidth })
     }
 
     fun startingArchitecture(): NetworkArchitecture {
@@ -98,7 +106,7 @@ internal class ArchitectureSearchConfig(
         val result = ArrayList<NetworkArchitecture>()
         val widths = ArrayList<Int>()
         var visited = 0
-        fun visit(previous: Int, accumulated: Int) {
+        fun visit(previous: Int, accumulated: Long) {
             check(++visited <= 100_000) { "Search space is too large to enumerate. Narrow the depth, width or parameter limit." }
             if (widths.size >= minLayers && accumulated + previous + 1 <= maxParameters) {
                 require(result.size < 4096) { "More than 4,096 architectures. Narrow the search space." }
@@ -106,14 +114,14 @@ internal class ArchitectureSearchConfig(
             }
             if (widths.size == maxLayers) return
             for (width in minWidth..maxWidth) {
-                val next = accumulated + (previous + 1) * width
+                val next = accumulated + (previous.toLong() + 1) * width
                 if (next + width + 1 > maxParameters) break
                 widths += width
                 visit(width, next)
                 widths.removeAt(widths.lastIndex)
             }
         }
-        visit(2, 0)
+        visit(2, 0L)
         require(result.isNotEmpty()) { "No architecture fits these bounds and parameter limit." }
         val sorted = result.sortedWith(ARCHITECTURE_ORDER)
         val planned = sorted.take(maxTrials / seeds.size)
@@ -171,7 +179,7 @@ internal class ArchitectureSearchData private constructor(
             ArchitectureSearchData(samples, emptyList(), ArchitectureEvaluation.TRAINING_FIT, label, 0, 0.0)
 
         fun split(samples: List<NeuroLearningSets.Sample>, validationFraction: Double = 0.2, seed: Long = 42, label: String = "Custom"): ArchitectureSearchData {
-            require(validationFraction.isFinite() && validationFraction in 0.1..0.5) { "Validation fraction must be between 0.1 and 0.5." }
+            require(validationFraction.isFinite() && validationFraction > 0.0 && validationFraction < 1.0) { "Validation fraction must be strictly between 0 and 1." }
             val groups = samples.groupBy { coordinate(it) }.values.toList()
             require(groups.size >= 10) { "Validation requires at least 10 distinct input points. Use Training fit for truth tables or tiny datasets." }
             val strata = groups.indices.groupBy { index -> if (groups[index].map { it.target }.average() >= 0.5) 1 else 0 }
@@ -355,7 +363,7 @@ internal class NeuroArchitectureSearch : ArchitectureSearcher {
         fun checkStop() {
             if (termination != null) return
             if (cancelled() || Thread.currentThread().isInterrupted) termination = ArchitectureTermination.CANCELLED
-            else if (config.timeLimitSeconds > 0 && System.nanoTime() - start >= config.timeLimitSeconds * 1_000_000_000L) {
+            else if (config.timeLimitSeconds > 0 && (System.nanoTime() - start) / 1_000_000_000L >= config.timeLimitSeconds) {
                 termination = ArchitectureTermination.TIME_LIMIT
             }
             if (termination != null) stopping.set(true)
@@ -429,7 +437,7 @@ internal class NeuroArchitectureSearch : ArchitectureSearcher {
         fun checkStop() {
             if (termination != null) return
             if (cancelled() || Thread.currentThread().isInterrupted) termination = ArchitectureTermination.CANCELLED
-            else if (config.timeLimitSeconds > 0 && System.nanoTime() - start >= config.timeLimitSeconds * 1_000_000_000L) {
+            else if (config.timeLimitSeconds > 0 && (System.nanoTime() - start) / 1_000_000_000L >= config.timeLimitSeconds) {
                 termination = ArchitectureTermination.TIME_LIMIT
             }
             if (termination != null) stopping.set(true)
@@ -439,7 +447,7 @@ internal class NeuroArchitectureSearch : ArchitectureSearcher {
             while (termination == null) {
                 checkStop()
                 if (termination != null) break
-                if (finishedTrials + config.seeds.size > plannedTrials) { termination = ArchitectureTermination.TRIAL_BUDGET; break }
+                if (finishedTrials.toLong() + config.seeds.size > plannedTrials) { termination = ArchitectureTermination.TRIAL_BUDGET; break }
                 val proposal = planner.next()
                 if (proposal == null) { termination = ArchitectureTermination.NEIGHBOURHOODS_EXHAUSTED; break }
                 val architecture = proposal.architecture
