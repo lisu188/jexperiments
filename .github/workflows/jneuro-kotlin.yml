@@ -1,0 +1,26 @@
+name: JNeuro Kotlin migration
+
+on:
+  push:
+    branches: [feature/jneuro-kotlin-ux]
+    paths:
+      - '.github/workflows/jneuro-kotlin.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Export migration baseline
+        run: git archive --format=zip HEAD -o /tmp/jexperiments-baseline.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-migration-baseline
+          path: /tmp/jexperiments-baseline.zip
+          retention-days: 1
