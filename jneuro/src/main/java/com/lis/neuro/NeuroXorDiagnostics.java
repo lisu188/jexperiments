@@ -10,9 +10,14 @@ final class NeuroXorDiagnostics {
     record Boundary(double x1, double y1, double x2, double y2) {
     }
 
-    record Probe(double[][] hiddenLayers, double output) {
+    record Probe(
+            double[][] hiddenLayers,
+            double output,
+            double[] contributions,
+            double outputPreActivation) {
         Probe {
             hiddenLayers = deepClone(hiddenLayers);
+            contributions = contributions.clone();
         }
 
         @Override
@@ -20,8 +25,17 @@ final class NeuroXorDiagnostics {
             return deepClone(hiddenLayers);
         }
 
+        @Override
+        public double[] contributions() {
+            return contributions.clone();
+        }
+
         double[] hiddenLayer(int index) {
             return hiddenLayers[index].clone();
+        }
+
+        double[] hidden() {
+            return hiddenLayers[hiddenLayers.length - 1].clone();
         }
 
         private static double[][] deepClone(double[][] source) {
@@ -104,6 +118,15 @@ final class NeuroXorDiagnostics {
             return bias(0, hidden);
         }
 
+        double outputWeight(int hidden) {
+            var layer = weights.length - 1;
+            return weight(layer, 0, hidden);
+        }
+
+        double outputBias() {
+            return bias(weights.length - 1, 0);
+        }
+
         double[] parameters() {
             var count = 0;
             for (int layer = 0; layer < weights.length; layer++) {
@@ -182,7 +205,15 @@ final class NeuroXorDiagnostics {
             source = destination;
         }
 
-        return new Probe(hiddenLayers, source[0]);
+        var lastHidden = hiddenLayers[hiddenLayers.length - 1];
+        var outputLayer = snapshot.layerCount() - 1;
+        var contributions = new double[lastHidden.length];
+        var outputZ = snapshot.bias(outputLayer, 0);
+        for (int input = 0; input < lastHidden.length; input++) {
+            contributions[input] = lastHidden[input] * snapshot.weight(outputLayer, 0, input);
+            outputZ += contributions[input];
+        }
+        return new Probe(hiddenLayers, source[0], contributions, outputZ);
     }
 
     static BufferedImage renderOutputMap(Snapshot snapshot, int size) {
