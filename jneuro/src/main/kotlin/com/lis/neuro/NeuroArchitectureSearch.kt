@@ -22,7 +22,7 @@ internal enum class ArchitecturePolicy(val label: String) {
     override fun toString() = label
 }
 
-internal enum class ArchitectureTermination { COMPLETED, TRIAL_BUDGET, TIME_LIMIT, CANCELLED }
+internal enum class ArchitectureTermination { COMPLETED, TRIAL_BUDGET, TIME_LIMIT, CANCELLED, NEIGHBOURHOODS_EXHAUSTED, MEMORY_LIMIT }
 internal enum class ArchitectureTrialState { COMPLETED, FAILED, CANCELLED }
 
 internal class NetworkArchitecture(hidden: List<Int>) {
@@ -51,9 +51,15 @@ internal class ArchitectureSearchConfig(
     val hyperParameters: Neuro.HyperParameters = Neuro.HyperParameters(0.6, 0.2, 1.0, 42),
     val parallelism: Int = minOf(4, maxOf(1, Runtime.getRuntime().availableProcessors() - 1)),
     val maxTrials: Int = 10_000,
-    val timeLimitSeconds: Long = 0
+    val timeLimitSeconds: Long = 0,
+    val strategy: ArchitectureSearchStrategy = ArchitectureSearchStrategy.ADAPTIVE,
+    initialHidden: List<Int>? = null,
+    val searchSeed: Long = 42,
+    val restartAfter: Int = 12,
+    val maxRestarts: Int = 4
 ) {
     val seeds: List<Long> = java.util.List.copyOf(seeds)
+    val initialHidden: List<Int>? = initialHidden?.let { java.util.List.copyOf(it) }
     init {
         require(minLayers in 1..8 && maxLayers in minLayers..8) { "Choose between 1 and 8 hidden layers." }
         require(minWidth in 1..128 && maxWidth in minWidth..128) { "Choose widths between 1 and 128." }
@@ -65,7 +71,27 @@ internal class ArchitectureSearchConfig(
         require(nearBestTolerance.isFinite() && nearBestTolerance >= 0.0) { "Near-best tolerance must be finite and non-negative." }
         require(parallelism in 1..32) { "Parallelism must be between 1 and 32." }
         require(maxTrials in this.seeds.size..20_000) { "Trial budget must fit at least one full seed group, up to 20,000 trials." }
+        require(restartAfter in 1..1000 && maxRestarts in 0..100) { "Restart interval must be 1–1,000; restart count 0–100." }
+        this.initialHidden?.let { NeuroTopologyConfig.topology(it.toIntArray()) }
         require(timeLimitSeconds in 0..86_400) { "Time limit must be 0 (unlimited) or at most 86,400 seconds." }
+    }
+
+    fun minimumArchitecture(): NetworkArchitecture = NetworkArchitecture(List(minLayers) { minWidth }).also {
+        require(it.parameters <= maxParameters) { "No architecture fits these bounds and parameter limit." }
+    }
+
+    fun startingArchitecture(): NetworkArchitecture {
+        val minimum = minimumArchitecture()
+        val initial = initialHidden?.let { NetworkArchitecture(it) } ?: return minimum
+        return initial.takeIf { it.hidden.size in minLayers..maxLayers && it.hidden.all { width -> width in minWidth..maxWidth } &&
+            it.parameters <= maxParameters } ?: minimum
+    }
+
+    fun plannedTrials(): Int = if (strategy == ArchitectureSearchStrategy.EXHAUSTIVE) {
+        minOf(architectures().size, maxTrials / seeds.size) * seeds.size
+    } else {
+        require(startingArchitecture().parameters.toLong() * seeds.size <= 8_000_000L) { "Initial checkpoint storage exceeds the parameter budget." }
+        maxTrials / seeds.size * seeds.size
     }
 
     fun architectures(): List<NetworkArchitecture> {
@@ -256,8 +282,10 @@ internal class ArchitectureSearchProgress(
     val finishedTrials: Int,
     candidates: List<ArchitectureCandidate>,
     running: List<ArchitectureRunningTrial>,
-    val elapsedNanos: Long
+    val elapsedNanos: Long,
+    lineage: List<ArchitectureProposal> = emptyList()
 ) {
+    val lineage: List<ArchitectureProposal> = java.util.List.copyOf(lineage)
     val candidates: List<ArchitectureCandidate> = java.util.List.copyOf(candidates)
     val running: List<ArchitectureRunningTrial> = java.util.List.copyOf(running)
     val fullyEvaluated: Int get() = candidates.count { it.fullyEvaluated }
@@ -269,8 +297,10 @@ internal class ArchitectureSearchResult(
     val termination: ArchitectureTermination,
     val generated: Int,
     candidates: List<ArchitectureCandidate>,
-    val elapsedNanos: Long
+    val elapsedNanos: Long,
+    lineage: List<ArchitectureProposal> = emptyList()
 ) {
+    val lineage: List<ArchitectureProposal> = java.util.List.copyOf(lineage)
     val candidates: List<ArchitectureCandidate> = java.util.List.copyOf(candidates)
     val evaluated: Int get() = candidates.count { it.fullyEvaluated }
     val untested: Int get() = generated - candidates.size
@@ -288,6 +318,12 @@ internal fun interface ArchitectureSearcher {
 internal class NeuroArchitectureSearch : ArchitectureSearcher {
     override fun search(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
                         onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
+        return if (config.strategy == ArchitectureSearchStrategy.ADAPTIVE) searchAdaptive(data, config, onProgress, cancelled)
+        else searchExhaustive(data, config, onProgress, cancelled)
+    }
+
+    private fun searchExhaustive(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
+                                 onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
         val architectures = config.architectures()
         val planned = architectures.take(config.maxTrials / config.seeds.size)
         val requests = planned.flatMap { architecture -> config.seeds.map { architecture to it } }
@@ -353,6 +389,89 @@ internal class NeuroArchitectureSearch : ArchitectureSearcher {
             val end = termination ?: if (planned.size < architectures.size) ArchitectureTermination.TRIAL_BUDGET else ArchitectureTermination.COMPLETED
             publish(true)
             return ArchitectureSearchResult(data, config, end, architectures.size, candidates(), System.nanoTime() - start)
+        } finally {
+            stopping.set(true)
+            pool.shutdownNow()
+            try { pool.awaitTermination(5, TimeUnit.SECONDS) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        }
+    }
+
+    private fun searchAdaptive(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
+                               onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
+        val plannedTrials = config.plannedTrials()
+        val planner = AdaptiveArchitecturePlanner(config)
+        val start = System.nanoTime()
+        val stopping = AtomicBoolean(false)
+        val active = ConcurrentHashMap<Int, ArchitectureRunningTrial>()
+        val workerId = AtomicInteger()
+        val pool = Executors.newFixedThreadPool(config.parallelism) { runnable ->
+            Thread(runnable, "jneuro-search-${workerId.incrementAndGet()}").apply { isDaemon = true }
+        }
+        val completions = ExecutorCompletionService<ArchitectureTrial>(pool)
+        val candidates = ArrayList<ArchitectureCandidate>()
+        var finishedTrials = 0
+        var retainedParameters = 0L
+        var lastPublish = Long.MIN_VALUE
+        var termination: ArchitectureTermination? = null
+        var pending: NetworkArchitecture? = null
+        val currentTrials = LinkedHashMap<Long, ArchitectureTrial>()
+        fun partial(): ArchitectureCandidate? = pending?.let { architecture ->
+            ArchitectureCandidate(architecture, config.seeds.mapNotNull { currentTrials[it] }, config.seeds.size, config.targetRmse)
+        }
+        fun publish(force: Boolean = false) {
+            val now = System.nanoTime()
+            if (force || lastPublish == Long.MIN_VALUE || now - lastPublish >= 100_000_000L) {
+                onProgress(ArchitectureSearchProgress(planner.lineage.size, plannedTrials, finishedTrials,
+                    candidates + listOfNotNull(partial()), active.entries.sortedBy { it.key }.map { it.value }, now - start, planner.lineage))
+                lastPublish = now
+            }
+        }
+        fun checkStop() {
+            if (termination != null) return
+            if (cancelled() || Thread.currentThread().isInterrupted) termination = ArchitectureTermination.CANCELLED
+            else if (config.timeLimitSeconds > 0 && System.nanoTime() - start >= config.timeLimitSeconds * 1_000_000_000L) {
+                termination = ArchitectureTermination.TIME_LIMIT
+            }
+            if (termination != null) stopping.set(true)
+        }
+        try {
+            publish(true)
+            while (termination == null) {
+                checkStop()
+                if (termination != null) break
+                if (finishedTrials + config.seeds.size > plannedTrials) { termination = ArchitectureTermination.TRIAL_BUDGET; break }
+                val proposal = planner.next()
+                if (proposal == null) { termination = ArchitectureTermination.NEIGHBOURHOODS_EXHAUSTED; break }
+                val architecture = proposal.architecture
+                val storage = architecture.parameters.toLong() * config.seeds.size
+                if (retainedParameters + storage > 8_000_000L) { termination = ArchitectureTermination.MEMORY_LIMIT; break }
+                retainedParameters += storage
+                pending = architecture
+                currentTrials.clear()
+                for ((index, seed) in config.seeds.withIndex()) completions.submit {
+                    try {
+                        evaluate(data, config, architecture, seed, { stopping.get() || Thread.currentThread().isInterrupted },
+                            { epoch, best -> active[index] = ArchitectureRunningTrial(architecture, seed, epoch, best) })
+                    } finally { active.remove(index) }
+                }
+                while (currentTrials.size < config.seeds.size) {
+                    checkStop()
+                    completions.poll(50, TimeUnit.MILLISECONDS)?.let {
+                        val trial = it.get()
+                        currentTrials[trial.seed] = trial
+                        finishedTrials++
+                    }
+                    publish()
+                }
+                val candidate = partial()!!
+                candidates += candidate
+                pending = null
+                if (candidate.fullyEvaluated) planner.observe(candidate)
+                publish(true)
+            }
+            publish(true)
+            return ArchitectureSearchResult(data, config, termination!!, planner.lineage.size, candidates,
+                System.nanoTime() - start, planner.lineage)
         } finally {
             stopping.set(true)
             pool.shutdownNow()

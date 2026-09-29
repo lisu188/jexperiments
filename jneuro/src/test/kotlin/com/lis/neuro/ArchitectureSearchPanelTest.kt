@@ -15,7 +15,7 @@ class ArchitectureSearchPanelTest {
         EventQueue.invokeAndWait {
             val panel = ArchitectureSearchPanel({ config, evaluation, fraction, split ->
                 assertEquals(ArchitectureEvaluation.TRAINING_FIT, evaluation)
-                assertEquals(0.2, fraction); assertEquals(42L, split); assertEquals(584, config.architectures().size); starts++
+                assertEquals(0.2, fraction); assertEquals(42L, split); assertEquals(ArchitectureSearchStrategy.ADAPTIVE, config.strategy); assertEquals(listOf(6), config.initialHidden); assertEquals(10_000, config.plannedTrials()); starts++
             }, { cancels++ }, { _, _ -> }, { _, _, _ -> })
             panel.setSource(StudioConfig(), 4)
             assertEquals(5, panel.readConfig().seeds.size)
@@ -68,7 +68,7 @@ class ArchitectureSearchPanelTest {
             assertTrue(button(panel, "Apply architecture").isEnabled)
             assertTrue(button(panel, "Replay selected run").isEnabled)
             val table = field(panel, "table") as JTable
-            assertEquals(3, table.rowCount); assertEquals(7, table.columnCount)
+            assertEquals(3, table.rowCount); assertEquals(9, table.columnCount)
             for (row in 0 until table.rowCount) for (column in 0 until table.columnCount) {
                 assertNotNull(table.getValueAt(row, column)); assertNotNull(table.getColumnClass(column)); assertNotNull(table.getColumnName(column))
             }
@@ -138,8 +138,42 @@ class ArchitectureSearchPanelTest {
         }
     }
 
+    @Test fun adaptiveControlsCaptureActiveTopologyAndExposeRealParentage() {
+        val config = ArchitectureSearchConfig(initialHidden = listOf(2), maxLayers = 1, maxWidth = 3,
+            maxEpochs = 100, maxTrials = 15, maxRestarts = 0)
+        val report = NeuroArchitectureSearch().search(ArchitectureSearchData.fitting(xor()), config)
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
+            panel.setSource(StudioConfig(hidden = "4,2"), 4)
+            assertEquals(listOf(4, 2), panel.readConfig().initialHidden)
+            assertEquals(ArchitectureSearchStrategy.ADAPTIVE, panel.readConfig().strategy)
+            panel.started(config, ArchitectureEvaluation.TRAINING_FIT)
+            assertFalse((field(panel, "policy") as JComboBox<*>).isEnabled)
+            assertFalse((field(panel, "strategy") as JComboBox<*>).isEnabled)
+            panel.updateProgress(ArchitectureSearchProgress(report.generated, 15, 5,
+                report.candidates, emptyList(), 100, report.lineage))
+            assertTrue((field(panel, "lineageStatus") as JLabel).text.contains("Generation"))
+            panel.complete(report)
+            val table = field(panel, "table") as JTable
+            for (row in 0 until table.model.rowCount) {
+                val proposal = report.lineage.first { it.architecture == report.candidates[row].architecture }
+                assertEquals(proposal.parent?.toString() ?: "—", table.model.getValueAt(row, 7))
+                assertEquals(proposal.mutation, table.model.getValueAt(row, 8))
+            }
+            assertTrue((field(panel, "lineageStatus") as JLabel).text.contains("not the entire space"))
+            assertTrue((field(panel, "policy") as JComboBox<*>).isEnabled)
+            assertTrue((field(panel, "summary") as JLabel).toolTipText.contains("search seed 42"))
+            (field(panel, "strategy") as JComboBox<*>).selectedItem = ArchitectureSearchStrategy.EXHAUSTIVE
+            assertEquals(ArchitectureSearchStrategy.EXHAUSTIVE, panel.readConfig().strategy)
+            (field(panel, "searchSeed") as JTextField).text = "bad"
+            assertThrows(IllegalArgumentException::class.java) { panel.readConfig() }
+            panel.invalidateResults()
+            render(panel, 1280, 980)
+        }
+    }
+
     private fun report(): ArchitectureSearchResult = NeuroArchitectureSearch().search(ArchitectureSearchData.fitting(xor()),
-        ArchitectureSearchConfig(maxLayers = 1, maxWidth = 3, maxEpochs = 100, targetRmse = 0.9))
+        ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE, maxLayers = 1, maxWidth = 3, maxEpochs = 100, targetRmse = 0.9))
     private fun xor() = NeuroLearningSets.create(NeuroLearningSets.Kind.XOR, 42)
     private fun field(instance: Any, name: String): Any? = instance.javaClass.getDeclaredField(name).run { isAccessible = true; get(instance) }
     private fun descendants(container: Container): List<java.awt.Component> = container.components.flatMap {

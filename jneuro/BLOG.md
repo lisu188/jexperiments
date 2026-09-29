@@ -273,7 +273,7 @@ This API is module-internal, like the Studio model. It deliberately searches the
 
 ### Search space and resource limits
 
-The default search enumerates 1–3 hidden layers, each 1–8 neurons wide, with at most 256 trainable values. There are 584 candidates under this preset. Parameter count includes biases:
+The default **Adaptive · evolve best** strategy searches within 1–3 hidden layers, each 1–8 neurons wide, with at most 256 trainable values. These bounds contain 584 possible architectures, but adaptive search does not enumerate or promise to evaluate them all. Parameter count includes biases:
 
 ~~~text
 parameters = sum((inputWidth + 1) * outputWidth)
@@ -284,11 +284,50 @@ parameters = sum((inputWidth + 1) * outputWidth)
 2 → 6 → 1       = 25
 ~~~
 
-Candidates are enumerated with a parameter lower-bound check and sorted by parameter count before scheduling. Ordered layer sequences remain distinct: `4,2` is not deduplicated with `2,4`. `NetworkArchitecture` owns an unmodifiable copy of its widths and uses value equality, avoiding the reference equality of Kotlin arrays.
+The next candidate is generated from observed results, not taken from a precomputed list. Ordered layer sequences remain distinct: `4,2` is not deduplicated with `2,4`. `NetworkArchitecture` owns an unmodifiable copy of its widths and uses value equality, avoiding the reference equality of Kotlin arrays.
 
-Enumeration rejects more than 4,096 candidates or 100,000 visited prefixes. A separate trial budget selects a deterministic prefix of complete architecture/seed groups, never a collection of partly funded candidates just to fill the final slots. The initial budget is 10,000 trials; the maximum is 20,000. The planned retained checkpoints must contain at most eight million parameter values. Checkpoint curves are compacted to at most 128 entries per seed while preserving the initial, final and current best checkpoints. These limits bound stored model state; actual JVM overhead also includes objects, datasets and temporary training workspaces.
+The initial budget is 10,000 seed trials; the maximum is 20,000. An adaptive run reserves a complete seed group before evaluating the next architecture. It checks retained checkpoint storage before funding each new group and stops with `MEMORY_LIMIT` before exceeding eight million parameter values. The default adaptive strategy does not call `architectures()` and can explore spaces too large for exhaustive enumeration. The optional **Exhaustive · reference** strategy preserves the original grid search: it rejects more than 4,096 candidates or 100,000 visited prefixes and funds a deterministic parameter-ordered prefix of complete seed groups. Checkpoint curves are compacted to at most 128 entries per seed while preserving the initial, final and current best checkpoints. These limits bound stored model state; actual JVM overhead also includes objects, datasets and temporary training workspaces.
 
-Depth/width controls support the Studio's existing limits of eight hidden layers and 128 neurons per layer, provided the chosen search remains within the enumeration and storage limits. The UI previews the candidate/trial count before work is submitted. An optional wall-clock limit is a safety stop, not a reproducibility promise: it can leave different subsets evaluated on different machines.
+Depth/width controls support the Studio's existing limits of eight hidden layers and 128 neurons per layer, subject to parameter and storage limits. Adaptive mode previews a seed-trial budget and starting architecture, not a fictitious total candidate count. An optional wall-clock limit is a safety stop, not a reproducibility promise: it can leave different subsets evaluated on different machines.
+
+### Adaptive mutation of completed leaders
+
+The Studio supplies its active hidden widths as the initial architecture. If those widths lie outside the selected search bounds (including the direct `2 → 1` baseline when hidden layers are required), the planner explicitly starts from the smallest legal architecture instead. Editing the sidebar alone still does not affect the active search input.
+
+The coordinator evaluates one architecture at a time, parallelizing only its independent seed trials. It waits for the entire seed group before asking the planner for another proposal:
+
+~~~kotlin
+val proposal = planner.next()
+val candidate = evaluateAllSeeds(proposal.architecture)
+planner.observe(candidate)
+~~~
+
+This is schematic control flow: `searchAdaptive` owns the completion service and `evaluate` performs each actual training trial. The search engine does not use an epoch-zero score, fastest-finishing seed or partial result as a parent-selection signal. Worker scheduling therefore does not determine the next architecture.
+
+After each completed group, `ArchitectureRanking` computes the recommendation, best-error candidate, ordinary Pareto frontier and reliability-filtered frontier. A new recommendation (or best-error leader before a reliable solution exists) becomes the highest-priority parent. Every newly admitted Pareto candidate also contributes a neighbourhood. Other surviving parents rotate through a queue; candidates dominated out of both frontiers stop generating children. A failed seed group is never a parent.
+
+The neighbourhood contains bounded, deduplicated mutations:
+
+- Increase/decrease one hidden-layer width by one; also double/halve it for larger steps.
+- Insert a hidden layer at any position, using the minimum or adjacent width.
+- Remove a hidden layer, or swap adjacent widths.
+
+Every proposal records its **Parent**, **Mutation** and generation. A newly improved child can immediately produce the following generation; it does not wait behind all remaining configurations of the old grid. The UI displays parent and mutation columns, and shows the active lineage above the progress bar.
+
+~~~kotlin
+val selection = ArchitectureRanking.select(evaluated.values.toList(), config)
+val nextLeader = (selection.recommended ?: selection.bestError)?.architecture
+~~~
+
+This is architecture inheritance, **not weight inheritance**. Every proposed network still trains from the same fresh seed list with the same full budget. Carrying optimized parent weights into only some trials would make the existing median/reliability comparison and deterministic replay mean something different. Search changes which architectures are tried, not how a given architecture is scored.
+
+Mutation order is deterministic from the search seed and parent topology. An issued set prevents reevaluating the same topology. After 12 consecutive results that neither improve the leader nor add a frontier candidate, or after available elite neighbourhoods run out, the planner can perform an exploration restart. The first restart tries the minimum-size architecture if it has not been evaluated; subsequent restarts use bounded seeded random sampling. There are at most four restarts by default, each with at most 256 attempts to draw a legal unseen topology. There is no exhaustive fallback. A missed narrow feasible region is possible and is not reported as global exhaustion.
+
+The search ends with `NEIGHBOURHOODS_EXHAUSTED` if no more legal unseen children or allowed restart candidates are available. This is not a proof of a global optimum. `TRIAL_BUDGET`, `TIME_LIMIT`, `MEMORY_LIMIT` and `CANCELLED` remain distinct exits. In adaptive progress/results, `generated` counts proposals actually issued; `untested` concerns issued-but-unfunded proposals, **not all unseen topologies inside the bounds**. The UI labels these as proposals and does not claim the full search space was tested. Parameter-space completeness belongs only to the explicitly selected exhaustive reference mode.
+
+Recommendation policy and strategy are frozen while a search is running; after completion the recommendation policy can still be changed to inspect alternative trade-offs. Search seed, restart interval and restart count are available under advanced settings. Cancellation, invalidation of stale sessions and scored-checkpoint replay retain their existing ownership rules.
+
+The adaptive approach is inspired by mutation-based [evolutionary architecture search](https://arxiv.org/abs/1802.01548) and [multi-objective NAS](https://www.jmlr.org/papers/v25/23-1013.html), but is a deliberately small Pareto-guided local search, not an implementation of AmoebaNet or LaMOO. No speedup or superior final RMSE is assumed merely from using this strategy.
 
 ### Full-budget training, checkpoints and seed aggregation
 
@@ -333,7 +372,7 @@ Only the training partition is added as training samples. Validation samples are
 
 ### Cancellation and model ownership
 
-`ExecutorCompletionService` manages a bounded number of outstanding seed trials. Each worker owns a fresh `Neuro`; there is no nested parallel training pool and no inference against a network another thread is updating. Completed results are assembled in canonical architecture/seed order, so completion order does not alter rankings. Progress contains copied lists and immutable diagnostic snapshots, published at most about ten times per second apart from the initial/final events.
+`ExecutorCompletionService` manages outstanding seed trials. Adaptive mode submits at most one full seed group (up to 20 trials) and uses a bounded worker count; reference mode retains its original bounded outstanding-trial queue. Each worker owns a fresh `Neuro`; there is no nested parallel training pool and no inference against a network another thread is updating. Seed results are assembled in canonical configured-seed order. Adaptive candidates retain their proposal order; reference candidates retain parameter order. Completion order does not alter ranking or adaptive lineage. Progress contains copied lists and immutable diagnostic snapshots, published at most about ten times per second apart from the initial/final events.
 
 Cancellation is cooperative between epochs. A cancelled search drains its submitted jobs, retains completed candidates and explicitly reports partial and untested counts. The pool is shut down in `finally`, including when a progress callback fails. Cancellation latency is bounded by the current epoch's work, not by a hard millisecond guarantee.
 
@@ -347,7 +386,7 @@ The scatter plot uses parameter count horizontally and the selected RMSE vertica
 
 **Replay selected run** constructs an independent model with the recorded architecture, seed, optimizer settings and training partition, trains to its best checkpoint epoch, verifies that the recorded selection RMSE is reproduced within `1e-10`, and only then installs it in the Studio. Cancellation before installation leaves the old model intact. Validation examples remain held out on replay. The Studio continues to label its main metric as training RMSE and separately displays the replay's selection metric and held-out count. Reset returns to the regular full-dataset Studio configuration.
 
-The result distinguishes `COMPLETED`, `TRIAL_BUDGET`, `TIME_LIMIT` and `CANCELLED`. An absent recommendation is not silently replaced by a target-violating model; `bestError`, evaluated/partial/untested counts and numerical failures remain available.
+The result distinguishes `COMPLETED` (reference mode), `NEIGHBOURHOODS_EXHAUSTED` (adaptive mode), `TRIAL_BUDGET`, `MEMORY_LIMIT`, `TIME_LIMIT` and `CANCELLED`. An absent recommendation is not silently replaced by a target-violating model; `bestError`, evaluated/partial/untested counts and numerical failures remain available.
 
 ### Verification and interpretation
 
@@ -364,9 +403,13 @@ A repeatable shallow XOR test (widths 1–4, five default seeds, 10,000 epochs e
 
 The default policy chooses width two in this measured sweep. Increasing the required success count to five would instead require a different eligible candidate. These are results for this protocol, not a mathematical proof that no other initialization or training procedure could change a failure into a success.
 
-This release implements bounded exhaustive search. Hyperband-style screening/pruning is intentionally not enabled: eliminating slow-starting candidates would weaken the interpretation of a minimal-network experiment. Exhaustive means every architecture inside the configured, fully funded bounds was tested with the chosen seeds and training protocol—not that all possible weights or optimizers were searched.
+Adaptive mutation is now the default; bounded exhaustive search remains an explicitly selected reference mode. Hyperband-style early screening/pruning is intentionally not enabled: eliminating slow-starting candidates would weaken the interpretation of a minimal-network experiment. Exhaustive means every architecture inside the configured, fully funded bounds was tested with the chosen seeds and training protocol—not that all possible weights or optimizers were searched.
 
 Primary references for these boundaries are [Kotlin array equality and defensive copies](https://kotlinlang.org/docs/arrays.html), [ExecutorService lifecycle and interruption](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/ExecutorService.html), and [Cawley and Talbot on model-selection bias](https://www.jmlr.org/papers/v11/cawley10a.html). [Hyperband](https://www.jmlr.org/papers/v18/16-558.html) describes the resource-allocation approach deliberately left for a separate optional fast mode.
+
+### Adaptive search regression checks
+
+Focused tests prove that changing a child's measured RMSE changes the next proposal, that each newly promoted leader is used as a parent immediately, and that dominated or numerically failed candidates are not expanded. Other checks cover width/depth/order mutations, deterministic restarts, deduplication, defensive copies, bounded large-space execution without enumeration, serial/parallel lineage equality, full trial budgets, storage limits, cancellation and observer-failure cleanup. A real shallow XOR adaptive sweep retains the expected two-neuron recommendation under the default five-seed protocol; it is a reproducible local result, not a global-search guarantee.
 
 ## Direct 2 → 1 baseline and PR #46 integration
 

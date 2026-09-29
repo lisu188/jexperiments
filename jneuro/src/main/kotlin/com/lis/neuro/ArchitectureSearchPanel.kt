@@ -34,6 +34,12 @@ internal class ArchitectureSearchPanel(
     private val fraction = JSpinner(SpinnerNumberModel(0.2, 0.1, 0.5, 0.05))
     private val splitSeed = JTextField("42", 10)
     private val policy = JComboBox(ArchitecturePolicy.entries.toTypedArray())
+    private val strategy = JComboBox(ArchitectureSearchStrategy.entries.toTypedArray())
+    private val searchSeed = JTextField("42", 10)
+    private val restartAfter = JSpinner(SpinnerNumberModel(12, 1, 1000, 1))
+    private val restarts = JSpinner(SpinnerNumberModel(4, 0, 100, 1))
+    private val lineageStatus = JLabel("Adaptive search mutates completed leaders; it does not enumerate a grid.")
+    private var lineage = emptyMap<NetworkArchitecture, ArchitectureProposal>()
     private val evaluation = JComboBox(ArchitectureEvaluation.entries.toTypedArray())
     private val start = JButton("Start search")
     private val cancel = JButton("Cancel search")
@@ -77,14 +83,16 @@ internal class ArchitectureSearchPanel(
         controls.add(primary)
         val choices = JPanel(FlowLayout(FlowLayout.LEFT, 8, 8)).apply {
             isOpaque = false
+            add(JLabel("Search")); add(strategy)
             add(JLabel("Recommend")); add(policy); add(JLabel("Score")); add(evaluation)
             start.background = ACCENT; start.foreground = BACKGROUND; add(start); add(cancel)
         }
         controls.add(choices)
-        val advanced = JPanel(GridLayout(3, 4, 12, 8)).apply { isOpaque = false }
+        val advanced = JPanel(GridLayout(4, 4, 12, 8)).apply { isOpaque = false }
         for ((name, component) in listOf("Seeds" to seeds, "Required successes" to successes, "Epochs per seed" to epochs,
-            "Check every (epochs)" to checkEvery, "Near-best tolerance" to tolerance, "Parallel trials" to threads,
-            "Trial budget" to trials, "Seconds (0 = unlimited)" to seconds, "Validation fraction" to fraction, "Split seed" to splitSeed)) {
+            "Check every (epochs)" to checkEvery, "Near-best tolerance" to tolerance, "Parallel seed trials" to threads,
+            "Trial budget" to trials, "Seconds (0 = unlimited)" to seconds, "Validation fraction" to fraction, "Split seed" to splitSeed,
+            "Search seed" to searchSeed, "Plateau length (architectures)" to restartAfter, "Max restarts" to restarts)) {
             advanced.add(field(name, component))
         }
         advanced.isVisible = false
@@ -95,6 +103,7 @@ internal class ArchitectureSearchPanel(
         controls.add(advanced)
         summary.foreground = MUTED
         controls.add(summary)
+        lineageStatus.foreground = MUTED; controls.add(lineageStatus)
         progressBar.isStringPainted = true; progressBar.string = "Not started"; controls.add(progressBar)
         for (child in controls.components) if (child is JComponent) child.alignmentX = 0f
         add(controls, BorderLayout.NORTH)
@@ -122,6 +131,11 @@ internal class ArchitectureSearchPanel(
         start.addActionListener { submit() }
         cancel.addActionListener { cancelSearch(); cancel.isEnabled = false; summary.text = "Stopping between epochs; completed results will be retained." }
         policy.addActionListener { if (!changing) { updateSummary(); plot.repaint() } }
+        strategy.addActionListener {
+            if (!running) lineageStatus.text = if (strategy.selectedItem == ArchitectureSearchStrategy.ADAPTIVE)
+                "Adaptive search mutates completed leaders; it does not enumerate a grid."
+            else "Reference search evaluates a pre-enumerated grid."
+        }
         table.selectionModel.addListSelectionListener { event ->
             if (!event.valueIsAdjusting && !changing && table.selectedRow >= 0) {
                 selected = results[table.convertRowIndexToModel(table.selectedRow)].architecture
@@ -147,23 +161,29 @@ internal class ArchitectureSearchPanel(
     }
 
     internal fun readConfig(): ArchitectureSearchConfig {
-        val spinners = listOf(minLayers, maxLayers, minWidth, maxWidth, parameters, target, epochs, checkEvery, successes, tolerance, threads, trials, seconds, fraction)
+        val spinners = listOf(minLayers, maxLayers, minWidth, maxWidth, parameters, target, epochs, checkEvery, successes, tolerance, threads, trials, seconds, fraction, restartAfter, restarts)
         spinners.forEach { it.commitEdit() }
         return ArchitectureSearchConfig(integer(minLayers), integer(maxLayers), integer(minWidth), integer(maxWidth), integer(parameters),
             seeds.text.split(',').map { token -> token.trim().toLongOrNull() ?: throw IllegalArgumentException("Seeds must be comma-separated integers.") },
             integer(epochs), integer(checkEvery), decimal(target), integer(successes), decimal(tolerance), policy.selectedItem as ArchitecturePolicy,
-            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed), integer(threads), integer(trials), integer(seconds).toLong())
+            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed), integer(threads), integer(trials), integer(seconds).toLong(),
+            strategy.selectedItem as ArchitectureSearchStrategy, NeuroTopologyConfig.parseHidden(source.hidden).toList(),
+            searchSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Search seed must be an integer."),
+            integer(restartAfter), integer(restarts))
     }
 
     private fun submit() {
         try {
             val next = readConfig()
-            val space = next.architectures()
+            val trialLimit = next.plannedTrials()
             val mode = evaluation.selectedItem as ArchitectureEvaluation
             require(mode != ArchitectureEvaluation.VALIDATION || source.dataset !in BOOLEAN_SETS) { "Truth tables use Training RMSE, not validation on four examples." }
             val split = splitSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Split seed must be an integer.")
             started(next, mode)
-            summary.text = "${space.size} architectures; up to ${minOf(space.size, next.maxTrials / next.seeds.size) * next.seeds.size} seed trials. Main run paused."
+            summary.text = "${next.strategy}: up to $trialLimit seed trials. Main run paused."
+            lineageStatus.text = if (next.strategy == ArchitectureSearchStrategy.ADAPTIVE)
+                "Starting from ${next.startingArchitecture()}; new leaders and Pareto trade-offs become mutation parents."
+            else "Reference mode: all candidates are enumerated in advance."
             startSearch(next, mode, decimal(fraction), split)
         } catch (exception: Exception) { failed(exception.message ?: "Check search settings.") }
     }
@@ -176,10 +196,12 @@ internal class ArchitectureSearchPanel(
         seeds.text = next.seeds.joinToString(","); successes.value = next.requiredSuccesses
         tolerance.value = next.nearBestTolerance; threads.value = next.parallelism
         trials.value = next.maxTrials; seconds.value = next.timeLimitSeconds.toInt()
-        changing = true; policy.selectedItem = next.policy; evaluation.selectedItem = mode; changing = false
+        searchSeed.text = next.searchSeed.toString(); restartAfter.value = next.restartAfter; restarts.value = next.maxRestarts
+        changing = true; strategy.selectedItem = next.strategy; policy.selectedItem = next.policy; evaluation.selectedItem = mode; changing = false
         running = true; config = next; scoreMode = mode; result = null; selected = null
-        results = emptyList(); chosenTrial = null; surface = null
+        results = emptyList(); lineage = emptyMap(); chosenTrial = null; surface = null
         tableModel.fireTableDataChanged(); selectedSeed.removeAllItems()
+        strategy.isEnabled = false; policy.isEnabled = false
         start.isEnabled = false; cancel.isEnabled = true; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false
         progressBar.value = 0; progressBar.string = "Starting…"
         details.text = "Inspecting a result never changes the active network."
@@ -188,31 +210,42 @@ internal class ArchitectureSearchPanel(
 
     fun updateProgress(progress: ArchitectureSearchProgress) {
         if (!running) return
+        lineage = progress.lineage.associateBy { it.architecture }
         showCandidates(progress.candidates)
         progressBar.maximum = maxOf(1, progress.plannedTrials); progressBar.value = progress.finishedTrials
-        progressBar.string = "${progress.finishedTrials}/${progress.plannedTrials} trials · ${progress.fullyEvaluated}/${progress.generated} architectures evaluated"
+        progressBar.string = "${progress.finishedTrials}/${progress.plannedTrials} trial budget · ${progress.fullyEvaluated}/${progress.generated} ${if (config?.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposed" else "enumerated"} architectures evaluated"
+        progress.lineage.lastOrNull()?.let { proposal ->
+            lineageStatus.text = "Generation ${proposal.generation} · ${proposal.parent ?: "Start / exploration"} → ${proposal.architecture} · ${proposal.mutation}"
+        }
         val trial = progress.running.firstOrNull()
         summary.text = if (trial == null) "Collecting results…" else "Training ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch} · best ${scoreMode.label} ${number(trial.bestRmse)}"
     }
 
     fun complete(report: ArchitectureSearchResult) {
         if (config !== report.config) started(report.config, report.data.evaluation)
+        strategy.isEnabled = true; policy.isEnabled = true
         running = false; result = report; config = report.config; scoreMode = report.data.evaluation
         start.isEnabled = sourceSize > 0; cancel.isEnabled = false
+        lineage = report.lineage.associateBy { it.architecture }
         showCandidates(report.candidates)
         progressBar.maximum = maxOf(1, report.generated); progressBar.value = report.evaluated
-        progressBar.string = "${report.termination} · ${report.evaluated}/${report.generated} evaluated · ${report.partial} partial · ${report.untested} untested"
+        progressBar.string = "${report.termination} · ${report.evaluated}/${report.generated} ${if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposals" else "architectures"} evaluated · ${report.partial} partial"
+        lineageStatus.text = if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE)
+            "Adaptive search finished. Counts cover generated proposals, not the entire space; no global minimum is claimed."
+        else "${report.untested} enumerated architectures untested."
         if (selected == null) selected = currentSelection()?.recommended?.architecture ?: currentSelection()?.bestError?.architecture
         selectArchitecture(selected)
         updateSummary()
     }
 
     fun failed(message: String) {
+        strategy.isEnabled = true; policy.isEnabled = true
         running = false; start.isEnabled = sourceSize > 0; cancel.isEnabled = false
         summary.text = "Search error: $message"; progressBar.string = "Search failed"
     }
 
     fun invalidateResults() {
+        strategy.isEnabled = true; policy.isEnabled = true; lineage = emptyMap()
         running = false; result = null; config = null; results = emptyList(); selected = null
         chosenTrial = null; surface = null; tableModel.fireTableDataChanged()
         cancel.isEnabled = false; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false; start.isEnabled = sourceSize > 0
@@ -248,7 +281,7 @@ internal class ArchitectureSearchPanel(
         summary.text = if (winner != null) "Recommended: ${winner.architecture} · ${winner.architecture.parameters} parameters · median ${scoreMode.label} ${number(winner.medianRmse)} · ${winner.successes}/${winner.expectedSeeds} successful seeds"
             else if (selection.bestError == null) "No fully evaluated finite candidate. The search was incomplete or every completed architecture had a failed seed."
             else "No evaluated architecture met the target reliably. Best completed RMSE: ${number(selection.bestError.medianRmse)}."
-        summary.toolTipText = "${report.environment}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
+        summary.toolTipText = "${report.environment}; strategy ${report.config.strategy}; search seed ${report.config.searchSeed}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
     }
 
     private fun updateInspection() {
@@ -290,7 +323,7 @@ internal class ArchitectureSearchPanel(
     }
 
     private inner class CandidateTable : AbstractTableModel() {
-        private val columns = arrayOf("Architecture", "Parameters", "Median RMSE", "Worst RMSE", "Successful seeds", "Evaluated seeds", "Status")
+        private val columns = arrayOf("Architecture", "Parameters", "Median RMSE", "Worst RMSE", "Successful seeds", "Evaluated seeds", "Status", "Parent", "Mutation")
         override fun getRowCount() = results.size
         override fun getColumnCount() = columns.size
         override fun getColumnName(column: Int) = columns[column]
@@ -298,6 +331,8 @@ internal class ArchitectureSearchPanel(
         override fun getValueAt(row: Int, column: Int): Any = results[row].let { candidate -> when (column) {
             0 -> candidate.architecture.toString(); 1 -> candidate.architecture.parameters; 2 -> candidate.medianRmse; 3 -> candidate.worstRmse
             4 -> "${candidate.successes}/${candidate.expectedSeeds}"; 5 -> "${candidate.trials.size}/${candidate.expectedSeeds}"
+            7 -> lineage[candidate.architecture]?.parent?.toString() ?: "—"
+            8 -> lineage[candidate.architecture]?.mutation ?: "Reference grid"
             else -> if (!candidate.fullyEvaluated) "Provisional" else if (!candidate.valid) "Failed seed" else if (candidate.meetsTarget(config?.requiredSuccesses ?: 1)) "Target met" else "Above target"
         } }
     }
