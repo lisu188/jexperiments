@@ -80,6 +80,18 @@ final class NeuroXorDiagnostics {
         double outputBias() {
             return outputBias;
         }
+
+        double[] parameters() {
+            var result = new double[inputWeights.length + hiddenBiases.length + outputWeights.length + 1];
+            var offset = 0;
+            System.arraycopy(inputWeights, 0, result, offset, inputWeights.length);
+            offset += inputWeights.length;
+            System.arraycopy(hiddenBiases, 0, result, offset, hiddenBiases.length);
+            offset += hiddenBiases.length;
+            System.arraycopy(outputWeights, 0, result, offset, outputWeights.length);
+            result[result.length - 1] = outputBias;
+            return result;
+        }
     }
 
     private NeuroXorDiagnostics() {
@@ -89,7 +101,7 @@ final class NeuroXorDiagnostics {
         Objects.requireNonNull(network, "network");
         var topology = network.topology();
         if (topology.length != 3 || topology[0] != 2 || topology[2] != 1) {
-            throw new IllegalArgumentException("XOR diagnostics require topology 2-hidden-1");
+            throw new IllegalArgumentException("diagnostics require topology 2-hidden-1");
         }
 
         var inputWeights = network.backendWeights(0);
@@ -123,11 +135,59 @@ final class NeuroXorDiagnostics {
         return new Probe(hidden, sigmoid(snapshot.beta * outputZ), contributions, outputZ);
     }
 
+    static BufferedImage renderOutputMap(Snapshot snapshot, int size) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        validateSize(size);
+        var image = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
+        var pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+        var scale = 1.0 / (size - 1);
+
+        for (int yPixel = 0; yPixel < size; yPixel++) {
+            var y = 1.0 - yPixel * scale;
+            for (int xPixel = 0; xPixel < size; xPixel++) {
+                var x = xPixel * scale;
+                pixels[yPixel * size + xPixel] = NeuroXorGrid.grayRgb(probe(snapshot, x, y).output());
+            }
+        }
+        return image;
+    }
+
+    static BufferedImage renderDifferenceMap(Snapshot before, Snapshot after, int size) {
+        Objects.requireNonNull(before, "before");
+        Objects.requireNonNull(after, "after");
+        validateSize(size);
+        var image = new BufferedImage(size, size, BufferedImage.TYPE_INT_RGB);
+        var pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+        var scale = 1.0 / (size - 1);
+
+        for (int yPixel = 0; yPixel < size; yPixel++) {
+            var y = 1.0 - yPixel * scale;
+            for (int xPixel = 0; xPixel < size; xPixel++) {
+                var x = xPixel * scale;
+                var difference = probe(after, x, y).output() - probe(before, x, y).output();
+                pixels[yPixel * size + xPixel] = differenceRgb(difference);
+            }
+        }
+        return image;
+    }
+
+    static int differenceRgb(double difference) {
+        if (!Double.isFinite(difference)) {
+            throw new IllegalArgumentException("difference must be finite");
+        }
+        var magnitude = Math.min(1.0, Math.abs(difference) * 4.0);
+        var neutral = 32;
+        var strong = 230;
+        var weak = (int) Math.round(neutral + (1.0 - magnitude) * 55.0);
+        var channel = (int) Math.round(neutral + magnitude * (strong - neutral));
+        return difference >= 0.0
+                ? channel << 16 | weak << 8 | weak
+                : weak << 16 | weak << 8 | channel;
+    }
+
     static BufferedImage[] renderHiddenMaps(Snapshot snapshot, int size) {
         Objects.requireNonNull(snapshot, "snapshot");
-        if (size < 2) {
-            throw new IllegalArgumentException("size must be >= 2");
-        }
+        validateSize(size);
 
         var images = new BufferedImage[snapshot.hiddenCount()];
         var pixels = new int[images.length][];
@@ -192,6 +252,45 @@ final class NeuroXorDiagnostics {
         return max;
     }
 
+    static double weightNorm(Snapshot snapshot, int layer) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        var sum = 0.0;
+        if (layer == 0) {
+            for (int neuron = 0; neuron < snapshot.hiddenCount(); neuron++) {
+                sum += square(snapshot.inputWeight(neuron, 0));
+                sum += square(snapshot.inputWeight(neuron, 1));
+            }
+        } else if (layer == 1) {
+            for (int neuron = 0; neuron < snapshot.hiddenCount(); neuron++) {
+                sum += square(snapshot.outputWeight(neuron));
+            }
+        } else {
+            throw new IllegalArgumentException("layer must be 0 or 1");
+        }
+        return Math.sqrt(sum);
+    }
+
+    static double biasNorm(Snapshot snapshot, int layer) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        var sum = 0.0;
+        if (layer == 0) {
+            for (int neuron = 0; neuron < snapshot.hiddenCount(); neuron++) {
+                sum += square(snapshot.hiddenBias(neuron));
+            }
+        } else if (layer == 1) {
+            sum = square(snapshot.outputBias());
+        } else {
+            throw new IllegalArgumentException("layer must be 0 or 1");
+        }
+        return Math.sqrt(sum);
+    }
+
+    private static void validateSize(int size) {
+        if (size < 2) {
+            throw new IllegalArgumentException("size must be >= 2");
+        }
+    }
+
     private static void addIntersection(List<double[]> intersections, double x, double y) {
         if (x < -1.0e-9 || x > 1.0 + 1.0e-9 || y < -1.0e-9 || y > 1.0 + 1.0e-9) {
             return;
@@ -205,6 +304,10 @@ final class NeuroXorDiagnostics {
             }
         }
         intersections.add(new double[]{clampedX, clampedY});
+    }
+
+    private static double square(double value) {
+        return value * value;
     }
 
     private static double sigmoid(double value) {
