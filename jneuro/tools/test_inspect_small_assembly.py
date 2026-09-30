@@ -1,7 +1,7 @@
 import shutil
 import unittest
 
-from inspect_small_assembly import blocks, inspect
+from inspect_small_assembly import blocks, inspect, requirements_met
 
 
 class AssemblyInspectionTest(unittest.TestCase):
@@ -33,6 +33,29 @@ class AssemblyInspectionTest(unittest.TestCase):
         self.assertEqual({"vfmadd231pd": 1, "vfmadd231ps": 1}, method["packed_fma"])
         self.assertEqual(3, method["ymm_instructions"])
         self.assertEqual(1, method["vector_stack_store_count"])
+        self.assertEqual(0, method["scalar_stack_store_count"])
+        self.assertEqual(2, method["packed_fma_by_bits"]["256"])
+        self.assertTrue(requirements_met(report, fp64=True, fp32=True, width=256))
+        self.assertFalse(requirements_met(report, width=128))
+
+    @unittest.skipUnless(shutil.which("objdump"), "objdump is required for disassembly")
+    def test_scalar_xmm_stack_stores_do_not_count_as_vector_spills_or_simd(self):
+        # vmovsd [rsp],xmm0; vmovss [rsp],xmm0; vfmadd231sd xmm0,xmm1,xmm2; ret.
+        raw = "c5fb110424c5fa110424c4e2f1b9c2c3"
+        text = "Compiled method (c2) scalar\nmain code [0x1000, 0x1010]\n"
+        text += "  0x1000: " + " ".join(raw[i:i + 8] for i in range(0, len(raw), 8)) + "\n"
+        report = inspect(text)
+        method = report["methods"][0]
+        self.assertEqual(2, method["scalar_stack_store_count"])
+        self.assertEqual(0, method["vector_stack_store_count"])
+        self.assertEqual(0, method["other_stack_store_count"])
+        self.assertEqual({"vfmadd231sd": 1}, method["scalar_fma"])
+        self.assertGreater(method["xmm_instructions"], 0)
+        self.assertTrue(requirements_met(report))
+        self.assertFalse(requirements_met(report, fp64=True))
+        self.assertFalse(requirements_met(report, fp32=True))
+        self.assertFalse(requirements_met(report, width=128))
+        self.assertFalse(requirements_met({"methods": [], "incomplete_methods": []}))
 
 
 if __name__ == "__main__":

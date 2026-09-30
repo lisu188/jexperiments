@@ -75,15 +75,40 @@ def inspect(text, objdump="objdump"):
                 instructions.append((match[1], match[2]))
         packed_fma = collections.Counter(m for m, _ in instructions if m.startswith("vfm") and m.endswith(("pd", "ps")))
         scalar_fma = collections.Counter(m for m, _ in instructions if m.startswith("vfm") and m.endswith(("sd", "ss")))
-        stack_stores = [f"{mnemonic} {operands}" for mnemonic, operands in instructions
+        # XMM is also used by scalar vmovsd/vmovss. A vector register name alone
+        # does not establish either a packed operation or a full-width vector spill.
+        stack_stores = [(mnemonic, operands) for mnemonic, operands in instructions
                         if mnemonic.startswith("vmov") and re.search(r"\[[^]]*(?:rsp|rbp)[^]]*\]", operands.split(",")[0])]
+        vector_stores = [f"{mnemonic} {operands}" for mnemonic, operands in stack_stores
+                         if re.search(r"\b[XYZ]MMWORD PTR\b", operands.split(",")[0])]
+        scalar_stores = [f"{mnemonic} {operands}" for mnemonic, operands in stack_stores
+                         if mnemonic in ("vmovsd", "vmovss", "vmovd", "vmovq")]
+        other_stores = [f"{mnemonic} {operands}" for mnemonic, operands in stack_stores
+                        if f"{mnemonic} {operands}" not in vector_stores + scalar_stores]
+        packed_by_bits = {str(bits): sum(m.startswith("vfm") and m.endswith(("pd", "ps")) and
+                                        bool(re.search(rf"\b{register}\d+\b", operands))
+                                        for m, operands in instructions)
+                          for bits, register in ((128, "xmm"), (256, "ymm"), (512, "zmm"))}
         methods.append({"method": block["header"], "code_bytes": len(code), "instruction_count": len(instructions),
                         "packed_fma": dict(packed_fma), "scalar_fma": dict(scalar_fma),
+                        "packed_fma_by_bits": packed_by_bits,
                         "xmm_instructions": sum(bool(re.search(r"\bxmm\d+\b", operands)) for _, operands in instructions),
                         "ymm_instructions": sum(bool(re.search(r"\bymm\d+\b", operands)) for _, operands in instructions),
-                        "vector_stack_store_count": len(stack_stores), "vector_stack_store_examples": stack_stores[:8]})
+                        "vector_stack_store_count": len(vector_stores), "vector_stack_store_examples": vector_stores[:8],
+                        "scalar_stack_store_count": len(scalar_stores), "scalar_stack_store_examples": scalar_stores[:8],
+                        "other_stack_store_count": len(other_stores), "other_stack_store_examples": other_stores[:8]})
     return {"methods": methods, "incomplete_methods": failures,
-            "caveat": "Counts describe decoded C2 main code. Vector stack stores are not necessarily register spills."}
+            "caveat": "Static counts describe decoded C2 main code, including cold paths and multiple compilations. "
+                      "Stack stores are not necessarily spills, and scalar XMM instructions do not prove 128-bit SIMD."}
+
+
+def requirements_met(report, fp64=False, fp32=False, width=None):
+    methods = report["methods"]
+    packed = [name for method in methods for name in method["packed_fma"]]
+    return bool(methods) and not report["incomplete_methods"] and (
+        not fp64 or any(name.endswith("pd") for name in packed)) and (
+        not fp32 or any(name.endswith("ps") for name in packed)) and (
+        width is None or any(method["packed_fma_by_bits"][str(width)] for method in methods))
 
 
 def main():
@@ -96,14 +121,7 @@ def main():
     parser.add_argument("--require-width", choices=(128, 256), type=int)
     args = parser.parse_args()
     report = inspect(args.log.read_text(encoding="utf-8", errors="replace"), args.objdump)
-    methods = report["methods"]
-    packed = [name for method in methods for name in method["packed_fma"]]
-    passed = bool(methods) and not report["incomplete_methods"]
-    passed &= not args.require_fp64 or any(name.endswith("pd") for name in packed)
-    passed &= not args.require_fp32 or any(name.endswith("ps") for name in packed)
-    if args.require_width:
-        field = "ymm_instructions" if args.require_width == 256 else "xmm_instructions"
-        passed &= any(method[field] for method in methods)
+    passed = requirements_met(report, args.require_fp64, args.require_fp32, args.require_width)
     report["requirements_passed"] = bool(passed)
     output = json.dumps(report, indent=2) + "\n"
     if args.output:
