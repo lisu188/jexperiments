@@ -1,0 +1,2907 @@
+{
+  "schemaVersion": 1,
+  "artifactDirectory": "/tmp/jneuro-small-evidence/ci-performance/native-small/benchmarks",
+  "sourceRevision": "7965204e0ca7fda5aaa232fe4dbaae4c229a4f82",
+  "host": {
+    "cpuModel": "AMD EPYC 7763 64-Core Processor",
+    "allocatedCores": 2,
+    "allocatedLogicalProcessors": 4,
+    "runnerName": "GitHub Actions 1000030883",
+    "imageOs": "win25-vs2026",
+    "imageVersion": "20260922.246.2",
+    "beforeUtc": "2026-09-30T20:56:14.6623270Z",
+    "afterUtc": "2026-09-30T21:04:31.7917361Z"
+  },
+  "runtime": {
+    "javaVersion": "27+35",
+    "javaVm": "OpenJDK 64-Bit Server VM",
+    "os": "Windows Server 2025",
+    "osVersion": "10.0",
+    "architecture": "amd64",
+    "availableProcessors": 4,
+    "maximumHeapBytes": 2147483648,
+    "loggingLevel": "WARNING",
+    "jvmArguments": [
+      "--add-modules=jdk.incubator.vector",
+      "--enable-native-access=ALL-UNNAMED",
+      "-Xms128m",
+      "-Xmx2g",
+      "-Djneuro.log.level=WARNING",
+      "-Djneuro.log.file=false",
+      "-Djneuro.benchmark.sourceRevision=7965204e0ca7fda5aaa232fe4dbaae4c229a4f82",
+      "-Djneuro.small.native=D:\\a\\jexperiments\\jexperiments\\native-small\\jneuro-small.dll"
+    ]
+  },
+  "vectorFlags": {
+    "UseAVX": 2,
+    "UseFMA": true,
+    "MaxVectorSize": 32
+  },
+  "nativeLibrarySha256": "b7e2800cb69f6c1effd36ed72f93f27678ca1d934d05d2fdea0f96b294c732d1",
+  "benchmarkClassSha256": "487b8ea311eea03b2f46eed316ab98737e8d3da15815d970d618a950b770e563",
+  "cohortBenchmarkClassSha256": "ff6d4e9cabf735f83a228d1bde354e60f313a37d58cb3aae458881435475b5ad",
+  "jmh": {
+    "version": "1.37",
+    "benchmark": "com.lis.neuro.SmallTrainingJmhBenchmark.publicEpochs",
+    "forks": 3,
+    "threads": 1,
+    "warmupIterationsPerFork": 5,
+    "warmupSecondsPerIteration": 1,
+    "measurementIterationsPerFork": 5,
+    "measurementSecondsPerIteration": 1,
+    "operationsPerInvocation": 10,
+    "params": {
+      "batchSize": "64",
+      "engine": "per row",
+      "samples": "128",
+      "sigmoid": "EXACT",
+      "topology": "2-8-8-8-1",
+      "workload": "MINI_BATCH"
+    },
+    "bestReferenceByMean": "REFERENCE_MATRIX",
+    "p95Scope": "nearest rank of 15 iteration means; not individual-operation latency",
+    "results": [
+      {
+        "engine": "REFERENCE_SCALAR",
+        "meanMicrosecondsPerEpoch": 193.21559469816222,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 4.865887327509743,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          188.34970737065248,
+          198.08148202567196
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 188.91865275142314,
+          "median": 191.59067829457365,
+          "p95": 203.65803278688526
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          190.23345733390576,
+          191.63461149938024,
+          197.7787152612008
+        ],
+        "speedupMeanVersusBestReference": 0.9630164484182517
+      },
+      {
+        "engine": "REFERENCE_MATRIX",
+        "meanMicrosecondsPerEpoch": 186.06979578524457,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 26.442867690513605,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          159.62692809473097,
+          212.51266347575816
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 174.69856890459363,
+          "median": 179.17947558770342,
+          "p95": 274.75022284122565
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          178.84446088415922,
+          200.5868589198214,
+          178.7780675517531
+        ],
+        "speedupMeanVersusBestReference": 1.0
+      },
+      {
+        "engine": "SMALL_SCALAR",
+        "meanMicrosecondsPerEpoch": 172.8606520168047,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 43.47088026609446,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          129.38977175071022,
+          216.33153228289916
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 151.29077041602466,
+          "median": 158.39996779388085,
+          "p95": 273.64316526610645
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          152.93069512296444,
+          206.64929098707947,
+          159.0019699403702
+        ],
+        "speedupMeanVersusBestReference": 1.0764149829028513
+      },
+      {
+        "engine": "SMALL_128",
+        "meanMicrosecondsPerEpoch": 126.60141997062156,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 2.1467310386398495,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          124.4546889319817,
+          128.74815100926142
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 123.42751879699249,
+          "median": 126.38967948717949,
+          "p95": 130.68146471371506
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          125.39725388627853,
+          126.55622007613704,
+          127.85078594944913
+        ],
+        "speedupMeanVersusBestReference": 1.46972913754382
+      },
+      {
+        "engine": "SMALL_256",
+        "meanMicrosecondsPerEpoch": 120.63631401691653,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 1.720300746367069,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          118.91601327054946,
+          122.3566147632836
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 119.17364190012181,
+          "median": 120.27790897908979,
+          "p95": 125.85602301790281
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          120.66142525612281,
+          121.38947992554304,
+          119.85803686908372
+        ],
+        "speedupMeanVersusBestReference": 1.542402860212991
+      },
+      {
+        "engine": "SMALL_FP32_SCALAR",
+        "meanMicrosecondsPerEpoch": 155.95449497178225,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 2.584885812668298,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          153.36960915911396,
+          158.53938078445054
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 153.83095163806553,
+          "median": 155.24848818897638,
+          "p95": 162.9120895522388
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          155.5288721279499,
+          155.02130413198677,
+          157.31330865541005
+        ],
+        "speedupMeanVersusBestReference": 1.1931031280561117
+      },
+      {
+        "engine": "SMALL_FP32_128",
+        "meanMicrosecondsPerEpoch": 143.3950188972841,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 14.930307765456883,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          128.46471113182722,
+          158.325326662741
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 127.36062418725618,
+          "median": 140.0141963015647,
+          "p95": 183.8562101313321
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          156.73237041597653,
+          139.44119307342447,
+          134.01149320245122
+        ],
+        "speedupMeanVersusBestReference": 1.2976029238402556
+      },
+      {
+        "engine": "SMALL_FP32_256",
+        "meanMicrosecondsPerEpoch": 128.23118396129337,
+        "confidence99_9HalfWidthMicrosecondsPerEpoch": 13.670691207773054,
+        "confidence99_9IntervalMicrosecondsPerEpoch": [
+          114.56049275352032,
+          141.90187516906641
+        ],
+        "iterationAverageMicrosecondsPerEpoch": {
+          "count": 15,
+          "minimum": 118.90043636363636,
+          "median": 121.32218091697645,
+          "p95": 162.95557788944723
+        },
+        "forkMeanMicrosecondsPerEpoch": [
+          142.99782245939582,
+          121.99868000102266,
+          119.69704942346164
+        ],
+        "speedupMeanVersusBestReference": 1.4510495032269983
+      }
+    ]
+  },
+  "configuration": {
+    "minibatch": {
+      "profile": "smoke",
+      "epochs": 5,
+      "warmups": 100,
+      "repeats": 30,
+      "batches": [
+        16,
+        64
+      ],
+      "backends": [
+        "CPU",
+        "CPU_LEGACY",
+        "SMALL_SCALAR_FP64",
+        "SMALL_128_FP64",
+        "SMALL_256_FP64",
+        "SMALL_SCALAR_FP32",
+        "SMALL_128_FP32",
+        "SMALL_256_FP32",
+        "NATIVE_FP64"
+      ],
+      "topology": [
+        2,
+        8,
+        8,
+        8,
+        1
+      ],
+      "samples": 128,
+      "mode": "MINIBATCH",
+      "sigmoid": "EXACT",
+      "retainedDevice": true
+    },
+    "chunk": {
+      "profile": "smoke",
+      "epochs": 64,
+      "warmups": 20,
+      "repeats": 20,
+      "batches": [
+        16,
+        64
+      ],
+      "backends": [
+        "CPU",
+        "SMALL_SCALAR_FP64",
+        "SMALL_128_FP64",
+        "SMALL_256_FP64",
+        "SMALL_SCALAR_FP32",
+        "SMALL_128_FP32",
+        "SMALL_256_FP32",
+        "NATIVE_FP64"
+      ],
+      "topology": [
+        2,
+        8,
+        8,
+        8,
+        1
+      ],
+      "samples": 128,
+      "mode": "CHUNK",
+      "sigmoid": "EXACT",
+      "retainedDevice": true
+    },
+    "cohort": {
+      "topology": [
+        2,
+        8,
+        8,
+        8,
+        1
+      ],
+      "samples": 128,
+      "epochs": 64,
+      "batch": 64,
+      "models": [
+        1,
+        4,
+        32
+      ],
+      "requestedParallelism": 4,
+      "warmupsPerFork": 10,
+      "measuredRoundsPerFork": 20,
+      "forks": 3,
+      "precision": "FP64",
+      "sigmoid": "EXACT"
+    }
+  },
+  "workloads": {
+    "cohort:2x8x8x8x1:s128:e64:b64:m1:w4:FP64:EXACT": {
+      "bestTestedFp64JvmByTotalMedian": "SMALL_SEQUENTIAL",
+      "engines": {
+        "NATIVE": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 10.8917,
+            "median": 12.0311,
+            "p95": 14.6396
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 9.0863,
+            "median": 9.3743,
+            "p95": 11.0538
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.3786104346236005,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.4675602444982559,
+          "perFork": [
+            {
+              "processIdentity": "1404:1790802013318",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.01375,
+              "totalP95Milliseconds": 13.5775,
+              "trainingMedianMilliseconds": 9.23565,
+              "trainingP95Milliseconds": 10.5508
+            },
+            {
+              "processIdentity": "3576:1790801976024",
+              "rounds": 20,
+              "totalMedianMilliseconds": 11.9768,
+              "totalP95Milliseconds": 17.4844,
+              "trainingMedianMilliseconds": 9.2127,
+              "trainingP95Milliseconds": 14.9042
+            },
+            {
+              "processIdentity": "8384:1790801906951",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.2886,
+              "totalP95Milliseconds": 14.3417,
+              "trainingMedianMilliseconds": 9.4199,
+              "trainingP95Milliseconds": 11.0538
+            }
+          ]
+        },
+        "REFERENCE_MATRIX": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 7.0549,
+            "median": 7.24105,
+            "p95": 8.1758
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 7.0537,
+            "median": 7.23915,
+            "p95": 8.1733
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.6290662265831612,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.6054647299752043,
+          "perFork": [
+            {
+              "processIdentity": "1404:1790802013318",
+              "rounds": 20,
+              "totalMedianMilliseconds": 7.3043,
+              "totalP95Milliseconds": 8.5693,
+              "trainingMedianMilliseconds": 7.303,
+              "trainingP95Milliseconds": 8.5674
+            },
+            {
+              "processIdentity": "3576:1790801976024",
+              "rounds": 20,
+              "totalMedianMilliseconds": 7.13695,
+              "totalP95Milliseconds": 7.5546,
+              "trainingMedianMilliseconds": 7.1354,
+              "trainingP95Milliseconds": 7.5527
+            },
+            {
+              "processIdentity": "8384:1790801906951",
+              "rounds": 20,
+              "totalMedianMilliseconds": 7.294,
+              "totalP95Milliseconds": 8.1758,
+              "trainingMedianMilliseconds": 7.29125,
+              "trainingP95Milliseconds": 8.1733
+            }
+          ]
+        },
+        "REFERENCE_PARALLEL": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 7.536,
+            "median": 7.83285,
+            "p95": 8.99
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 7.5346,
+            "median": 7.82555,
+            "p95": 8.9875
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.5815380097920936,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.5600948176166531,
+          "perFork": [
+            {
+              "processIdentity": "1404:1790802013318",
+              "rounds": 20,
+              "totalMedianMilliseconds": 7.7491,
+              "totalP95Milliseconds": 8.21,
+              "trainingMedianMilliseconds": 7.74735,
+              "trainingP95Milliseconds": 8.208
+            },
+            {
+              "processIdentity": "3576:1790801976024",
+              "rounds": 20,
+              "totalMedianMilliseconds": 7.71845,
+              "totalP95Milliseconds": 8.3488,
+              "trainingMedianMilliseconds": 7.7169,
+              "trainingP95Milliseconds": 8.347
+            },
+            {
+              "processIdentity": "8384:1790801906951",
+              "rounds": 20,
+              "totalMedianMilliseconds": 7.9085,
+              "totalP95Milliseconds": 9.0485,
+              "trainingMedianMilliseconds": 7.906,
+              "trainingP95Milliseconds": 9.0466
+            }
+          ]
+        },
+        "SMALL_CPU": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 23.1896,
+            "median": 23.55025,
+            "p95": 31.9617
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 22.8705,
+            "median": 23.22525,
+            "p95": 31.575
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.19342045201218672,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.18871917417465905,
+          "perFork": [
+            {
+              "processIdentity": "1404:1790802013318",
+              "rounds": 20,
+              "totalMedianMilliseconds": 23.52545,
+              "totalP95Milliseconds": 30.9398,
+              "trainingMedianMilliseconds": 23.2298,
+              "trainingP95Milliseconds": 30.7515
+            },
+            {
+              "processIdentity": "3576:1790801976024",
+              "rounds": 20,
+              "totalMedianMilliseconds": 23.5352,
+              "totalP95Milliseconds": 32.4263,
+              "trainingMedianMilliseconds": 23.21795,
+              "trainingP95Milliseconds": 31.9401
+            },
+            {
+              "processIdentity": "8384:1790801906951",
+              "rounds": 20,
+              "totalMedianMilliseconds": 23.60875,
+              "totalP95Milliseconds": 26.4649,
+              "trainingMedianMilliseconds": 23.19475,
+              "trainingP95Milliseconds": 25.9408
+            }
+          ]
+        },
+        "SMALL_SEQUENTIAL": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.3035,
+            "median": 4.5551,
+            "p95": 5.671
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.1983,
+            "median": 4.38305,
+            "p95": 5.4941
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0,
+          "perFork": [
+            {
+              "processIdentity": "1404:1790802013318",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.4506,
+              "totalP95Milliseconds": 5.0689,
+              "trainingMedianMilliseconds": 4.26175,
+              "trainingP95Milliseconds": 4.8051
+            },
+            {
+              "processIdentity": "3576:1790801976024",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.449,
+              "totalP95Milliseconds": 5.9528,
+              "trainingMedianMilliseconds": 4.2595,
+              "trainingP95Milliseconds": 5.6759
+            },
+            {
+              "processIdentity": "8384:1790801906951",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.6892,
+              "totalP95Milliseconds": 4.987,
+              "trainingMedianMilliseconds": 4.4702,
+              "trainingP95Milliseconds": 4.7414
+            }
+          ]
+        }
+      },
+      "nativeGate": {
+        "engine": "NATIVE",
+        "passed": false,
+        "medianRatio": 2.6412372944611535,
+        "p95Ratio": 2.5814847469582083,
+        "reasons": [
+          "Native median improvement is below 20%",
+          "Native p95 regressed"
+        ]
+      }
+    },
+    "cohort:2x8x8x8x1:s128:e64:b64:m32:w4:FP64:EXACT": {
+      "bestTestedFp64JvmByTotalMedian": "REFERENCE_PARALLEL",
+      "engines": {
+        "NATIVE": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 94.2092,
+            "median": 95.6024,
+            "p95": 107.7225
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 91.6771,
+            "median": 92.67385,
+            "p95": 104.3558
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.9210919391144993,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.9501704094520731,
+          "perFork": [
+            {
+              "processIdentity": "2828:1790801953293",
+              "rounds": 20,
+              "totalMedianMilliseconds": 96.3561,
+              "totalP95Milliseconds": 103.62,
+              "trainingMedianMilliseconds": 92.954,
+              "trainingP95Milliseconds": 99.7927
+            },
+            {
+              "processIdentity": "8064:1790801990401",
+              "rounds": 20,
+              "totalMedianMilliseconds": 95.86195,
+              "totalP95Milliseconds": 110.1192,
+              "trainingMedianMilliseconds": 92.71415,
+              "trainingP95Milliseconds": 106.5831
+            },
+            {
+              "processIdentity": "8304:1790801914659",
+              "rounds": 20,
+              "totalMedianMilliseconds": 94.9243,
+              "totalP95Milliseconds": 97.852,
+              "trainingMedianMilliseconds": 91.97315,
+              "trainingP95Milliseconds": 94.8118
+            }
+          ]
+        },
+        "REFERENCE_MATRIX": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 221.935,
+            "median": 223.01075,
+            "p95": 232.2657
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 221.9312,
+            "median": 223.0065,
+            "p95": 232.2614
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.3948625794944863,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.3948582216213429,
+          "perFork": [
+            {
+              "processIdentity": "2828:1790801953293",
+              "rounds": 20,
+              "totalMedianMilliseconds": 222.76765,
+              "totalP95Milliseconds": 229.0383,
+              "trainingMedianMilliseconds": 222.76355,
+              "trainingP95Milliseconds": 229.0351
+            },
+            {
+              "processIdentity": "8064:1790801990401",
+              "rounds": 20,
+              "totalMedianMilliseconds": 223.23365,
+              "totalP95Milliseconds": 232.7217,
+              "trainingMedianMilliseconds": 223.22985,
+              "trainingP95Milliseconds": 232.7171
+            },
+            {
+              "processIdentity": "8304:1790801914659",
+              "rounds": 20,
+              "totalMedianMilliseconds": 223.01075,
+              "totalP95Milliseconds": 228.512,
+              "trainingMedianMilliseconds": 223.0065,
+              "trainingP95Milliseconds": 228.507
+            }
+          ]
+        },
+        "REFERENCE_PARALLEL": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            4
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 86.6413,
+            "median": 88.0586,
+            "p95": 100.2996
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 86.6387,
+            "median": 88.05595,
+            "p95": 100.2964
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0,
+          "perFork": [
+            {
+              "processIdentity": "2828:1790801953293",
+              "rounds": 20,
+              "totalMedianMilliseconds": 88.03925,
+              "totalP95Milliseconds": 100.2022,
+              "trainingMedianMilliseconds": 88.0362,
+              "trainingP95Milliseconds": 100.2002
+            },
+            {
+              "processIdentity": "8064:1790801990401",
+              "rounds": 20,
+              "totalMedianMilliseconds": 87.7976,
+              "totalP95Milliseconds": 96.753,
+              "trainingMedianMilliseconds": 87.79455,
+              "trainingP95Milliseconds": 96.7508
+            },
+            {
+              "processIdentity": "8304:1790801914659",
+              "rounds": 20,
+              "totalMedianMilliseconds": 88.38265,
+              "totalP95Milliseconds": 101.4599,
+              "trainingMedianMilliseconds": 88.3799,
+              "trainingP95Milliseconds": 101.4568
+            }
+          ]
+        },
+        "SMALL_CPU": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            4
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 116.2728,
+            "median": 121.8377,
+            "p95": 138.8808
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 115.7433,
+            "median": 121.12575,
+            "p95": 138.3588
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7227533021388289,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.726979605905433,
+          "perFork": [
+            {
+              "processIdentity": "2828:1790801953293",
+              "rounds": 20,
+              "totalMedianMilliseconds": 121.8377,
+              "totalP95Milliseconds": 134.6425,
+              "trainingMedianMilliseconds": 121.12575,
+              "trainingP95Milliseconds": 134.0416
+            },
+            {
+              "processIdentity": "8064:1790801990401",
+              "rounds": 20,
+              "totalMedianMilliseconds": 122.6605,
+              "totalP95Milliseconds": 135.1204,
+              "trainingMedianMilliseconds": 122.07875,
+              "trainingP95Milliseconds": 134.5635
+            },
+            {
+              "processIdentity": "8304:1790801914659",
+              "rounds": 20,
+              "totalMedianMilliseconds": 122.22555,
+              "totalP95Milliseconds": 139.5268,
+              "trainingMedianMilliseconds": 121.60715,
+              "trainingP95Milliseconds": 138.9841
+            }
+          ]
+        },
+        "SMALL_SEQUENTIAL": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 134.1324,
+            "median": 136.7715,
+            "p95": 146.3158
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 133.7864,
+            "median": 136.1782,
+            "p95": 145.9141
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.6438373491553431,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.6466229543348347,
+          "perFork": [
+            {
+              "processIdentity": "2828:1790801953293",
+              "rounds": 20,
+              "totalMedianMilliseconds": 135.4985,
+              "totalP95Milliseconds": 146.258,
+              "trainingMedianMilliseconds": 134.9953,
+              "trainingP95Milliseconds": 145.8312
+            },
+            {
+              "processIdentity": "8064:1790801990401",
+              "rounds": 20,
+              "totalMedianMilliseconds": 137.22695,
+              "totalP95Milliseconds": 151.407,
+              "trainingMedianMilliseconds": 136.8871,
+              "trainingP95Milliseconds": 150.7727
+            },
+            {
+              "processIdentity": "8304:1790801914659",
+              "rounds": 20,
+              "totalMedianMilliseconds": 135.41085,
+              "totalP95Milliseconds": 142.2965,
+              "trainingMedianMilliseconds": 135.04815,
+              "trainingP95Milliseconds": 141.7941
+            }
+          ]
+        }
+      },
+      "nativeGate": {
+        "engine": "NATIVE",
+        "passed": false,
+        "medianRatio": 1.0856679529313435,
+        "p95Ratio": 1.0740072742064775,
+        "reasons": [
+          "Native median improvement is below 20%",
+          "Native p95 regressed"
+        ]
+      }
+    },
+    "cohort:2x8x8x8x1:s128:e64:b64:m4:w4:FP64:EXACT": {
+      "bestTestedFp64JvmByTotalMedian": "REFERENCE_PARALLEL",
+      "engines": {
+        "NATIVE": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 13.2138,
+            "median": 14.43285,
+            "p95": 18.6495
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 11.0224,
+            "median": 11.75355,
+            "p95": 15.0247
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8463816917656596,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0390988254612437,
+          "perFork": [
+            {
+              "processIdentity": "2648:1790802016369",
+              "rounds": 20,
+              "totalMedianMilliseconds": 14.62745,
+              "totalP95Milliseconds": 15.3665,
+              "trainingMedianMilliseconds": 12.01645,
+              "trainingP95Milliseconds": 12.7649
+            },
+            {
+              "processIdentity": "8288:1790801948738",
+              "rounds": 20,
+              "totalMedianMilliseconds": 14.221,
+              "totalP95Milliseconds": 16.7921,
+              "trainingMedianMilliseconds": 11.51825,
+              "trainingP95Milliseconds": 13.8961
+            },
+            {
+              "processIdentity": "8408:1790801910069",
+              "rounds": 20,
+              "totalMedianMilliseconds": 14.2903,
+              "totalP95Milliseconds": 18.6495,
+              "trainingMedianMilliseconds": 11.5766,
+              "trainingP95Milliseconds": 15.0247
+            }
+          ]
+        },
+        "REFERENCE_MATRIX": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 27.8615,
+            "median": 28.07645,
+            "p95": 32.8677
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 27.86,
+            "median": 28.0744,
+            "p95": 32.8648
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.43508705694630195,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.4350262160544838,
+          "perFork": [
+            {
+              "processIdentity": "2648:1790802016369",
+              "rounds": 20,
+              "totalMedianMilliseconds": 28.07785,
+              "totalP95Milliseconds": 31.7177,
+              "trainingMedianMilliseconds": 28.07585,
+              "trainingP95Milliseconds": 31.7155
+            },
+            {
+              "processIdentity": "8288:1790801948738",
+              "rounds": 20,
+              "totalMedianMilliseconds": 28.0118,
+              "totalP95Milliseconds": 29.1071,
+              "trainingMedianMilliseconds": 28.00985,
+              "trainingP95Milliseconds": 29.1045
+            },
+            {
+              "processIdentity": "8408:1790801910069",
+              "rounds": 20,
+              "totalMedianMilliseconds": 28.11765,
+              "totalP95Milliseconds": 36.6594,
+              "trainingMedianMilliseconds": 28.1148,
+              "trainingP95Milliseconds": 36.6561
+            }
+          ]
+        },
+        "REFERENCE_PARALLEL": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            4
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 11.7843,
+            "median": 12.2157,
+            "p95": 20.0348
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 11.7823,
+            "median": 12.2131,
+            "p95": 20.0327
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0,
+          "perFork": [
+            {
+              "processIdentity": "2648:1790802016369",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.22165,
+              "totalP95Milliseconds": 19.2497,
+              "trainingMedianMilliseconds": 12.21955,
+              "trainingP95Milliseconds": 19.2468
+            },
+            {
+              "processIdentity": "8288:1790801948738",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.18485,
+              "totalP95Milliseconds": 18.9353,
+              "trainingMedianMilliseconds": 12.1826,
+              "trainingP95Milliseconds": 18.9322
+            },
+            {
+              "processIdentity": "8408:1790801910069",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.2483,
+              "totalP95Milliseconds": 20.5632,
+              "trainingMedianMilliseconds": 12.2457,
+              "trainingP95Milliseconds": 20.5581
+            }
+          ]
+        },
+        "SMALL_CPU": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 26.4365,
+            "median": 27.0901,
+            "p95": 32.3673
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 26.0214,
+            "median": 26.73985,
+            "p95": 31.6314
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.4509285680008564,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.45673779022694594,
+          "perFork": [
+            {
+              "processIdentity": "2648:1790802016369",
+              "rounds": 20,
+              "totalMedianMilliseconds": 26.9708,
+              "totalP95Milliseconds": 29.5377,
+              "trainingMedianMilliseconds": 26.6331,
+              "trainingP95Milliseconds": 28.9407
+            },
+            {
+              "processIdentity": "8288:1790801948738",
+              "rounds": 20,
+              "totalMedianMilliseconds": 27.26285,
+              "totalP95Milliseconds": 33.144,
+              "trainingMedianMilliseconds": 26.85935,
+              "trainingP95Milliseconds": 32.4503
+            },
+            {
+              "processIdentity": "8408:1790801910069",
+              "rounds": 20,
+              "totalMedianMilliseconds": 27.0394,
+              "totalP95Milliseconds": 31.8113,
+              "trainingMedianMilliseconds": 26.75415,
+              "trainingP95Milliseconds": 31.2293
+            }
+          ]
+        },
+        "SMALL_SEQUENTIAL": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 16.948,
+            "median": 17.36965,
+            "p95": 19.2502
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 16.6464,
+            "median": 16.98725,
+            "p95": 18.7711
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7032784195421324,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7189568647073541,
+          "perFork": [
+            {
+              "processIdentity": "2648:1790802016369",
+              "rounds": 20,
+              "totalMedianMilliseconds": 17.33445,
+              "totalP95Milliseconds": 18.9418,
+              "trainingMedianMilliseconds": 17.0203,
+              "trainingP95Milliseconds": 18.4484
+            },
+            {
+              "processIdentity": "8288:1790801948738",
+              "rounds": 20,
+              "totalMedianMilliseconds": 17.30775,
+              "totalP95Milliseconds": 21.89,
+              "trainingMedianMilliseconds": 16.98725,
+              "trainingP95Milliseconds": 21.3078
+            },
+            {
+              "processIdentity": "8408:1790801910069",
+              "rounds": 20,
+              "totalMedianMilliseconds": 17.4026,
+              "totalP95Milliseconds": 19.1095,
+              "trainingMedianMilliseconds": 16.9824,
+              "trainingP95Milliseconds": 18.6616
+            }
+          ]
+        }
+      },
+      "nativeGate": {
+        "engine": "NATIVE",
+        "passed": false,
+        "medianRatio": 1.1815000368378399,
+        "p95Ratio": 0.9308553117575419,
+        "reasons": [
+          "Native median improvement is below 20%"
+        ]
+      }
+    },
+    "json:2x8x8x8x1:s128:e5:b16:MINIBATCH:EXACT:retained=true": {
+      "bestTestedFp64JvmByTotalMedian": "CPU_LEGACY",
+      "engines": {
+        "CPU": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.7147,
+            "median": 0.7552,
+            "p95": 1.1988
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6923,
+            "median": 0.7317,
+            "p95": 1.1076
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.745365466101695,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7469591362580292,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.7628,
+              "totalP95Milliseconds": 1.1221,
+              "trainingMedianMilliseconds": 0.7387,
+              "trainingP95Milliseconds": 1.0966
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.75205,
+              "totalP95Milliseconds": 1.2124,
+              "trainingMedianMilliseconds": 0.7304,
+              "trainingP95Milliseconds": 1.1043
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.74975,
+              "totalP95Milliseconds": 1.1988,
+              "trainingMedianMilliseconds": 0.72535,
+              "trainingP95Milliseconds": 1.1622
+            }
+          ]
+        },
+        "CPU_LEGACY": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.5244,
+            "median": 0.5629,
+            "p95": 0.9475
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.5121,
+            "median": 0.54655,
+            "p95": 0.9147
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.56395,
+              "totalP95Milliseconds": 0.9614,
+              "trainingMedianMilliseconds": 0.5481,
+              "trainingP95Milliseconds": 0.9186
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.5591,
+              "totalP95Milliseconds": 0.9395,
+              "trainingMedianMilliseconds": 0.5429,
+              "trainingP95Milliseconds": 0.895
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.5685,
+              "totalP95Milliseconds": 0.9428,
+              "trainingMedianMilliseconds": 0.54665,
+              "trainingP95Milliseconds": 0.925
+            }
+          ]
+        },
+        "NATIVE_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 2.346,
+            "median": 2.7951,
+            "p95": 4.3052
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 1.0666,
+            "median": 1.1468,
+            "p95": 1.8095
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.20138814353690387,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.4765870247645623,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 2.9067,
+              "totalP95Milliseconds": 4.2066,
+              "trainingMedianMilliseconds": 1.2056,
+              "trainingP95Milliseconds": 1.8114
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 2.8611,
+              "totalP95Milliseconds": 4.088,
+              "trainingMedianMilliseconds": 1.1424,
+              "trainingP95Milliseconds": 1.8095
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 2.6474,
+              "totalP95Milliseconds": 4.3146,
+              "trainingMedianMilliseconds": 1.1119,
+              "trainingP95Milliseconds": 1.7953
+            }
+          ]
+        },
+        "SMALL_128_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6207,
+            "median": 0.65155,
+            "p95": 1.0889
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6082,
+            "median": 0.63705,
+            "p95": 1.0454
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8639398357762259,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8579389372890668,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6495,
+              "totalP95Milliseconds": 1.1152,
+              "trainingMedianMilliseconds": 0.63545,
+              "trainingP95Milliseconds": 1.0621
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.651,
+              "totalP95Milliseconds": 0.6748,
+              "trainingMedianMilliseconds": 0.63615,
+              "trainingP95Milliseconds": 0.6622
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6548,
+              "totalP95Milliseconds": 1.1124,
+              "trainingMedianMilliseconds": 0.64035,
+              "trainingP95Milliseconds": 1.0925
+            }
+          ]
+        },
+        "SMALL_128_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6337,
+            "median": 0.66805,
+            "p95": 1.1164
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6212,
+            "median": 0.6555,
+            "p95": 1.0833
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8426016016765212,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8337909992372234,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6652,
+              "totalP95Milliseconds": 1.1164,
+              "trainingMedianMilliseconds": 0.6523,
+              "trainingP95Milliseconds": 1.0906
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6677,
+              "totalP95Milliseconds": 1.0041,
+              "trainingMedianMilliseconds": 0.6555,
+              "trainingP95Milliseconds": 0.9858
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6696,
+              "totalP95Milliseconds": 1.1209,
+              "trainingMedianMilliseconds": 0.6566,
+              "trainingP95Milliseconds": 1.0876
+            }
+          ]
+        },
+        "SMALL_256_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6145,
+            "median": 0.6428,
+            "p95": 1.0385
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.5932,
+            "median": 0.6212,
+            "p95": 1.0067
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8757000622277535,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8798293625241468,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.64765,
+              "totalP95Milliseconds": 1.0417,
+              "trainingMedianMilliseconds": 0.6257,
+              "trainingP95Milliseconds": 1.0086
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.642,
+              "totalP95Milliseconds": 0.679,
+              "trainingMedianMilliseconds": 0.6212,
+              "trainingP95Milliseconds": 0.6567
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.63925,
+              "totalP95Milliseconds": 1.0381,
+              "trainingMedianMilliseconds": 0.619,
+              "trainingP95Milliseconds": 0.9991
+            }
+          ]
+        },
+        "SMALL_256_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6103,
+            "median": 0.6443,
+            "p95": 1.062
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.5984,
+            "median": 0.6314,
+            "p95": 1.036
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8736613378860779,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8656160912258474,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6447,
+              "totalP95Milliseconds": 1.062,
+              "trainingMedianMilliseconds": 0.63095,
+              "trainingP95Milliseconds": 1.036
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6455,
+              "totalP95Milliseconds": 0.9568,
+              "trainingMedianMilliseconds": 0.63325,
+              "trainingP95Milliseconds": 0.93
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6408,
+              "totalP95Milliseconds": 1.0812,
+              "trainingMedianMilliseconds": 0.6275,
+              "trainingP95Milliseconds": 1.0563
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.7092,
+            "median": 0.749,
+            "p95": 1.2642
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6955,
+            "median": 0.73495,
+            "p95": 1.2412
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7515353805073431,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7436560310225185,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.75765,
+              "totalP95Milliseconds": 1.3042,
+              "trainingMedianMilliseconds": 0.74275,
+              "trainingP95Milliseconds": 1.2716
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.7387,
+              "totalP95Milliseconds": 0.7822,
+              "trainingMedianMilliseconds": 0.7232,
+              "trainingP95Milliseconds": 0.7681
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.75085,
+              "totalP95Milliseconds": 1.3298,
+              "trainingMedianMilliseconds": 0.737,
+              "trainingP95Milliseconds": 1.3078
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.7085,
+            "median": 0.7428,
+            "p95": 1.2264
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6953,
+            "median": 0.72655,
+            "p95": 1.1933
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7578082929456113,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7522538022159521,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.74275,
+              "totalP95Milliseconds": 1.2286,
+              "trainingMedianMilliseconds": 0.72655,
+              "trainingP95Milliseconds": 1.1971
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.7429,
+              "totalP95Milliseconds": 1.2145,
+              "trainingMedianMilliseconds": 0.72685,
+              "trainingP95Milliseconds": 1.1894
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.74175,
+              "totalP95Milliseconds": 1.2264,
+              "trainingMedianMilliseconds": 0.72565,
+              "trainingP95Milliseconds": 1.1868
+            }
+          ]
+        }
+      },
+      "nativeGate": {
+        "engine": "NATIVE_FP64",
+        "passed": false,
+        "medianRatio": 4.965535619115296,
+        "p95Ratio": 4.543746701846966,
+        "reasons": [
+          "Native median improvement is below 20%",
+          "Native p95 regressed"
+        ]
+      }
+    },
+    "json:2x8x8x8x1:s128:e5:b64:MINIBATCH:EXACT:retained=true": {
+      "bestTestedFp64JvmByTotalMedian": "CPU_LEGACY",
+      "engines": {
+        "CPU": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6083,
+            "median": 0.6509,
+            "p95": 0.9843
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6012,
+            "median": 0.64105,
+            "p95": 0.9718
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8277769242587187,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.830278449418922,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6463,
+              "totalP95Milliseconds": 0.9843,
+              "trainingMedianMilliseconds": 0.63625,
+              "trainingP95Milliseconds": 0.9718
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.64965,
+              "totalP95Milliseconds": 0.8024,
+              "trainingMedianMilliseconds": 0.6404,
+              "trainingP95Milliseconds": 0.7923
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.65625,
+              "totalP95Milliseconds": 1.0192,
+              "trainingMedianMilliseconds": 0.64535,
+              "trainingP95Milliseconds": 0.9971
+            }
+          ]
+        },
+        "CPU_LEGACY": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.5053,
+            "median": 0.5388,
+            "p95": 0.8898
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.5002,
+            "median": 0.53225,
+            "p95": 0.8793
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.5449,
+              "totalP95Milliseconds": 0.9067,
+              "trainingMedianMilliseconds": 0.5384,
+              "trainingP95Milliseconds": 0.899
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.5356,
+              "totalP95Milliseconds": 0.6192,
+              "trainingMedianMilliseconds": 0.5303,
+              "trainingP95Milliseconds": 0.6137
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.54195,
+              "totalP95Milliseconds": 0.8964,
+              "trainingMedianMilliseconds": 0.5345,
+              "trainingP95Milliseconds": 0.883
+            }
+          ]
+        },
+        "NATIVE_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 2.0943,
+            "median": 2.43255,
+            "p95": 3.6031
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 1.0343,
+            "median": 1.05895,
+            "p95": 1.6964
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.2214959610285503,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.5026205203267388,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 2.35375,
+              "totalP95Milliseconds": 3.6045,
+              "trainingMedianMilliseconds": 1.0582,
+              "trainingP95Milliseconds": 1.7615
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 2.4254,
+              "totalP95Milliseconds": 3.083,
+              "trainingMedianMilliseconds": 1.06645,
+              "trainingP95Milliseconds": 1.5059
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 2.4663,
+              "totalP95Milliseconds": 3.6617,
+              "trainingMedianMilliseconds": 1.0578,
+              "trainingP95Milliseconds": 1.6964
+            }
+          ]
+        },
+        "SMALL_128_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6087,
+            "median": 0.6345,
+            "p95": 0.6664
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.597,
+            "median": 0.62275,
+            "p95": 0.6528
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8491725768321513,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8546768366118025,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.63425,
+              "totalP95Milliseconds": 1.0916,
+              "trainingMedianMilliseconds": 0.62235,
+              "trainingP95Milliseconds": 1.074
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6371,
+              "totalP95Milliseconds": 0.6504,
+              "trainingMedianMilliseconds": 0.624,
+              "trainingP95Milliseconds": 0.6372
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6339,
+              "totalP95Milliseconds": 1.0845,
+              "trainingMedianMilliseconds": 0.62175,
+              "trainingP95Milliseconds": 1.0662
+            }
+          ]
+        },
+        "SMALL_128_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6219,
+            "median": 0.6501,
+            "p95": 0.6905
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6092,
+            "median": 0.63795,
+            "p95": 0.6795
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8287955699123212,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8343130339368289,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.65235,
+              "totalP95Milliseconds": 1.1413,
+              "trainingMedianMilliseconds": 0.6393,
+              "trainingP95Milliseconds": 1.1238
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6444,
+              "totalP95Milliseconds": 0.6721,
+              "trainingMedianMilliseconds": 0.6335,
+              "trainingP95Milliseconds": 0.6587
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.65165,
+              "totalP95Milliseconds": 0.6905,
+              "trainingMedianMilliseconds": 0.63925,
+              "trainingP95Milliseconds": 0.6795
+            }
+          ]
+        },
+        "SMALL_256_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.599,
+            "median": 0.62745,
+            "p95": 0.9326
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.5815,
+            "median": 0.6095,
+            "p95": 0.9134
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.8587138417403777,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8732567678424938,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6275,
+              "totalP95Milliseconds": 0.7131,
+              "trainingMedianMilliseconds": 0.60925,
+              "trainingP95Milliseconds": 0.6895
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.62715,
+              "totalP95Milliseconds": 0.6949,
+              "trainingMedianMilliseconds": 0.6094,
+              "trainingP95Milliseconds": 0.6175
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6287,
+              "totalP95Milliseconds": 1.0498,
+              "trainingMedianMilliseconds": 0.6102,
+              "trainingP95Milliseconds": 1.0263
+            }
+          ]
+        },
+        "SMALL_256_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.5972,
+            "median": 0.625,
+            "p95": 0.6454
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.5866,
+            "median": 0.6137,
+            "p95": 0.6313
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.86208,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.8672804301776113,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.6222,
+              "totalP95Milliseconds": 0.6529,
+              "trainingMedianMilliseconds": 0.6116,
+              "trainingP95Milliseconds": 0.6285
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.62635,
+              "totalP95Milliseconds": 0.644,
+              "trainingMedianMilliseconds": 0.61515,
+              "trainingP95Milliseconds": 0.6313
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.62575,
+              "totalP95Milliseconds": 0.6454,
+              "trainingMedianMilliseconds": 0.61375,
+              "trainingP95Milliseconds": 0.6333
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.698,
+            "median": 0.7316,
+            "p95": 0.7561
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6855,
+            "median": 0.71885,
+            "p95": 0.7327
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7364680153089119,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7404187243513946,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.7352,
+              "totalP95Milliseconds": 0.7458,
+              "trainingMedianMilliseconds": 0.72275,
+              "trainingP95Milliseconds": 0.7327
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.72565,
+              "totalP95Milliseconds": 0.7561,
+              "trainingMedianMilliseconds": 0.7128,
+              "trainingP95Milliseconds": 0.732
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.73325,
+              "totalP95Milliseconds": 0.7565,
+              "trainingMedianMilliseconds": 0.7196,
+              "trainingP95Milliseconds": 0.7418
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 90,
+            "minimum": 0.6958,
+            "median": 0.7277,
+            "p95": 0.8642
+          },
+          "trainingMilliseconds": {
+            "count": 90,
+            "minimum": 0.6821,
+            "median": 0.71155,
+            "p95": 0.8395
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.740415006183867,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7480148970557234,
+          "perFork": [
+            {
+              "processIdentity": "10108:1790801944366",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.72635,
+              "totalP95Milliseconds": 1.2654,
+              "trainingMedianMilliseconds": 0.71225,
+              "trainingP95Milliseconds": 1.2431
+            },
+            {
+              "processIdentity": "8824:1790801978984",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.7278,
+              "totalP95Milliseconds": 0.7623,
+              "trainingMedianMilliseconds": 0.7116,
+              "trainingP95Milliseconds": 0.7338
+            },
+            {
+              "processIdentity": "9268:1790801895413",
+              "rounds": 30,
+              "totalMedianMilliseconds": 0.72755,
+              "totalP95Milliseconds": 0.9449,
+              "trainingMedianMilliseconds": 0.7095,
+              "trainingP95Milliseconds": 0.9209
+            }
+          ]
+        }
+      },
+      "nativeGate": {
+        "engine": "NATIVE_FP64",
+        "passed": false,
+        "medianRatio": 4.514755011135858,
+        "p95Ratio": 4.049336929647112,
+        "reasons": [
+          "Native median improvement is below 20%",
+          "Native p95 regressed"
+        ]
+      }
+    },
+    "json:2x8x8x8x1:s128:e64:b16:CHUNK:EXACT:retained=true": {
+      "bestTestedFp64JvmByTotalMedian": "SMALL_256_FP64",
+      "engines": {
+        "CPU": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 10.6579,
+            "median": 10.78255,
+            "p95": 11.3411
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 10.6186,
+            "median": 10.7389,
+            "p95": 11.306
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.433306592596371,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.4296855357625083,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 10.76665,
+              "totalP95Milliseconds": 11.1663,
+              "trainingMedianMilliseconds": 10.7258,
+              "trainingP95Milliseconds": 11.1277
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 10.764,
+              "totalP95Milliseconds": 11.3411,
+              "trainingMedianMilliseconds": 10.72345,
+              "trainingP95Milliseconds": 11.306
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 10.8357,
+              "totalP95Milliseconds": 11.1937,
+              "trainingMedianMilliseconds": 10.7982,
+              "trainingP95Milliseconds": 11.1603
+            }
+          ]
+        },
+        "NATIVE_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 11.3348,
+            "median": 12.18945,
+            "p95": 15.3939
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 9.2126,
+            "median": 9.64175,
+            "p95": 12.8973
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.3832945703046487,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.47858013327456117,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.1625,
+              "totalP95Milliseconds": 14.8748,
+              "trainingMedianMilliseconds": 9.6383,
+              "trainingP95Milliseconds": 12.4437
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.26915,
+              "totalP95Milliseconds": 18.6949,
+              "trainingMedianMilliseconds": 9.7608,
+              "trainingP95Milliseconds": 15.7344
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 12.1085,
+              "totalP95Milliseconds": 15.1205,
+              "trainingMedianMilliseconds": 9.61135,
+              "trainingP95Milliseconds": 12.5151
+            }
+          ]
+        },
+        "SMALL_128_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.5843,
+            "median": 4.73505,
+            "p95": 5.3482
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.5345,
+            "median": 4.67645,
+            "p95": 5.2879
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.9867160853634069,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.9867206962546377,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.6767,
+              "totalP95Milliseconds": 6.6604,
+              "trainingMedianMilliseconds": 4.59735,
+              "trainingP95Milliseconds": 6.5199
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.70805,
+              "totalP95Milliseconds": 4.8036,
+              "trainingMedianMilliseconds": 4.6216,
+              "trainingP95Milliseconds": 4.7274
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.1759,
+              "totalP95Milliseconds": 5.3482,
+              "trainingMedianMilliseconds": 5.1005,
+              "trainingP95Milliseconds": 5.2879
+            }
+          ]
+        },
+        "SMALL_128_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.8831,
+            "median": 5.0494,
+            "p95": 7.3081
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.8324,
+            "median": 4.98505,
+            "p95": 7.148
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.9252881530478869,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.9256376565932137,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.10935,
+              "totalP95Milliseconds": 5.6011,
+              "trainingMedianMilliseconds": 5.0209,
+              "trainingP95Milliseconds": 5.5287
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.00185,
+              "totalP95Milliseconds": 5.2094,
+              "trainingMedianMilliseconds": 4.9059,
+              "trainingP95Milliseconds": 5.1063
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.0528,
+              "totalP95Milliseconds": 7.9585,
+              "trainingMedianMilliseconds": 4.9608,
+              "trainingP95Milliseconds": 7.8203
+            }
+          ]
+        },
+        "SMALL_256_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.4082,
+            "median": 4.74775,
+            "p95": 6.2573
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.3681,
+            "median": 4.6839,
+            "p95": 6.1267
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.9840766678953189,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.9851512628365251,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.59995,
+              "totalP95Milliseconds": 6.241,
+              "trainingMedianMilliseconds": 4.5047,
+              "trainingP95Milliseconds": 6.038
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.4816,
+              "totalP95Milliseconds": 7.2787,
+              "trainingMedianMilliseconds": 4.3913,
+              "trainingP95Milliseconds": 7.2159
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.92605,
+              "totalP95Milliseconds": 5.9957,
+              "trainingMedianMilliseconds": 4.8425,
+              "trainingP95Milliseconds": 5.8798
+            }
+          ]
+        },
+        "SMALL_256_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.4698,
+            "median": 4.67215,
+            "p95": 5.1317
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.4342,
+            "median": 4.61435,
+            "p95": 5.0906
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.6108,
+              "totalP95Milliseconds": 4.9529,
+              "trainingMedianMilliseconds": 4.5261,
+              "trainingP95Milliseconds": 4.9078
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.64155,
+              "totalP95Milliseconds": 5.0715,
+              "trainingMedianMilliseconds": 4.5848,
+              "trainingP95Milliseconds": 5.038
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.71085,
+              "totalP95Milliseconds": 6.7888,
+              "trainingMedianMilliseconds": 4.6481,
+              "trainingP95Milliseconds": 6.6429
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 5.8906,
+            "median": 6.03165,
+            "p95": 10.0527
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 5.83,
+            "median": 5.95535,
+            "p95": 9.977
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7746056220105609,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.774824317630366,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.9607,
+              "totalP95Milliseconds": 10.3627,
+              "trainingMedianMilliseconds": 5.9042,
+              "trainingP95Milliseconds": 10.2387
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.9391,
+              "totalP95Milliseconds": 6.0728,
+              "trainingMedianMilliseconds": 5.8678,
+              "trainingP95Milliseconds": 5.9763
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 6.7883,
+              "totalP95Milliseconds": 7.0667,
+              "trainingMedianMilliseconds": 6.7335,
+              "trainingP95Milliseconds": 7.0232
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 5.8438,
+            "median": 5.96745,
+            "p95": 6.4014
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 5.8025,
+            "median": 5.898,
+            "p95": 6.3148
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7829391113457171,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7823584265852831,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 6.0236,
+              "totalP95Milliseconds": 6.1634,
+              "trainingMedianMilliseconds": 5.93975,
+              "trainingP95Milliseconds": 6.0428
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.9183,
+              "totalP95Milliseconds": 6.1321,
+              "trainingMedianMilliseconds": 5.8383,
+              "trainingP95Milliseconds": 5.9882
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.91335,
+              "totalP95Milliseconds": 7.8214,
+              "trainingMedianMilliseconds": 5.8465,
+              "trainingP95Milliseconds": 7.6815
+            }
+          ]
+        }
+      },
+      "nativeGate": {
+        "engine": "NATIVE_FP64",
+        "passed": false,
+        "medianRatio": 2.608959472619672,
+        "p95Ratio": 2.9997661593623945,
+        "reasons": [
+          "Native median improvement is below 20%",
+          "Native p95 regressed"
+        ]
+      }
+    },
+    "json:2x8x8x8x1:s128:e64:b64:CHUNK:EXACT:retained=true": {
+      "bestTestedFp64JvmByTotalMedian": "SMALL_256_FP64",
+      "engines": {
+        "CPU": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 10.4781,
+            "median": 10.62175,
+            "p95": 11.1668
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 10.4445,
+            "median": 10.58435,
+            "p95": 11.1282
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.4214936333466707,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.4210461672185822,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 10.5808,
+              "totalP95Milliseconds": 10.7223,
+              "trainingMedianMilliseconds": 10.5424,
+              "trainingP95Milliseconds": 10.6859
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 10.6421,
+              "totalP95Milliseconds": 11.1668,
+              "trainingMedianMilliseconds": 10.6088,
+              "trainingP95Milliseconds": 11.1282
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 10.6247,
+              "totalP95Milliseconds": 11.16,
+              "trainingMedianMilliseconds": 10.5879,
+              "trainingP95Milliseconds": 11.123
+            }
+          ]
+        },
+        "NATIVE_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 10.5282,
+            "median": 11.2233,
+            "p95": 13.1144
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 8.9907,
+            "median": 9.14195,
+            "p95": 10.5563
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.39890228364206604,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.4874780544632163,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 11.06035,
+              "totalP95Milliseconds": 11.9814,
+              "trainingMedianMilliseconds": 9.1669,
+              "trainingP95Milliseconds": 9.4209
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 11.163,
+              "totalP95Milliseconds": 13.1144,
+              "trainingMedianMilliseconds": 9.1509,
+              "trainingP95Milliseconds": 10.4658
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 11.30575,
+              "totalP95Milliseconds": 16.0653,
+              "trainingMedianMilliseconds": 9.13385,
+              "trainingP95Milliseconds": 14.2974
+            }
+          ]
+        },
+        "SMALL_128_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.4208,
+            "median": 4.5671,
+            "p95": 5.1058
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.4072,
+            "median": 4.55175,
+            "p95": 5.0419
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.9802719449979199,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.9790739825341902,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.48195,
+              "totalP95Milliseconds": 4.6787,
+              "trainingMedianMilliseconds": 4.4672,
+              "trainingP95Milliseconds": 4.6285
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.52575,
+              "totalP95Milliseconds": 4.7243,
+              "trainingMedianMilliseconds": 4.4983,
+              "trainingP95Milliseconds": 4.7087
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.97215,
+              "totalP95Milliseconds": 5.188,
+              "trainingMedianMilliseconds": 4.9485,
+              "trainingP95Milliseconds": 5.1724
+            }
+          ]
+        },
+        "SMALL_128_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.7084,
+            "median": 4.84945,
+            "p95": 5.0409
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.6934,
+            "median": 4.8342,
+            "p95": 5.0245
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.9231974760024333,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.9218691820776964,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.9152,
+              "totalP95Milliseconds": 5.0409,
+              "trainingMedianMilliseconds": 4.8815,
+              "trainingP95Milliseconds": 5.0245
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.8001,
+              "totalP95Milliseconds": 4.9312,
+              "trainingMedianMilliseconds": 4.77555,
+              "trainingP95Milliseconds": 4.9159
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.8381,
+              "totalP95Milliseconds": 5.0989,
+              "trainingMedianMilliseconds": 4.8224,
+              "trainingP95Milliseconds": 5.0782
+            }
+          ]
+        },
+        "SMALL_256_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.2655,
+            "median": 4.35365,
+            "p95": 4.8848
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.2404,
+            "median": 4.32475,
+            "p95": 4.8591
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0283325485512156,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0304641886814268,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.3296,
+              "totalP95Milliseconds": 4.5551,
+              "trainingMedianMilliseconds": 4.28875,
+              "trainingP95Milliseconds": 4.5321
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.30355,
+              "totalP95Milliseconds": 4.9406,
+              "trainingMedianMilliseconds": 4.2725,
+              "trainingP95Milliseconds": 4.913
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.72845,
+              "totalP95Milliseconds": 4.8848,
+              "trainingMedianMilliseconds": 4.6924,
+              "trainingP95Milliseconds": 4.8591
+            }
+          ]
+        },
+        "SMALL_256_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 4.3406,
+            "median": 4.477,
+            "p95": 4.6541
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 4.327,
+            "median": 4.4565,
+            "p95": 4.6406
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 1.0,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 1.0,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.39985,
+              "totalP95Milliseconds": 4.5495,
+              "trainingMedianMilliseconds": 4.38645,
+              "trainingP95Milliseconds": 4.5348
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.4483,
+              "totalP95Milliseconds": 4.6405,
+              "trainingMedianMilliseconds": 4.42905,
+              "trainingP95Milliseconds": 4.6203
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 4.5162,
+              "totalP95Milliseconds": 4.6561,
+              "trainingMedianMilliseconds": 4.4967,
+              "trainingP95Milliseconds": 4.643
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP32": {
+          "precision": [
+            "FP32"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 5.7054,
+            "median": 5.77325,
+            "p95": 6.7323
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 5.6883,
+            "median": 5.75215,
+            "p95": 6.6186
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7754730870826657,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.774753787714159,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.76055,
+              "totalP95Milliseconds": 5.8948,
+              "trainingMedianMilliseconds": 5.7415,
+              "trainingP95Milliseconds": 5.8798
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.74555,
+              "totalP95Milliseconds": 5.7891,
+              "trainingMedianMilliseconds": 5.7265,
+              "trainingP95Milliseconds": 5.759
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 6.5719,
+              "totalP95Milliseconds": 6.8863,
+              "trainingMedianMilliseconds": 6.54895,
+              "trainingP95Milliseconds": 6.8576
+            }
+          ]
+        },
+        "SMALL_SCALAR_FP64": {
+          "precision": [
+            "FP64"
+          ],
+          "actualCpuWorkers": [
+            1
+          ],
+          "verifiedForks": 3,
+          "totalMilliseconds": {
+            "count": 60,
+            "minimum": 5.6715,
+            "median": 5.741,
+            "p95": 5.914
+          },
+          "trainingMilliseconds": {
+            "count": 60,
+            "minimum": 5.6525,
+            "median": 5.71785,
+            "p95": 5.8932
+          },
+          "totalMedianSpeedupVersusBestFp64Jvm": 0.7798292980317018,
+          "trainingMedianSpeedupVersusSameFp64Jvm": 0.7794013484089299,
+          "perFork": [
+            {
+              "processIdentity": "1776:1790801937449",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.7815,
+              "totalP95Milliseconds": 5.9776,
+              "trainingMedianMilliseconds": 5.75635,
+              "trainingP95Milliseconds": 5.9538
+            },
+            {
+              "processIdentity": "5384:1790801983470",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.7232,
+              "totalP95Milliseconds": 5.8526,
+              "trainingMedianMilliseconds": 5.70315,
+              "trainingP95Milliseconds": 5.8323
+            },
+            {
+              "processIdentity": "6120:1790801899977",
+              "rounds": 20,
+              "totalMedianMilliseconds": 5.6957,
+              "totalP95Milliseconds": 5.914,
+              "trainingMedianMilliseconds": 5.67015,
+              "trainingP95Milliseconds": 5.8932
+            }
+          ]
+        }
+      },
+      "nativeGate": {
+        "engine": "NATIVE_FP64",
+        "passed": false,
+        "medianRatio": 2.506879606879607,
+        "p95Ratio": 2.8178165488494016,
+        "reasons": [
+          "Native median improvement is below 20%",
+          "Native p95 regressed"
+        ]
+      }
+    }
+  },
+  "validation": {
+    "jsonMeasuredRounds": 2580,
+    "cohortMeasuredRounds": 900,
+    "maxScaledErrorByPrecision": {
+      "FP64": 6.820605868537766e-08,
+      "FP32": 0.0018180134806364482
+    },
+    "jsonToleranceByPrecision": {
+      "FP64": {
+        "absolute": 1e-10,
+        "relative": 1e-08
+      },
+      "FP32": {
+        "absolute": 5e-05,
+        "relative": 0.002
+      }
+    }
+  },
+  "nativeGatePassed": false,
+  "nativeGatePolicy": {
+    "minimumVerifiedForks": 3,
+    "nativeMedianRatioMaximum": 0.8,
+    "nativeP95RatioMaximum": 1.0,
+    "p95": "nearest rank of all raw measured rounds",
+    "forkIdentity": "distinct processId:jvmStartMillis, at least three separate files",
+    "qualityTimes": "conditional on convergence; failures remain in the seed-run denominator"
+  },
+  "qualityEvidenceComplete": false,
+  "aggregationValidation": {
+    "allRawRoundMediansAndP95Recomputed": true,
+    "bestFp64BaselinesRecomputed": true,
+    "rawRoundsChecked": 3480,
+    "issues": []
+  },
+  "confounds": [
+    "CI-only dataset from revision 7965204e0ca7fda5aaa232fe4dbaae4c229a4f82; no local measurements or follow-up CI rerun are pooled.",
+    "Hosted virtual machine exposes 2 cores/4 logical processors; EPYC 7763 is host branding, not 64 allocated cores. No sustained frequency, thermal, scheduler or hypervisor isolation evidence.",
+    "Host snapshots show 4% and 5% guest CPU load before/after; listed process CPU values are cumulative seconds, not overlapping utilization during measurement.",
+    "JMH p95 is nearest rank over only 15 iteration averages, therefore their maximum, not a percentile of individual epoch latencies. JMH errors are 99.9% confidence half-widths, not standard deviations.",
+    "JMH scores exclude invocation setup and teardown; every invocation uses fresh model/session. Setup can still create GC pressure. The ten-epoch invocation is normalized with OperationsPerInvocation(10). Public training includes RMSE, and scalar/vector reference configurations can change that inference cost.",
+    "CLI mini/chunk and cohort totals include session open/train/close while preparation and numerical validation are excluded. CLI and JMH differ in hyperparameters, measurement scope and lifecycle; their numbers are not directly comparable.",
+    "CLI backend order rotates by repetition, but the JMH engine/fork execution remains ordered. Fixed dataset/model seeds test repeatability, not distributional robustness.",
+    "Chunk omits CPU_LEGACY; its baseline is best among the tested FP64 JVM engines. Native gates exclude FP32 engines and choose the lowest total median separately for each scope.",
+    "Cohort native uses one CPU worker; REFERENCE_PARALLEL uses four for 4/32 models, SMALL_CPU uses one worker for 1/4 models and four for 32. These compare deployed strategies, not equal-thread kernel efficiency.",
+    "All CI scopes use topology 2,8,8,8,1, 128 samples, EXACT sigmoid. No GPU, FAST sigmoid, other shapes, or 32-seed convergence/quality results are included.",
+    "The first CI wrapper returned exit 1 after complete valid measurements because the expected native retention-gate failure propagated through PowerShell. This is not a green workflow result; the wrapper fix and follow-up run are separate provenance."
+  ],
+  "inputSha256": {
+    "host-before.json": "ad76c9b431aedff910876f25df93470ac3eed730f183f1931061b8ba36895ff5",
+    "host-after.json": "9a09a02ac96ad894ec9bcc124c5bced05da92405933eb0f1de0a48f3114f02ae",
+    "jvm-vector-flags.txt": "cd60730d074cdc94fbb39c13e6723459b173b16d52e9e234314c0c5913f856bf",
+    "jmh-public-epochs.json": "739753c1d8819be772a3eccbbd596529cd10ce45c88d4e69c0789bc2dd082285",
+    "summary.json": "938f03881e27e6620a5abd5f9d2b4cd68ce5913a144bc12903b90b81408596ea",
+    "chunk-fork1.json": "64b12828f4ed04e7bb508e1aa9e7c623df79171f88aaf650e98596bcedb4a165",
+    "chunk-fork2.json": "fed51ad26cf1f5ad012ddd5fe00687bcd125bcf69e938360de53eaed8eed102d",
+    "chunk-fork3.json": "53ad12a7eea9c283a4a10c9e4b834efbbd15af60ea88506a325ec20662162561",
+    "minibatch-fork1.json": "c07ebb039a0d4c938df1b9487f12b203df1034663c0de87c46d4909aaf53a736",
+    "minibatch-fork2.json": "cd835c3b20a2e62f1e814032f31e09e0618922d7e964f1d25fab6b8a274948e4",
+    "minibatch-fork3.json": "8058e7b020853ae5180c021f1f8ed1d3f8a005e5d97fa5defe3648ef46bf3f61",
+    "cohort-1-fork1.csv": "91170ffd35286f5661f84ccaa31062ddff58da25394cd7458b4babf363014074",
+    "cohort-1-fork2.csv": "3eb855eab4091de954dc6fcb50d6425d2d62deb1d2a3641621cdc240e1c6030b",
+    "cohort-1-fork3.csv": "95811aff255ba19bd850bb6ad93cb4bede58eaf02384cf502ca7e02d074ebb93",
+    "cohort-32-fork1.csv": "14e4be41e8c1b92d5b27968b315e97d93a2869a494189885a0bcae3e609a5fca",
+    "cohort-32-fork2.csv": "57caea1d9047ab634a47a66e959487b3fb1cc6c808cdf3c7752d084401c2f7bd",
+    "cohort-32-fork3.csv": "9f66eb07ae9fd06f757276f2c2e947ddf59e3646c35e6a32989474d589b3e6b2",
+    "cohort-4-fork1.csv": "7d03c1ac3c317ea2ffff849edbcc243de27aa102fd45feeb4ba445dc10a23b53",
+    "cohort-4-fork2.csv": "3ff7b7659b0c3e26f22f13df39822b5a1e61754ec441ed3ea66a4c2feb12edf2",
+    "cohort-4-fork3.csv": "e8e7fd70f0b4d6f22d5d80db50b078e898ddf26243fdd239255640d9dba762a1",
+    "cohort-1-fork1.csv.environment.txt": "b3cc5d1d3d7f8c405b96c33b60c7e4b09b234a88bd4d0064390e2e420ebb7300",
+    "cohort-1-fork2.csv.environment.txt": "9b6b8299a229481d90e180349fe4b546551cd553e54e738da32561afb6f6a7bf",
+    "cohort-1-fork3.csv.environment.txt": "9d07d6b35ec6812155214ae9e4af8542d71ad93a79d6e185f8b437f36a90bf9e",
+    "cohort-32-fork1.csv.environment.txt": "cbed14764f8a168d450cc6988daf22f705a0399c83a045e77f8635aaf3476f98",
+    "cohort-32-fork2.csv.environment.txt": "e6a39c918eed3c02ed2dce83a96c073cf4557d19f2358da86dc30a6bf26a846e",
+    "cohort-32-fork3.csv.environment.txt": "4a25cf6d889082e130f53f79b4658ff82d0fe84de576fb10babc09352b4d5ff9",
+    "cohort-4-fork1.csv.environment.txt": "2cc9182eff4c1c12ca39791d2972d3ebf76e24f85dd96361d196d5ed5069aaa2",
+    "cohort-4-fork2.csv.environment.txt": "63202abbb64dc6c3b54d6bdb5b827fe04fdb753b21e7baf9e122ff7b48f9f1b0",
+    "cohort-4-fork3.csv.environment.txt": "24ccd77bed6d422c0f056d2d855df719400678699a500201c10d8bf4fd5a9d01"
+  }
+}
