@@ -70,6 +70,26 @@ class ResourceVerificationTest(unittest.TestCase):
     def test_valid_matching_bundle(self):
         build_cuda.verify(self.directory)
 
+    def test_build_normalizes_compiler_whitespace_before_hashing(self):
+        expected = self.ptx.read_text(encoding="utf-8")
+        compiler_output = expected.replace("\n", " \t\r\n") + "\r\n \t\r\n"
+        generated = self.directory / "generated"
+
+        def compile_fixture(command, **_options):
+            output = Path(command[command.index("--output-file") + 1])
+            output.write_bytes(compiler_output.encode("utf-8"))
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(build_cuda, "compiler", return_value=("nvcc", build_cuda.NVCC_VERSION)), \
+                patch.object(build_cuda.subprocess, "run", side_effect=compile_fixture):
+            build_cuda.build(generated, "nvcc")
+        ptx = generated / "train.ptx"
+        self.assertEqual(expected.encode("utf-8"), ptx.read_bytes())
+        self.assertEqual(build_cuda.sha256(ptx), build_cuda.read_properties(generated / "train.properties")["ptx.sha256"])
+        build_cuda.normalize_ptx(ptx)
+        self.assertEqual(expected.encode("utf-8"), ptx.read_bytes(), "Normalization must be idempotent")
+        build_cuda.verify(generated)
+
     def test_source_builder_and_compilation_options_cannot_be_stale(self):
         for key in build_cuda.source_metadata():
             with self.subTest(key=key):

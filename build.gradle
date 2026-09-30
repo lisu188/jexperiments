@@ -629,7 +629,7 @@ project(':jneuro') {
     }
 
     tasks.withType(JavaExec).configureEach {
-        jvmArgs '--add-modules', 'jdk.incubator.vector'
+        jvmArgs '--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED'
     }
 
     tasks.withType(Test).configureEach {
@@ -1210,7 +1210,32 @@ tasks.register('coverageVerification') {
 project(':jneuro') {
     def guiPython = providers.gradleProperty('guiPython').getOrElse(System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('windows') ? 'python' : 'python3')
     tasks.named('test') {
-        useJUnitPlatform { excludeTags 'gui' }
+        useJUnitPlatform { excludeTags 'gui', 'cuda' }
+    }
+    def verifyCudaResources = tasks.register('verifyCudaResources', Exec) {
+        group = 'verification'
+        description = 'Checks packaged CUDA PTX source, compiler provenance and ABI without requiring CUDA.'
+        commandLine guiPython, file('tools/build_cuda.py'), 'verify'
+    }
+    def cudaResourceVerifierTest = tasks.register('cudaResourceVerifierTest', Exec) {
+        group = 'verification'
+        environment 'PYTHONDONTWRITEBYTECODE', '1'
+        commandLine guiPython, '-m', 'unittest', 'discover', '-s', file('tools'), '-p', 'test_build_cuda.py'
+    }
+    tasks.named('check') { dependsOn verifyCudaResources, cudaResourceVerifierTest }
+    tasks.register('gpuCheck', Test) {
+        group = 'verification'
+        description = 'Verifies CUDA training on a real NVIDIA GPU; absence or driver failure is an error.'
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        useJUnitPlatform { includeTags 'cuda' }
+        systemProperty 'junit.jupiter.execution.parallel.enabled', 'false'
+        maxParallelForks = 1
+        outputs.upToDateWhen { false }
+        outputs.cacheIf { false }
+        reports.junitXml.required = true
+        reports.html.required = true
+        testLogging.showStandardStreams = true
     }
     def guiTest = tasks.register('guiTest', Test) {
         group = 'verification'

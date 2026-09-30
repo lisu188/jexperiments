@@ -2,7 +2,7 @@
 
 ## Scope and runtime
 
-JNeuro is a small dense feed-forward neural network implemented directly on primitive arrays. The complete module is now Kotlin: the training engine, Vector API kernels, optional native BLAS adapter, diagnostics, desktop application, correctness tests, and JMH benchmarks. There is no retained handwritten Java implementation in `jneuro/src`; generated JMH Java harnesses are build outputs only.
+JNeuro is a small dense feed-forward neural network implemented directly on primitive arrays. The JVM implementation is Kotlin: the training engine, Vector API kernels, optional native BLAS adapter, CUDA training sessions, diagnostics, desktop application, correctness tests, and JMH benchmarks. GPU arithmetic lives in a small CUDA C++ source compiled to packaged PTX. There is no retained handwritten Java implementation in `jneuro/src`; generated JMH Java harnesses are build outputs only.
 
 The migration uses Kotlin 2.4.20, the stable release published on 7 September 2026. Kotlin language/API level 2.4 and warnings-as-errors are configured explicitly. The runtime and toolchain remain JDK 27, while JVM bytecode targets 26, the highest target supported by this Kotlin release. The distinction matters: a class-file target is not a promise that incubating JDK 27 APIs will run on JDK 26.
 
@@ -95,6 +95,60 @@ RMSE = sqrt(sum((target - prediction)^2) / (sampleCount * outputCount))
 ~~~
 
 An empty dataset reports `NaN`, not an invented zero error. Training requires samples, a finite target, and a bounded epoch budget. Statistics count actual completed epochs and samples.
+
+## Explicit CUDA training sessions
+
+Training can now run on an NVIDIA GPU through a `NeuroTrainingSession`. The existing `Neuro.train*` methods and a session created without an argument retain CPU execution. A CUDA session owns device weights, biases, momentum velocities and temporary buffers; it is a writer for the existing host model, so diagnostics and ordinary inference can inspect each completed epoch. Java callers can select the backend explicitly:
+
+```java
+try (var training = network.newTrainingSession(TrainingBackend.CUDA)) {
+    double error = training.trainEpoch();
+    System.out.println(training.getInfo());
+}
+```
+
+`TrainingDeviceInfo` reports the actual device name, identity, FP64 precision and kernel version. CUDA identity includes the device UUID and driver version; the kernel version is the packaged PTX SHA-256. Selection is explicit: an unavailable CUDA driver, unsupported device, failed kernel load or exhausted device memory produces an error that can be resolved by selecting CPU or fixing the reported environment.
+
+The native adapter uses the JDK Foreign Function and Memory API against the installed CUDA Driver API. On Windows it loads `nvcuda.dll`; on Linux it tries `libcuda.so.1` and then the WSL driver path. It selects device ordinal zero, requires compute capability 7.5 or newer, retains its primary context and creates a private stream. The installed driver JIT-compiles packaged PTX. Running training does not require a local CUDA toolkit, Python service, extra Java numerical framework or downloading a model. JavaExec tasks enable native access; direct Java launches need `--enable-native-access=ALL-UNNAMED` as well as the module's Vector API flags.
+
+### What executes on the GPU
+
+The host retains the existing seeded shuffle generator and sends the sample order to the device. `gather` copies the next sample or mini-batch from the resident packed dataset. `forward` computes every layer, `output_delta` and `hidden_delta` backpropagate errors, and `update` changes each weight, bias and momentum velocity. A thread owns each reduction and parameter update; floating-point atomic accumulation is unnecessary. Activations use sample-major storage, while weights retain output-major layout.
+
+Online training processes one shuffled sample at a time, preserving the optimizer's update sequence. Mini-batch training computes gradients for a complete batch and divides the update by its actual sample count, including the final short batch. The `parallelism` argument remains relevant to CPU workers; CUDA schedules device work through its stream rather than creating that many host gradient workers. For Java callers, the interface takes all three arguments:
+
+```java
+try (var training = network.newTrainingSession(TrainingBackend.CUDA)) {
+    training.trainMiniBatch(10, 64, 1);
+    System.out.println(network.statistics().samplesSeen());
+}
+```
+
+Kernels use FP64, explicit fused multiply-add at the corresponding scalar CPU operations and the model's selected EXACT or FAST sigmoid. The build disables implicit FMA contraction and does not enable fast math. Numerical parity is checked with a tolerance, since the device exponential and floating-point implementation need not be bit-identical to a JVM. Hardware acceptance compares parameters and momentum as well as predictions; a visually similar output surface is insufficient evidence of equivalent training.
+
+At the end of each epoch the stream is synchronized and all parameters and velocities are downloaded into private staging arrays. Every downloaded value must be finite before any model parameter is published. A completed commit increments the model's epoch/sample counters and evaluates training RMSE on the CPU. A failed dispatch or partial download leaves the last completed host epoch intact and makes that session unusable for further training. Closing it releases ownership, allowing a new session or CPU continuation from the retained state. The pending shuffle order is retained after a failed epoch so continuation does not silently skip its sample ordering.
+
+The session excludes a second writer and direct model/dataset mutation while it is open. Close the session before changing samples, then open another session to upload the new dataset. `close()` is idempotent; attempting to train through a closed session fails. Workspace capacity grows with the largest requested batch and is reused for smaller batches. A shared per-device admission budget retains 20% headroom from the first session's free-memory snapshot and checks current driver-reported free memory on each reservation. Requests that exceed either remaining limit fail immediately with a diagnostic; growing sessions never wait in a reservation queue. Releasing the final reservation removes the snapshot so a later workload measures capacity again. Parallel searches can therefore fail a trial when simultaneous device demand exceeds that budget.
+
+### Studio, search and replay
+
+The Studio's Training backend selector is part of the staged configuration: apply it with **Apply & restart**. Epoch stepping, continuous training and seed comparisons use that backend. Published frames expose the effective device after a session is opened. Initialization or runtime failures enter the existing visible failure state; applying a valid CPU configuration provides an explicit recovery path. Pause and cancellation take effect between complete epochs, so an unusually expensive epoch still determines control latency.
+
+Architecture-search configuration carries the selected backend into each trial. Trials use independent sessions and retain device information with their results. Applying an architecture preserves its backend selection. Replay opens the recorded backend and checks device identity, precision and kernel version before retraining; changing the GPU, driver or PTX requires a fresh experiment instead of presenting a different execution environment as the recorded run.
+
+### Reproducible kernels and validation
+
+`jneuro/src/main/cuda/train.cu` is the kernel source. CUDA 13.0.2 generates the packaged `train.ptx` for `compute_75`; `train.properties` records source, builder and PTX hashes plus compiler and ABI provenance. `verifyCudaResources` checks those artifacts without a CUDA toolkit. The separate JNeuro CUDA PTX workflow compiles in the pinned `nvidia/cuda:13.0.2-devel-ubuntu24.04` image and compares regenerated output on pull requests. Its manual dispatch produces a small downloadable PTX/provenance artifact, allowing development machines to avoid retaining the compiler image.
+
+```text
+python3 jneuro/tools/build_cuda.py verify
+./gradlew :jneuro:check :jneuro:jacocoTestReport
+./gradlew :jneuro:gpuCheck
+```
+
+The first two commands run without a GPU. CPU session tests preserve the prior execution contracts; an injected recording driver exercises actual buffer allocation, dispatch, growth, synchronization, ownership, failure and cleanup paths. These tests do not claim CUDA arithmetic coverage. `gpuCheck` executes the CUDA-tagged suite on a real NVIDIA GPU and fails when the device or driver is unavailable. It checks direct/deep/non-square/wide networks, both sigmoid modes, short mini-batches, sparse convergence checks, session reopening and CPU continuation with momentum. The ordinary module line-coverage gate stays at 90%, and native-window GUI paths remain a separate 90% gate.
+
+GPU execution does not imply a speedup for every experiment. XOR and narrow networks perform little arithmetic per kernel launch; online SGD also launches multiple kernels for every sample, and this version downloads parameters and computes RMSE after every epoch. These costs can dominate the work. Broader networks and mini-batches provide more parallel work, but end-to-end timings must include initialization, transfers and diagnostics. Fusing adjacent stages, retaining parameters across multiple publication intervals, and benchmarking workload-dependent batch sizes are follow-up experiments, not assumed performance results.
 
 ## Concurrency contract
 

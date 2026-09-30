@@ -10,6 +10,42 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class ArchitectureSearchPanelTest {
+    @Test fun searchShowsBackendInitializationFailureAndInheritsSelection() {
+        val sessions = RecordingTrainingSessions().apply { unavailable = true }
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+            maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1,
+            maxEpochs = 1, checkEvery = 1, backend = TrainingBackend.CUDA)
+        val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
+            panel.setSource(StudioConfig(backend = TrainingBackend.CUDA), 4)
+            assertEquals(TrainingBackend.CUDA, panel.readConfig().backend)
+            panel.complete(report)
+            assertTrue((field(panel, "summary") as JLabel).text.contains("CUDA: CUDA fixture unavailable"))
+            assertFalse(button(panel, "Replay selected run").isEnabled)
+        }
+    }
+
+    @Test fun rejectedReplayPreservesCompletedResultAndInspection() {
+        val report = report()
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
+            panel.setSource(StudioConfig(), 4)
+            panel.complete(report)
+            val selection = field(panel, "selected")
+            val trial = field(panel, "chosenTrial")
+            val surface = field(panel, "surface")
+            panel.replayFailed("Recorded CUDA device differs")
+            assertSame(report, field(panel, "result"))
+            assertSame(selection, field(panel, "selected"))
+            assertSame(trial, field(panel, "chosenTrial"))
+            assertSame(surface, field(panel, "surface"))
+            assertTrue((field(panel, "summary") as JLabel).text.contains("Replay error: Recorded CUDA device differs"))
+            assertTrue((field(panel, "progressBar") as JProgressBar).string.contains("results retained"))
+            assertTrue(button(panel, "Replay selected run").isEnabled)
+        }
+    }
+
     @Test fun exposesValidatedSearchSettingsProgressAndCancellation() {
         var starts = 0; var cancels = 0
         EventQueue.invokeAndWait {

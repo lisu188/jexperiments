@@ -105,3 +105,18 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-095 | Reset validation replay restores the full Studio dataset | `validationSearchReplaysHeldOutPartition` |
 | GUI-096 | Adaptive result ancestry names an eligible, fully evaluated elite for each descendant | `searchResultsSupportNativeSelectionInspectionReplayAndApply` |
 | GUI-097 | Parallel trials set to 32 starts 32 concurrent elite offspring with one seed and exposes actual utilization | `parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization` |
+| GUI-098 | CPU is the default; editing the backend selection alone does not change the active run | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
+| GUI-099 | Applying an unavailable CUDA backend shows a failure and never falls back to CPU | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
+| GUI-100 | Select CPU after CUDA failure and complete a training epoch | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
+| GUI-101 | Selected CUDA device and FP64 precision appear after training starts | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
+| GUI-102 | One epoch, ten epochs, train and pause route through the selected backend | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
+| GUI-103 | Seed comparison uses the active backend and closes all study sessions | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
+| GUI-104 | Architecture search inherits the active backend and records device metadata for each trial | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
+| GUI-105 | Replay preserves the scored trial backend and Reset prepares a fresh model | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
+| GUI-106 | Native window close releases an active backend session | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
+| GUI-107 | Unavailable CUDA search reports its backend failure and cannot replay failed trials | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
+| GUI-108 | Reject a replay on a different CUDA device while retaining scored results, selection and the paused main model | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
+| GUI-109 | Unavailable CUDA replay keeps completed search snapshots inspectable and permits retry | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
+| GUI-110 | Retry after CUDA recovers installs the recorded checkpoint and only then invalidates the completed search | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
+
+The backend-routing GUI scenarios use an injected session provider with CPU execution and explicit fixture device metadata. They verify native controls, error recovery and resource lifecycle deterministically on CPU-only CI. Actual CUDA execution and numerical parity are separate hardware checks in `gpuCheck`; a passing fixture scenario is not GPU acceptance.

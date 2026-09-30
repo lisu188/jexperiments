@@ -27,6 +27,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private val charts = View.entries.filter { it != View.SEARCH }.associateWith { Chart(it) }
     private val hidden = JTextField("6")
     private val dataset = JComboBox(NeuroLearningSets.Kind.entries.toTypedArray())
+    private val backend = JComboBox(TrainingBackend.entries.toTypedArray())
+    private val deviceStatus = JLabel("CPU · awaiting training").apply { accessibleContext.accessibleName = "Training device" }
     private val seed = JTextField("42")
     private val epochLimit = NumericInputs.spinner(10_000, 1000)
     private val rate = NumericInputs.spinner(0.6, 0.05)
@@ -74,6 +76,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private var selectedParameterLayer = 0
     private var selectedParameterStart = 0
     private var thread: Thread? = null
+    @Volatile internal var trainingSessionFactory: (Neuro, TrainingBackend) -> NeuroTrainingSession =
+        { model, selected -> model.newTrainingSession(selected) }
     private val timer = Timer(75) { refresh() }
 
     init {
@@ -101,6 +105,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             hidden.text = initial.config.hidden
             dataset.selectedItem = initial.config.dataset
             seed.text = initial.config.seed.toString()
+            backend.selectedItem = initial.config.backend
             epochLimit.value = initial.config.maxEpochs
             refresh()
         }
@@ -141,6 +146,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         })
         sidebar.add(Box.createVerticalStrut(20))
         section("03  TRAINING")
+        field("Training backend", backend)
+        backend.toolTipText = "CPU is the default. CUDA requires a compatible NVIDIA GPU; failures never fall back to CPU."
         field("Random seed", seed)
         field("Maximum epochs", epochLimit)
         val advanced = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false; alignmentX = 0f }
@@ -185,7 +192,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
                 accessibleContext.accessibleName = "Training status"
             }, BorderLayout.EAST)
         }
-        top.add(heading); top.add(Box.createVerticalStrut(18))
+        top.add(heading)
+        top.add(deviceStatus.apply { font = uiFont(12); foreground = MUTED; alignmentX = 0f })
+        top.add(Box.createVerticalStrut(18))
         val metricRow = JPanel(GridLayout(1, 4, 12, 0)).apply {
             isOpaque = false; maximumSize = Dimension(Int.MAX_VALUE, 90)
             val names = listOf("EPOCH", "TRAINING RMSE", "PARAMETERS", "TRAINING SAMPLES")
@@ -303,7 +312,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             epochLimit.commitEdit(); rate.commitEdit(); momentum.commitEdit(); target.commitEdit()
             val config = StudioConfig(NeuroTopologyConfig.format(NeuroTopologyConfig.parseHidden(hidden.text)),
                 dataset.selectedItem as NeuroLearningSets.Kind, seed.text.trim().toLong(), (epochLimit.value as Number).toInt(),
-                (target.value as Number).toDouble(), (rate.value as Number).toDouble(), (momentum.value as Number).toDouble())
+                (target.value as Number).toDouble(), (rate.value as Number).toDouble(), (momentum.value as Number).toDouble(),
+                backend.selectedItem as TrainingBackend)
             configError.text = " "
             post { it.apply(config, true) }
         } catch (exception: Exception) { showConfigError(exception.message ?: "Check the configuration values.") }
@@ -335,7 +345,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     }
 
     private fun workerLoop() {
-        val studio = NeuroStudio()
+        val studio = NeuroStudio(openSession = { model, selected -> trainingSessionFactory(model, selected) })
         try {
             while (!closing) {
                 val action = if (studio.hasWork) commands.poll(24, TimeUnit.MILLISECONDS) else commands.take()
@@ -347,10 +357,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
                 } catch (exception: Exception) {
                     if (closing || exception is InterruptedException) break
                     studio.fail(exception.message ?: exception.javaClass.simpleName)
-                    published = published?.copy(state = StudioState.FAILED, message = exception.message ?: "Training failed")
+                    published = studio.frame()
                 }
             }
         } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        finally { studio.close() }
     }
 
     private fun startArchitectureSearch(config: ArchitectureSearchConfig, evaluation: ArchitectureEvaluation, fraction: Double, splitSeed: Long) {
@@ -363,12 +374,13 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             if (!searchSession.isCurrent(token)) return@offer
             try {
                 studio.setRunning(false)
+                studio.close()
                 require(studio.activeConfig == expectedConfig && studio.frame().samples == expectedSamples) {
                     "Active configuration changed before search started. Try again on the current run."
                 }
                 val data = studio.searchData(evaluation, fraction, splitSeed)
                 published = studio.frame()
-                val report = NeuroArchitectureSearch().search(data, config, { progress ->
+                val report = NeuroArchitectureSearch { model, selected -> trainingSessionFactory(model, selected) }.search(data, config, { progress ->
                     EventQueue.invokeLater {
                         if (!closing && searchSession.isCurrent(token)) architectureSearch.updateProgress(progress)
                     }
@@ -396,13 +408,23 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         commands.offer { studio ->
             studio.setRunning(false)
             published = studio.frame()
+            var replayed = false
+            var replayFailure: String? = null
             try {
-                studio.replayArchitecture(report, candidate, trial) { closing || token.cancelled.get() || !searchSession.isCurrent(token) }
+                replayed = studio.replayArchitecture(report, candidate, trial) { closing || token.cancelled.get() || !searchSession.isCurrent(token) }
+            } catch (exception: Exception) {
+                if (exception is InterruptedException) Thread.currentThread().interrupt()
+                replayFailure = exception.message ?: "Replay failed"
             } finally {
+                if (!closing) published = studio.frame()
                 EventQueue.invokeLater {
                     if (!closing && searchSession.isCurrent(token)) {
-                        searchRunning = false; architectureSearch.invalidateResults()
-                        tabs.selectedIndex = View.OVERVIEW.ordinal; refresh()
+                        searchRunning = false
+                        if (replayed) {
+                            architectureSearch.invalidateResults()
+                            tabs.selectedIndex = View.OVERVIEW.ordinal
+                        } else architectureSearch.replayFailed(replayFailure ?: "Replay cancelled")
+                        refresh()
                     }
                 }
             }
@@ -417,8 +439,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         commands.offer { studio ->
             studio.setRunning(false)
             published = studio.frame()
-            studio.compareSeeds { closing || expected != revision.get() }
-            studyRunning = false
+            try { studio.compareSeeds { closing || expected != revision.get() } }
+            finally { studyRunning = false }
         }
         updateContextBar()
     }
@@ -482,6 +504,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         architectureSearch.setSource(next.config, next.samples.size)
         status.text = if (searchRunning) "Architecture search…" else if (studyRunning) "Comparing seeds…" else next.state.label
         status.foreground = if (next.state == StudioState.FAILED) ERROR else ACCENT
+        deviceStatus.text = next.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision}" }
+            ?: "${next.config.backend} · ${if (next.state == StudioState.FAILED) "unavailable" else "awaiting training"}"
+        deviceStatus.toolTipText = next.deviceInfo?.let { "${it.identity} · kernel ${it.kernelVersion}" }
         activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}" + if (next.replayNote.isEmpty()) "" else "   ·   ${next.replayNote}"
         metrics[0].text = "%,d".format(Locale.ROOT, next.diagnostics.epoch())
         metricDetails[0].text = "of %,d epochs".format(Locale.ROOT, next.config.maxEpochs)
