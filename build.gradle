@@ -1237,6 +1237,19 @@ project(':jneuro') {
         reports.html.required = true
         testLogging.showStandardStreams = true
     }
+    tasks.register('cudaTest') {
+        group = 'verification'
+        description = 'Compatibility alias for hardware-required CUDA and cuBLAS acceptance.'
+        dependsOn tasks.named('gpuCheck')
+    }
+    tasks.register('cudaBenchmark', JavaExec) {
+        group = 'verification'
+        description = 'Compares CPU matrix training with CUDA/cuBLAS FP64 and FP32.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroCudaTrainingBenchmark'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
+        jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms128m', '-Xmx2g'
+    }
     def guiTest = tasks.register('guiTest', Test) {
         group = 'verification'
         description = 'Tests real JNeuro windows with native mouse/keyboard input; requires a display.'

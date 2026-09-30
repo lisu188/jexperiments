@@ -56,7 +56,9 @@ internal class ArchitectureSearchConfig(
     val searchSeed: Long = 42,
     val restartAfter: Int = 12,
     val maxRestarts: Int = 4,
-    val backend: TrainingBackend = TrainingBackend.CPU
+    val backend: TrainingBackend = TrainingBackend.CPU,
+    val precision: Neuro.TrainingPrecision = Neuro.TrainingPrecision.FP64,
+    val batchSize: Int = 1
 ) {
     val seeds: List<Long> = java.util.List.copyOf(seeds)
     val initialHidden: List<Int>? = initialHidden?.let { java.util.List.copyOf(it) }
@@ -70,6 +72,10 @@ internal class ArchitectureSearchConfig(
         require(requiredSuccesses in 1..this.seeds.size) { "Required successes must be between 1 and the seed count." }
         require(nearBestTolerance.isFinite() && nearBestTolerance >= 0.0) { "Near-best tolerance must be finite and non-negative." }
         require(parallelism > 0) { "Parallelism must be positive." }
+        require(batchSize > 0) { "Batch size must be positive." }
+        require(precision == Neuro.TrainingPrecision.FP64 || backend in setOf(TrainingBackend.CUBLAS, TrainingBackend.AUTO)) {
+            "FP32 requires CUBLAS or AUTO training."
+        }
         require(maxTrials >= this.seeds.size) { "Trial budget must fit at least one full seed group." }
         require(restartAfter > 0 && maxRestarts >= 0) { "Restart interval must be positive and restart count non-negative." }
         this.initialHidden?.let { NeuroTopologyConfig.topology(it.toIntArray()) }
@@ -327,7 +333,8 @@ internal fun interface ArchitectureSearcher {
 }
 
 internal class NeuroArchitectureSearch(
-    private val openSession: (Neuro, TrainingBackend) -> NeuroTrainingSession = { model, backend -> model.newTrainingSession(backend) }
+    private val openSession: (Neuro, TrainingBackend, Neuro.TrainingPrecision, Int) -> NeuroTrainingSession =
+        { model, backend, precision, batch -> model.newTrainingSession(backend, precision, batch) }
 ) : ArchitectureSearcher {
     override fun search(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
                         onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
@@ -427,11 +434,12 @@ internal class NeuroArchitectureSearch(
         var finalScore = Double.POSITIVE_INFINITY
         var bestSnapshot: NeuroXorDiagnostics.Snapshot? = null
         var deviceInfo: TrainingDeviceInfo? = null
+        var evaluatedModel: Neuro? = null
         fun result(state: ArchitectureTrialState, message: String = "") = ArchitectureTrial(seed, state, epoch, bestEpoch, best,
             trainingAtBest, finalScore, epoch.toLong() * data.training.size, System.nanoTime() - start, history, bestSnapshot, message, deviceInfo)
         if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
         return try {
-            val model = data.newNetwork(architecture, config.hyperParameters, seed)
+            val model = data.newNetwork(architecture, config.hyperParameters, seed).also { evaluatedModel = it }
             fun checkPoint() {
                 val training = model.trainingError()
                 finalScore = if (data.evaluation == ArchitectureEvaluation.TRAINING_FIT) training else data.score(model)
@@ -447,12 +455,12 @@ internal class NeuroArchitectureSearch(
                 }
                 progress(epoch, best)
             }
-            openSession(model, config.backend).use { session ->
+            openSession(model, config.backend, config.precision, config.batchSize).use { session ->
                 deviceInfo = session.info
                 checkPoint()
                 while (epoch < config.maxEpochs) {
                     if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
-                    val training = session.trainEpoch()
+                    val training = trainConfiguredEpoch(model, session, config.batchSize)
                     epoch++
                     check(training.isFinite()) { "Training produced a non-finite RMSE." }
                     if (epoch % config.checkEvery == 0 || epoch == config.maxEpochs) checkPoint()
@@ -460,6 +468,9 @@ internal class NeuroArchitectureSearch(
                 result(ArchitectureTrialState.COMPLETED)
             }
         } catch (exception: Exception) {
+            // Count committed work even when cleanup throws after publishing the latest epoch.
+            // Retain the last scored checkpoint; failed trials must remain disqualified.
+            epoch = evaluatedModel?.statistics()?.epochsTrained?.toInt() ?: epoch
             if (exception is InterruptedException) { Thread.currentThread().interrupt(); result(ArchitectureTrialState.CANCELLED) }
             else result(ArchitectureTrialState.FAILED, exception.message ?: exception.javaClass.simpleName)
         }

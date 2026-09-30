@@ -70,9 +70,9 @@ class NeuroCudaStudioAcceptanceTest {
             seeds = listOf(1, 42), requiredSuccesses = 1, maxEpochs = 4, checkEvery = 1,
             targetRmse = 0.0, parallelism = 2, maxTrials = 4, backend = backend)
         val initialSessions = CountDownLatch(2)
-        val engine = NeuroArchitectureSearch { model, backend ->
+        val engine = NeuroArchitectureSearch { model, backend, precision, batchSize ->
             // Both first trials must own real sessions simultaneously before either starts training.
-            val session = model.newTrainingSession(backend)
+            val session = model.newTrainingSession(backend, precision, batchSize)
             try {
                 initialSessions.countDown()
                 check(initialSessions.await(30, TimeUnit.SECONDS)) { "Concurrent CUDA sessions did not initialize." }
@@ -126,6 +126,101 @@ class NeuroCudaStudioAcceptanceTest {
             assertEquals(device, studio.frame().deviceInfo)
         }
         println("CUDA architecture acceptance: $device; four trials, two concurrent sessions, repeatable scored replay")
+    }
+
+    @Test fun cublasFp64StudioSearchAndReplayKeepRecordedBatchConfiguration() =
+        checkCublasStudioSearchAndReplay(Neuro.TrainingPrecision.FP64)
+
+    @Test fun cublasFp32StudioSearchAndReplayKeepRecordedBatchConfiguration() =
+        checkCublasStudioSearchAndReplay(Neuro.TrainingPrecision.FP32)
+
+    private fun checkCublasStudioSearchAndReplay(precision: Neuro.TrainingPrecision) {
+        val config = StudioConfig(hidden = "3", dataset = NeuroLearningSets.Kind.AND, maxEpochs = 4,
+            targetError = 0.0, backend = TrainingBackend.CUBLAS, precision = precision, batchSize = 3)
+        val data = ArchitectureSearchData.fitting(NeuroLearningSets.create(config.dataset, 42), "AND")
+        lateinit var device: TrainingDeviceInfo
+        NeuroStudio(config).use { studio ->
+            val initial = studio.frame().diagnostics.parameters()
+            studio.step(1)
+            assertEquals(1, studio.advance())
+            val first = studio.frame()
+            device = requireNotNull(first.deviceInfo)
+            assertEquals(TrainingBackend.CUBLAS, device.backend)
+            assertEquals(precision.name, device.precision)
+            assertTrue(device.name.isNotBlank())
+            assertTrue(device.identity.isNotBlank())
+            assertTrue(device.kernelVersion.startsWith("cublas-"))
+            assertEquals(StudioState.PAUSED, first.state)
+            studio.setRunning(true)
+            assertEquals(1, studio.advance(1))
+            assertEquals(StudioState.RUNNING, studio.state)
+            studio.setRunning(false)
+            val paused = studio.frame().diagnostics.parameters()
+            assertEquals(0, studio.advance())
+            assertArrayEquals(paused, studio.frame().diagnostics.parameters())
+            studio.step(1)
+            assertEquals(0, studio.advance(1) { true })
+            studio.close()
+            assertEquals(1, studio.advance(1))
+            assertEquals(3, studio.epochs)
+            assertEquals(device, studio.frame().deviceInfo)
+            studio.apply(config)
+            assertEquals(0, studio.epochs)
+            assertArrayEquals(initial, studio.frame().diagnostics.parameters())
+            studio.step(1)
+            assertEquals(1, studio.advance())
+            assertEquals(device, studio.frame().deviceInfo)
+            assertArrayEquals(first.diagnostics.parameters(), studio.frame().diagnostics.parameters(), TOLERANCE)
+        }
+
+        val searchConfig = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+            maxLayers = 1, minWidth = 3, maxWidth = 3, seeds = listOf(42, 123), requiredSuccesses = 1,
+            maxEpochs = 2, checkEvery = 1, targetRmse = 0.0, parallelism = 2, maxTrials = 2,
+            backend = TrainingBackend.CUBLAS, precision = precision, batchSize = 3)
+        val initialSessions = CountDownLatch(2)
+        val engine = NeuroArchitectureSearch { model, selected, format, batch ->
+            val session = model.newTrainingSession(selected, format, batch)
+            try {
+                initialSessions.countDown()
+                check(initialSessions.await(30, TimeUnit.SECONDS)) { "Concurrent cuBLAS sessions did not initialize." }
+                session
+            } catch (failure: Throwable) {
+                try { session.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
+                throw failure
+            }
+        }
+        val report = engine.search(data, searchConfig)
+        assertEquals(ArchitectureTermination.COMPLETED, report.termination)
+        assertEquals(2, report.peakParallelTrials)
+        val candidate = report.candidates.single()
+        assertEquals(2, candidate.trials.size)
+        for (trial in candidate.trials) {
+            assertEquals(ArchitectureTrialState.COMPLETED, trial.state, trial.failure)
+            assertEquals(device, trial.deviceInfo)
+            assertEquals(2, trial.epochs)
+            assertEquals(8L, trial.sampleUpdates)
+        }
+        val trial = candidate.trials.maxBy { it.bestEpoch }
+        assertTrue(trial.bestEpoch > 0, "cuBLAS replay must execute trained epochs.")
+        NeuroStudio(config).use { studio ->
+            assertTrue(studio.replayArchitecture(report, candidate, trial))
+            val replay = studio.frame()
+            assertEquals(TrainingBackend.CUBLAS, replay.config.backend)
+            assertEquals(precision, replay.config.precision)
+            assertEquals(3, replay.config.batchSize)
+            assertEquals(device, replay.deviceInfo)
+            assertEquals(trial.bestEpoch, replay.diagnostics.epoch())
+            assertEquals(trial.bestRmse, replay.diagnostics.error(), TOLERANCE)
+            assertArrayEquals(trial.snapshot!!.parameters(), replay.diagnostics.parameters(), TOLERANCE)
+            assertTrue(studio.replayArchitecture(report, candidate, trial))
+            assertArrayEquals(replay.diagnostics.parameters(), studio.frame().diagnostics.parameters(), TOLERANCE)
+            studio.applyArchitecture(report, candidate)
+            studio.step(1)
+            assertEquals(1, studio.advance())
+            assertEquals(device, studio.frame().deviceInfo)
+        }
+        println("cuBLAS Studio acceptance: $device; batch=3 with partial final batch; pause/reopen/reset; " +
+            "two concurrent search trials; strict scored replay")
     }
 
     private fun assertGpu(info: TrainingDeviceInfo) {

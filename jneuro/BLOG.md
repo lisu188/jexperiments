@@ -86,7 +86,7 @@ network.trainMiniBatch(10, batchSize = 16, parallelism = 2)
 
 Online training updates after every shuffled sample. Fixed-epoch training computes its final reported error after the last epoch; sparse checks in `trainUntil` avoid repeatedly evaluating the entire training set when only periodic convergence checks are needed.
 
-Mini-batch training accumulates gradients and applies a single averaged update. Parallel workers use private gradient buffers and workspaces. Their gradients are reduced in a fixed worker order rather than racing writes into shared model parameters.
+The two/three-argument mini-batch API above retains per-sample forward/backpropagation with averaged batch gradients. The explicit `Neuro.BatchBackend` overload described below adds a matrix implementation: it gathers contiguous activation and target rows, evaluates layers across the batch, propagates dense delta matrices, computes weight gradients as the equivalent of D^T × A, reduces bias gradients, and applies one averaged momentum update. Its single-thread and partitioned CPU paths provide a comparison for cuBLAS while preserving the original overload's numerical behavior.
 
 Training and test errors remain root-mean-square error over all samples and output dimensions:
 
@@ -107,7 +107,7 @@ try (var training = network.newTrainingSession(TrainingBackend.CUDA)) {
 }
 ```
 
-`TrainingDeviceInfo` reports the actual device name, identity, FP64 precision and kernel version. CUDA identity includes the device UUID and driver version; the kernel version is the packaged PTX SHA-256. Selection is explicit: an unavailable CUDA driver, unsupported device, failed kernel load or exhausted device memory produces an error that can be resolved by selecting CPU or fixing the reported environment.
+`TrainingDeviceInfo` reports the actual backend, device name, identity, precision and kernel version. The `CUDA` backend uses FP64; its identity includes the device UUID and driver version, and its kernel version is the packaged PTX SHA-256. Selection is explicit: an unavailable CUDA driver, unsupported device, failed kernel load or exhausted device memory produces an error that can be resolved by selecting CPU or fixing the reported environment. The separate `CUBLAS` backend adds FP32 and matrix multiplication through optional native libraries, as described below.
 
 The native adapter uses the JDK Foreign Function and Memory API against the installed CUDA Driver API. On Windows it loads `nvcuda.dll`; on Linux it tries `libcuda.so.1` and then the WSL driver path. It selects device ordinal zero, requires compute capability 7.5 or newer, retains its primary context and creates a private stream. The installed driver JIT-compiles packaged PTX. Running training does not require a local CUDA toolkit, Python service, extra Java numerical framework or downloading a model. JavaExec tasks enable native access; direct Java launches need `--enable-native-access=ALL-UNNAMED` as well as the module's Vector API flags.
 
@@ -132,9 +132,9 @@ The session excludes a second writer and direct model/dataset mutation while it 
 
 ### Studio, search and replay
 
-The Studio's Training backend selector is part of the staged configuration: apply it with **Apply & restart**. Epoch stepping, continuous training and seed comparisons use that backend. Published frames expose the effective device after a session is opened. Initialization or runtime failures enter the existing visible failure state; applying a valid CPU configuration provides an explicit recovery path. Pause and cancellation take effect between complete epochs, so an unusually expensive epoch still determines control latency.
+The Studio's Training backend, precision and batch-size controls are part of the staged configuration: apply them with **Apply & restart**. CPU, FP64 and batch size one remain the defaults. FP32 is selectable for CUBLAS and AUTO; CPU and driver CUDA execute FP64. Epoch stepping, continuous training and seed comparisons use the applied configuration. Published frames expose the effective device and precision after a session is opened. Initialization or runtime failures enter the existing visible failure state; applying a valid CPU configuration provides an explicit recovery path. Pause and cancellation take effect between complete epochs, so an unusually expensive epoch still determines control latency.
 
-Architecture-search configuration carries the selected backend into each trial. Trials use independent sessions and retain device information with their results. Applying an architecture preserves its backend selection. Replay opens the recorded backend and checks device identity, precision and kernel version before retraining; changing the GPU, driver or PTX requires a fresh experiment instead of presenting a different execution environment as the recorded run.
+Architecture-search configuration carries the selected backend, precision and batch size into each trial. Trials use independent sessions and retain actual device information with their results. Applying an architecture preserves its configuration. Replay opens the recorded effective backend and precision: an AUTO/FP32 request that resolved to CPU is replayed on CPU/FP64. Replay checks device identity, precision and kernel version before retraining; changing those inputs requires a fresh experiment. Rejected replay retains the scored results and paused main model so the user can inspect or retry it.
 
 ### Reproducible kernels and validation
 
@@ -171,6 +171,63 @@ The studio follows a stricter single-owner rule: only its training worker access
 `NeuroNativeBlas` preserves the optional FFM CBLAS experiment. It resolves `cblas_dgemm`, transposes and copies parameters into off-heap memory, retains biases and scratch buffers, and performs batched layer evaluation using matrix multiplication followed by activation. The native session is also a snapshot, not a view of a concurrently trained model.
 
 Native BLAS is environment-bound and optional. The current library lookup targets common Linux OpenBLAS/BLAS/MKL names; an unavailable library does not prevent normal Java/Kotlin inference or the desktop UI. The benchmark requires `--enable-native-access=ALL-UNNAMED`, which its Gradle task supplies. Native tests compare outputs, batch resizing, and snapshot independence when a compatible library is installed.
+
+## Optional cuBLAS matrix training
+
+`TrainingBackend.CUBLAS` keeps the dense training algorithm in this project while using cuBLAS GEMM for matrix products. Java FFM resolves the CUDA Runtime, cuBLAS, NVRTC and Driver API dynamically. These libraries are additional runtime requirements for CUBLAS; the driver-only CUDA backend above remains independently usable. A complete matching native installation includes cuBLAS's companion library and NVRTC's builtins. `JNEURO_CUDA_RUNTIME`, `JNEURO_CUBLAS`, `JNEURO_NVRTC` and `JNEURO_CUDA_DRIVER` override their library locations; dependent DLLs/shared libraries must also be discoverable by the operating system. There is no CUDA Maven dependency, and ordinary CPU builds need none of these libraries.
+
+### Selecting an engine and precision
+
+The session API uses the top-level `TrainingBackend` enum. An explicit CUBLAS request fails visibly when its dependencies or device are unavailable. FP64 is the reference precision; FP32 stores device parameters, momentum, activations and gradients as floats and uses `cublasSgemm_v2`. Completed FP32 parameters are converted back into the public double-precision model. This conversion does not restore the precision lost in the GPU arithmetic.
+
+```java
+try (var training = network.newTrainingSession(
+        TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32, 64)) {
+    training.train(10); // Ten epochs, batches of at most 64 samples.
+    System.out.println(training.getInfo().getPrecision());
+}
+```
+
+The third factory argument is the default batch size for `trainEpoch`, `train` and `trainUntil`. The `trainMiniBatch` method can override it for a call. Closing any session releases its exclusive writer ownership and keeps completed host state available for CPU continuation.
+
+AUTO chooses CUBLAS only if estimated work for the effective batch reaches 2,000,000 floating-point operations and the native stack is available. The estimate sums `6 * batch * inputWidth * outputWidth` across layers and clamps the batch to the dataset size. Tiny workloads resolve to CPU before probing any native libraries. This is a deterministic heuristic, not a measured speedup guarantee. CPU always reports its actual FP64 precision even if AUTO was requested with FP32.
+
+```java
+try (var training = network.newTrainingSession(
+        TrainingBackend.AUTO, Neuro.TrainingPrecision.FP32, 32)) {
+    System.out.println(training.getInfo().getBackend());
+    training.trainEpoch();
+}
+```
+
+The explicit matrix API uses the separate nested `Neuro.BatchBackend` enum: its `CUDA` value selects cuBLAS, `CPU` selects the matrix CPU implementation, and `AUTO` applies the same threshold. Existing two/three-argument `trainMiniBatch` calls retain their original CPU algorithm and numerical behavior.
+
+```java
+network.trainMiniBatch(4, 16, 1, Neuro.BatchBackend.CPU);
+network.trainMiniBatch(4, 16, 1,
+        Neuro.BatchBackend.CUDA, Neuro.TrainingPrecision.FP64);
+```
+
+The matrix CPU engine gathers sample-major batches into reusable primitive arrays, computes each layer and its deltas, then accumulates weight and bias gradients before momentum updates. Parallel workers own disjoint output ranges. This provides a CPU comparison for the cuBLAS layout without changing the original online-SGD defaults.
+
+### Resident state and epoch publication
+
+Each cuBLAS training call uploads the packed dataset and model state. Each epoch sends the deterministic shuffled row order. `gatherRows` materializes contiguous batch inputs and targets on the GPU; GEMM computes forward products, hidden deltas and weight gradients. Small CUDA kernels add bias, apply the selected sigmoid and derivative, reduce bias gradients and update momentum. A short final batch scales its update by its actual sample count.
+
+Parameters and workspaces remain resident across epochs within one call. At every completed epoch, all weights, biases and velocities are downloaded into private staging arrays and checked for finite values before publication. The host then advances its epoch/sample counters and computes RMSE. A failed dispatch or partial download retains the last completed host epoch and its pending shuffle order; the failed session must be closed before retrying. All allocated buffers and native handles are attempted during cleanup even if another cleanup operation fails.
+
+This cuBLAS implementation recreates its native handles, NVRTC module and device buffers on each training call. Studio and architecture search call it once per epoch to preserve responsiveness, so setup and compilation can dominate small workloads. The driver CUDA session described earlier retains its resources across calls. CUBLAS currently relies on allocation errors and cleanup rather than the driver backend's shared 80% admission budget; concurrent cuBLAS trials can therefore exhaust available device memory.
+
+### Validation and bounded timing
+
+The native adapters and orchestration remain inside the ordinary 90% JaCoCo gate. CPU-only tests call the real FFM wrappers against controlled native upcall stubs and exercise allocation, dispatch, publication, discovery and failure cleanup. Those stubs do not execute GPU arithmetic. Hardware-required tests separately compare FP64/FP32 parameters, momentum, predictions and continuation on a real device. `:jneuro:gpuCheck` requires both the driver and cuBLAS stacks; `:jneuro:cudaTest` is an alias, and neither treats unavailable hardware as passing acceptance.
+
+```text
+./gradlew :jneuro:gpuCheck
+./gradlew :jneuro:cudaBenchmark --args=--smoke
+```
+
+The bounded benchmark uses 128 samples, a 32/64/32/4 network, two epochs and batch sizes 16 and 64. It includes native initialization, transfers and final CPU diagnostics. The default benchmark expands to networks as large as 1024/2048/2048/512 and batches of 2048; run that only with suitable host/device memory and time. These end-to-end smoke timings are not controlled throughput measurements.
 
 ## The desktop redesign
 
@@ -298,7 +355,7 @@ These accessibility principles inform the redesign; they are not a claim that a 
 
 ## Deliberate limitations
 
-JNeuro remains an educational dense network, not a tensor framework. It still uses sigmoid activations, lacks automatic differentiation, softmax/cross-entropy, regularization, persistence, GPU execution, and adaptive optimizers such as Adam. Circle and Spiral can expose the limits of a narrow network and the training budget rather than guaranteeing a low error.
+JNeuro remains an educational dense network, not a tensor framework. It still uses sigmoid activations, lacks automatic differentiation, softmax/cross-entropy, regularization, persistence, and adaptive optimizers such as Adam. GPU execution is deliberately limited to the optional dense CUDA mini-batch backend rather than becoming a general tensor/autodiff layer. Circle and Spiral can expose the limits of a narrow network and the training budget rather than guaranteeing a low error.
 
 Training-set fit is not generalization evidence. The studio does not silently manufacture a validation set or claim calibrated probabilities. Its role is to expose the actual computation and make controlled architecture experiments easier to run and inspect.
 

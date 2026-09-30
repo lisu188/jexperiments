@@ -6,6 +6,39 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroArchitectureSearchTest {
+    @Test fun configuredBatchSearchReplaysTheResolvedBackendAndPrecision() {
+        for (backend in listOf(TrainingBackend.AUTO, TrainingBackend.CUBLAS)) {
+            val sessions = RecordingTrainingSessions()
+            val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+                maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1,
+                maxEpochs = 4, checkEvery = 1, backend = backend,
+                precision = Neuro.TrainingPrecision.FP32, batchSize = 3)
+            val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
+            val candidate = report.candidates.single()
+            val trial = candidate.trials.single()
+            assertTrue(candidate.valid, trial.failure)
+            assertEquals(4, sessions.miniBatches.size)
+            assertEquals(Triple(backend, Neuro.TrainingPrecision.FP32, 3), sessions.configurations.single())
+            val effective = if (backend == TrainingBackend.AUTO) TrainingBackend.CPU else backend
+            val precision = if (effective == TrainingBackend.CPU) Neuro.TrainingPrecision.FP64 else Neuro.TrainingPrecision.FP32
+            assertEquals(effective, trial.deviceInfo!!.backend)
+            assertEquals(precision.name, trial.deviceInfo.precision)
+            NeuroStudio(openSession = sessions::open).use { studio ->
+                assertTrue(studio.replayArchitecture(report, candidate, trial))
+                assertEquals(effective, studio.activeConfig.backend)
+                assertEquals(precision, studio.activeConfig.precision)
+                assertEquals(3, studio.activeConfig.batchSize)
+                assertEquals(Triple(effective, precision, 3), sessions.configurations.last())
+                assertEquals(trial.deviceInfo, studio.frame().deviceInfo)
+                assertArrayEquals(trial.snapshot!!.parameters(), studio.frame().diagnostics.parameters(), 1e-10)
+            }
+            assertEquals(sessions.opened.get(), sessions.closed.get())
+            assertTrue(sessions.miniBatches.all { it == 3 })
+        }
+        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(batchSize = 0) }
+        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(precision = Neuro.TrainingPrecision.FP32) }
+    }
+
     @Test fun selectedBackendIsRecordedAndReplayRequiresTheSameDevice() {
         val sessions = RecordingTrainingSessions()
         val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
@@ -31,6 +64,30 @@ class NeuroArchitectureSearchTest {
         }
         assertEquals(sessions.opened.get(), sessions.closed.get())
         assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+    }
+
+    @Test fun cleanupFailureCountsCommittedEpochButKeepsFailedTrialDisqualified() {
+        val sessions = RecordingTrainingSessions().apply { failAfterCommit = true }
+        val data = ArchitectureSearchData.fitting(xor())
+        val config = ArchitectureSearchConfig(maxEpochs = 4, checkEvery = 1, targetRmse = 1.0,
+            seeds = listOf(42), requiredSuccesses = 1, backend = TrainingBackend.CUBLAS, batchSize = 3)
+        val architecture = NetworkArchitecture(listOf(2))
+        val initialModel = data.newNetwork(architecture, config.hyperParameters, 42)
+        val initial = NeuroXorDiagnostics.capture(initialModel, 0, initialModel.trainingError())
+        val trial = NeuroArchitectureSearch(sessions::open).evaluate(data, config, architecture, 42, { false }, { _, _ -> })
+        assertEquals(ArchitectureTrialState.FAILED, trial.state)
+        assertTrue(trial.failure.contains("cleanup after committed epoch"))
+        assertEquals(1, trial.epochs)
+        assertEquals(4L, trial.sampleUpdates)
+        assertEquals(0, trial.bestEpoch)
+        assertEquals(listOf(0), trial.history.map { it.epoch })
+        assertEquals(initial.error(), trial.bestRmse, 0.0)
+        assertEquals(initial.error(), trial.finalRmse, 0.0)
+        assertArrayEquals(initial.parameters(), trial.snapshot!!.parameters(), 0.0)
+        val candidate = ArchitectureCandidate(architecture, listOf(trial), 1, config.targetRmse)
+        assertFalse(candidate.valid)
+        assertNull(ArchitectureRanking.select(listOf(candidate), config).recommended)
+        assertEquals(1, sessions.closed.get())
     }
 
     @Test fun backendFailuresRemainFailedTrialsAndReleaseResources() {
