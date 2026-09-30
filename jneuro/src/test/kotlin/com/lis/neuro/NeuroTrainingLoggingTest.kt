@@ -137,7 +137,10 @@ class NeuroTrainingLoggingTest {
         val model = model()
         val info = TrainingDeviceInfo(TrainingBackend.CUBLAS, "cuBLAS test device", "test-identity", "FP32", "test-kernels")
         CublasTrainingSession(model, Neuro.TrainingPrecision.FP32, 7, { info }) { network, epochs, _, _ ->
-            repeat(epochs) { network.commitDeviceEpoch(network.exportTrainingState()) }
+            repeat(epochs) {
+                network.deviceTrainingOrder()
+                network.commitDeviceEpoch(network.exportTrainingState())
+            }
         }.use { session ->
             session.trainMiniBatch(2, 7, 3)
             session.trainUntil(1.0, 0)

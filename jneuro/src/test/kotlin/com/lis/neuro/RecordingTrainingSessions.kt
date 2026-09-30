@@ -8,6 +8,8 @@ import java.util.concurrent.atomic.AtomicInteger
 internal class RecordingTrainingSessions {
     val requested = Collections.synchronizedList(ArrayList<TrainingBackend>())
     val configurations = Collections.synchronizedList(ArrayList<Triple<TrainingBackend, Neuro.TrainingPrecision, Int>>())
+    val engines = Collections.synchronizedList(ArrayList<TrainingEngine>())
+    val chunkRequests = Collections.synchronizedList(ArrayList<TrainingChunkRequest>())
     val miniBatches = Collections.synchronizedList(ArrayList<Int>())
     val opened = AtomicInteger()
     val closed = AtomicInteger()
@@ -18,14 +20,17 @@ internal class RecordingTrainingSessions {
     @Volatile var failClose = false
     @Volatile var failAfterCommit = false
 
-    fun open(model: Neuro, backend: TrainingBackend, precision: Neuro.TrainingPrecision, batchSize: Int): NeuroTrainingSession {
+    fun open(model: Neuro, backend: TrainingBackend, precision: Neuro.TrainingPrecision, batchSize: Int, engine: TrainingEngine = TrainingEngine.REFERENCE): NeuroTrainingSession {
         requested += backend
+        engines += engine
         configurations += Triple(backend, precision, batchSize)
         check(backend !in setOf(TrainingBackend.CUDA, TrainingBackend.CUBLAS) || !unavailable) { "CUDA fixture unavailable" }
-        val delegate = model.newTrainingSession(TrainingBackend.CPU)
+        val delegate = if (engine == TrainingEngine.SMALL) model.newTrainingSession(TrainingBackend.CPU, precision, batchSize, engine)
+            else model.newTrainingSession(TrainingBackend.CPU)
         opened.incrementAndGet()
         val device = if (backend in setOf(TrainingBackend.CPU, TrainingBackend.AUTO)) delegate.info else
-            TrainingDeviceInfo(backend, "$backend test fixture", identity, precision.name, kernelVersion = "fixture-v1")
+            TrainingDeviceInfo(backend, "$backend test fixture", identity, precision.name, kernelVersion = "fixture-v1",
+                engine = engine, sigmoid = model.hyperParameters().sigmoidMode.name)
         return object : NeuroTrainingSession by delegate {
             private val released = AtomicBoolean()
             override val info = device
@@ -42,6 +47,14 @@ internal class RecordingTrainingSessions {
                 check(!failEpoch) { "CUDA fixture epoch failed" }
                 delegate.trainMiniBatch(epochs, batchSize, parallelism)
                 check(!failAfterCommit) { "CUDA fixture cleanup after committed epoch failed" }
+            }
+            override fun trainChunk(request: TrainingChunkRequest): TrainingChunkResult {
+                chunkRequests += request
+                check(!failEpoch) { "CUDA fixture epoch failed" }
+                val result = delegate.trainChunk(request)
+                epochCalls.addAndGet(result.committedEpochs)
+                check(!failAfterCommit) { "CUDA fixture cleanup after committed epoch failed" }
+                return result
             }
             override fun close() {
                 if (released.compareAndSet(false, true)) {

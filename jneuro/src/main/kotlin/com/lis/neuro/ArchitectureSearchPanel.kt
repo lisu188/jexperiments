@@ -161,7 +161,8 @@ internal class ArchitectureSearchPanel(
             evaluation.selectedItem = if (config.dataset in BOOLEAN_SETS) ArchitectureEvaluation.TRAINING_FIT else ArchitectureEvaluation.VALIDATION
         }
         source = config; sourceSize = samples
-        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · ${source.backend} · ${source.precision} · batch ${source.batchSize}"
+        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · ${source.backend} · ${source.precision} · ${source.engine} · ${source.sigmoid} · batch ${source.batchSize}"
+        sourceLabel.toolTipText = if (source.engine == TrainingEngine.SMALL) "Search intersects these bounds with 1–4 hidden layers and widths 4, 8 or 16." else null
         start.isEnabled = !running && samples > 0
     }
 
@@ -171,10 +172,10 @@ internal class ArchitectureSearchPanel(
         return ArchitectureSearchConfig(integer(minLayers), integer(maxLayers), integer(minWidth), integer(maxWidth), integer(parameters),
             seeds.text.split(',').map { token -> token.trim().toLongOrNull() ?: throw IllegalArgumentException("Seeds must be comma-separated integers.") },
             integer(epochs), integer(checkEvery), decimal(target), integer(successes), decimal(tolerance), policy.selectedItem as ArchitecturePolicy,
-            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed), integer(threads), integer(trials), (seconds.value as Number).toLong(),
+            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed, sigmoidMode = source.sigmoid), integer(threads), integer(trials), (seconds.value as Number).toLong(),
             strategy.selectedItem as ArchitectureSearchStrategy, NeuroTopologyConfig.parseHidden(source.hidden).toList(),
             searchSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Search seed must be an integer."),
-            integer(restartAfter), integer(restarts), source.backend, source.precision, source.batchSize)
+            integer(restartAfter), integer(restarts), source.backend, source.precision, source.batchSize, source.engine)
     }
 
     private fun submit() {
@@ -334,7 +335,7 @@ internal class ArchitectureSearchPanel(
             trial.failure.isNotEmpty() -> "Seed ${trial.seed}: ${trial.failure}"
             else -> "Seed ${trial.seed}: best ${scoreMode.label} ${number(trial.bestRmse)} at epoch ${trial.bestEpoch}; trained ${trial.epochs}. Apply = fresh run; replay = scored training partition."
         }
-        details.toolTipText = trial?.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision} · kernel ${it.kernelVersion} · ${it.identity}" }
+        details.toolTipText = trial?.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision} · ${it.engine} · ${it.sigmoid} · SIMD ${it.simdBits} · kernel ${it.kernelVersion} · ${it.identity}" }
         inspector.repaint(); plot.repaint()
     }
 

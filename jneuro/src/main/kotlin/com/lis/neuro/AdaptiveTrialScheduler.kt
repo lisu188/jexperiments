@@ -16,22 +16,28 @@ internal class TrialActivity {
     fun snapshot(): List<ArchitectureRunningTrial> = active.entries.sortedBy { it.key }.map { it.value }
 
     fun <T> track(index: Int, architecture: NetworkArchitecture, seed: Long,
-                  action: ((Int, Double) -> Unit) -> T): T {
-        maximum.accumulateAndGet(count.incrementAndGet(), ::maxOf)
+                  action: ((Int, Double) -> Unit) -> T): T =
+        trackMany(index, architecture, listOf(seed)) { progress -> action { epoch, best -> progress(0, epoch, best) } }
+
+    fun <T> trackMany(index: Int, architecture: NetworkArchitecture, seeds: List<Long>,
+                      action: ((Int, Int, Double) -> Unit) -> T): T {
+        maximum.accumulateAndGet(count.addAndGet(seeds.size), ::maxOf)
         try {
-            active[index] = ArchitectureRunningTrial(architecture, seed, 0, Double.POSITIVE_INFINITY)
-            return action { epoch, best -> active[index] = ArchitectureRunningTrial(architecture, seed, epoch, best) }
+            seeds.forEachIndexed { lane, seed -> active[index + lane] = ArchitectureRunningTrial(architecture, seed, 0, Double.POSITIVE_INFINITY) }
+            return action { lane, epoch, best -> active[index + lane] = ArchitectureRunningTrial(architecture, seeds[lane], epoch, best) }
         } finally {
-            active.remove(index)
-            count.decrementAndGet()
+            seeds.indices.forEach { active.remove(index + it) }
+            count.addAndGet(-seeds.size)
         }
     }
+
 }
 
 internal class AdaptiveTrialScheduler(
     private val data: ArchitectureSearchData,
     private val config: ArchitectureSearchConfig,
     private val searchId: String? = null,
+    private val evaluateGroup: ((NetworkArchitecture, List<Long>, () -> Boolean, (Int, Int, Double) -> Unit) -> List<ArchitectureTrial>)? = null,
     private val evaluate: (NetworkArchitecture, Long, () -> Boolean, (Int, Double) -> Unit) -> ArchitectureTrial
 ) {
     fun search(onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
@@ -45,7 +51,7 @@ internal class AdaptiveTrialScheduler(
             Thread(runnable, "jneuro-search-${workerId.incrementAndGet()}").apply { isDaemon = true }
         }
         data class Finished(val architecture: NetworkArchitecture, val trial: ArchitectureTrial)
-        val completions = ExecutorCompletionService<Finished>(pool)
+        val completions = ExecutorCompletionService<List<Finished>>(pool)
         val completed = ArrayList<ArchitectureCandidate>()
         val pending = LinkedHashMap<NetworkArchitecture, MutableMap<Long, ArchitectureTrial>>()
         val ready = ArrayDeque<Pair<NetworkArchitecture, Long>>()
@@ -112,37 +118,51 @@ internal class AdaptiveTrialScheduler(
                 if (candidate.fullyEvaluated) planner.observe(candidate)
             }
         }
+        var searchFailure: Throwable? = null
         try {
             publish(true)
             while (true) {
                 checkStop()
-                while (true) receive((completions.poll() ?: break).get())
+                while (true) (completions.poll() ?: break).get().forEach(::receive)
                 while (!stopping.get() && submitted - received < config.parallelism) {
                     checkStop()
                     if (stopping.get()) break
                     if (ready.isEmpty() && !admit()) break
                     val (architecture, seed) = ready.removeFirst()
-                    val index = submitted++
+                    val seeds = arrayListOf(seed)
+                    val available = config.parallelism - (submitted - received)
+                    while (evaluateGroup != null && seeds.size < available && ready.peekFirst()?.first == architecture) {
+                        seeds += ready.removeFirst().second
+                    }
+                    val index = submitted
+                    submitted += seeds.size
                     completions.submit {
-                        activity.track(index, architecture, seed) { progress ->
-                            Finished(architecture, evaluate(architecture, seed,
-                                { stopping.get() || Thread.currentThread().isInterrupted }, progress))
+                        activity.trackMany(index, architecture, seeds) { progress ->
+                            val stop = { stopping.get() || Thread.currentThread().isInterrupted }
+                            val trials = if (seeds.size > 1) requireNotNull(evaluateGroup)(architecture, seeds, stop, progress)
+                                else listOf(evaluate(architecture, seed, stop) { epoch, best -> progress(0, epoch, best) })
+                            check(trials.map { it.seed } == seeds) { "Cohort completion does not match the submitted seeds." }
+                            trials.map { Finished(architecture, it) }
                         }
                     }
                 }
                 publish()
                 if (received == submitted) break
-                completions.poll(50, TimeUnit.MILLISECONDS)?.let { receive(it.get()) }
+                completions.poll(50, TimeUnit.MILLISECONDS)?.get()?.forEach(::receive)
             }
             checkStop()
             publish(true)
             val end = stopReason ?: admissionEnd ?: ArchitectureTermination.NEIGHBOURHOODS_EXHAUSTED
             return ArchitectureSearchResult(data, config, end, planner.lineage.size, candidates(),
                 System.nanoTime() - start, planner.lineage, activity.peak)
+        } catch (failure: Throwable) {
+            searchFailure = failure
+            throw failure
         } finally {
             stopping.set(true)
-            pool.shutdownNow()
-            try { pool.awaitTermination(5, TimeUnit.SECONDS) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+            try { stopArchitectureWorkers(pool) } catch (cleanup: Throwable) {
+                if (searchFailure == null) throw cleanup else searchFailure.addSuppressed(cleanup)
+            }
         }
     }
 }

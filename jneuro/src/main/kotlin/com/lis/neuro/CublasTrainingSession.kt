@@ -18,13 +18,14 @@ internal class CublasTrainingSession(
     private var closed = false
     private var failed = false
     override val info: TrainingDeviceInfo
+    override val currentRmse: Double get() = network.trainingError()
 
     init {
         require(batchSize > 0) { "batchSize must be > 0" }
         network.acquireTraining(this, sessionId)
         initialEpoch = network.statistics().epochsTrained
         try {
-            info = infoFactory(precision)
+            info = infoFactory(precision).copy(sigmoid = network.hyperParameters().sigmoidMode.name)
             check(info.backend == TrainingBackend.CUBLAS && info.precision == precision.name) {
                 "cuBLAS device information does not match the requested backend and precision."
             }
@@ -54,7 +55,10 @@ internal class CublasTrainingSession(
         batchTrain(network, epochs, minOf(batch, network.trainingSampleCount()), precision)
     }
 
-    override fun trainEpoch(): Double = run("trainEpoch", 1) { trainBatches(1, batchSize); network.trainingError() }
+    override fun trainEpoch(): Double = run("trainEpoch", 1) {
+        trainBatches(1, batchSize)
+        network.statistics().lastTrainingError.let { if (it.isNaN()) network.trainingError() else it }
+    }
     override fun train(epochs: Int) = run("train", epochs) {
         require(epochs >= 0) { "epochs must be >= 0" }
         trainBatches(epochs, batchSize)

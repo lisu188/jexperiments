@@ -29,6 +29,10 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private val hidden = JTextField("6")
     private val dataset = JComboBox(NeuroLearningSets.Kind.entries.toTypedArray())
     private val backend = JComboBox(TrainingBackend.entries.toTypedArray())
+    private val engine = JComboBox(TrainingEngine.entries.toTypedArray()).apply {
+        toolTipText = "SMALL supports 1–4 hidden layers, each with 4, 8 or 16 neurons. REFERENCE accepts general topologies."
+    }
+    private val sigmoid = JComboBox(Neuro.SigmoidMode.entries.toTypedArray())
     private val deviceStatus = JLabel("CPU · awaiting training").apply { accessibleContext.accessibleName = "Training device" }
     private val seed = JTextField("42")
     private val epochLimit = NumericInputs.spinner(10_000, 1000)
@@ -79,8 +83,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private var selectedParameterLayer = 0
     private var selectedParameterStart = 0
     private var thread: Thread? = null
-    @Volatile internal var trainingSessionFactory: (Neuro, TrainingBackend, Neuro.TrainingPrecision, Int) -> NeuroTrainingSession =
-        { model, selected, precision, batch -> model.newTrainingSession(selected, precision, batch) }
+    @Volatile internal var trainingSessionFactory: ((Neuro, TrainingBackend, Neuro.TrainingPrecision, Int, TrainingEngine) -> NeuroTrainingSession)? = null
     private val timer = Timer(75) { refresh() }
 
     init {
@@ -104,6 +107,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         bind("control R", "Reset model") { post { it.apply(it.activeConfig) } }
         dataset.addActionListener { updateDescription() }
         backend.addActionListener { updateTrainingPrecision() }
+        engine.addActionListener { updateTrainingPrecision() }
         updateDescription()
         updateTrainingPrecision()
         if (initial != null) {
@@ -111,6 +115,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             dataset.selectedItem = initial.config.dataset
             seed.text = initial.config.seed.toString()
             backend.selectedItem = initial.config.backend
+            engine.selectedItem = initial.config.engine
+            sigmoid.selectedItem = initial.config.sigmoid
             trainingPrecision.selectedItem = initial.config.precision
             batchSize.value = initial.config.batchSize
             updateTrainingPrecision()
@@ -155,6 +161,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         sidebar.add(Box.createVerticalStrut(20))
         section("03  TRAINING")
         field("Training backend", backend)
+        field("Training engine", engine)
+        engine.toolTipText = "REFERENCE retains the established engine. SMALL uses optimized CPU or CUDA kernels; AUTO selects CPU for SMALL."
         backend.toolTipText = "CPU is the default. CUDA uses FP64 driver kernels. CUBLAS enables batch acceleration; AUTO selects CPU or CUBLAS."
         field("Random seed", seed)
         field("Maximum epochs", epochLimit)
@@ -162,9 +170,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         field("Learning rate", rate, advanced)
         field("Momentum", momentum, advanced)
         field("Target RMSE", target, advanced)
-        field("GPU precision", trainingPrecision, advanced)
+        field("Training precision", trainingPrecision, advanced)
+        field("Sigmoid", sigmoid, advanced)
+        sigmoid.toolTipText = "EXACT uses the exponential sigmoid. FAST explicitly selects the existing approximation."
         field("Batch size", batchSize, advanced)
-        trainingPrecision.toolTipText = "FP32 is available for CUBLAS and AUTO. CPU and CUDA train in FP64."
+        trainingPrecision.toolTipText = "SMALL supports FP64 and FP32 on CPU/CUDA. REFERENCE supports FP32 through CUBLAS and AUTO."
         batchSize.toolTipText = "1 keeps online training; larger values average a mini-batch before each update."
         advanced.isVisible = false
         sidebar.add(JCheckBox("Advanced settings").apply {
@@ -315,7 +325,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     }
 
     private fun updateTrainingPrecision() {
-        val supportsFp32 = backend.selectedItem in setOf(TrainingBackend.CUBLAS, TrainingBackend.AUTO)
+        val supportsFp32 = if (engine.selectedItem == TrainingEngine.SMALL) backend.selectedItem != TrainingBackend.CUBLAS
+            else backend.selectedItem in setOf(TrainingBackend.CUBLAS, TrainingBackend.AUTO)
         if (!supportsFp32) trainingPrecision.selectedItem = Neuro.TrainingPrecision.FP64
         trainingPrecision.isEnabled = supportsFp32
     }
@@ -335,10 +346,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
                 dataset.selectedItem as NeuroLearningSets.Kind, seed.text.trim().toLong(), (epochLimit.value as Number).toInt(),
                 (target.value as Number).toDouble(), (rate.value as Number).toDouble(), (momentum.value as Number).toDouble(),
                 backend.selectedItem as TrainingBackend, trainingPrecision.selectedItem as Neuro.TrainingPrecision,
-                (batchSize.value as Number).toInt())
+                (batchSize.value as Number).toInt(), engine.selectedItem as TrainingEngine, sigmoid.selectedItem as Neuro.SigmoidMode)
             configError.text = " "
             NeuroLog.info("ui", "ui.configuration.submitted", "windowId" to windowId, "backend" to config.backend,
-                "precision" to config.precision, "batchSize" to config.batchSize, "topology" to config.description())
+                "precision" to config.precision, "engine" to config.engine, "sigmoid" to config.sigmoid,
+                "batchSize" to config.batchSize, "topology" to config.description())
             post { it.apply(config, true) }
         } catch (exception: Exception) {
             NeuroLog.warn("ui", "ui.configuration.rejected", exception, "windowId" to windowId)
@@ -373,28 +385,34 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
 
     private fun workerLoop() {
         NeuroLog.info("ui", "ui.worker.started", "windowId" to windowId)
-        val studio = NeuroStudio(windowId = windowId, openSession = { model, selected, precision, batch -> trainingSessionFactory(model, selected, precision, batch) })
-        try {
-            while (!closing) {
-                val action = if (studio.hasWork) commands.poll(24, TimeUnit.MILLISECONDS) else commands.take()
-                try {
-                    action?.invoke(studio)
-                    while (true) (commands.poll() ?: break).invoke(studio)
-                    if (studio.hasWork && !closing) studio.advance(speed) { closing || commands.isNotEmpty() }
-                    if (!closing) published = studio.frame()
-                } catch (exception: Exception) {
-                    if (closing || exception is InterruptedException) break
-                    NeuroLog.error("ui", "ui.worker.failed", exception, "windowId" to windowId)
-                    studio.fail(exception.message ?: exception.javaClass.simpleName)
-                    published = studio.frame()
+        NeuroTrainingDeviceService().use { service ->
+            val studio = NeuroStudio(windowId = windowId, openCohort = service::openCohort,
+                openSession = { model, selected, precision, batch, selectedEngine ->
+                    trainingSessionFactory?.invoke(model, selected, precision, batch, selectedEngine)
+                        ?: service.openSession(model, selected, precision, batch, selectedEngine)
+                })
+            try {
+                while (!closing) {
+                    val action = if (studio.hasWork) commands.poll(50, TimeUnit.MILLISECONDS) else commands.take()
+                    try {
+                        action?.invoke(studio)
+                        while (true) (commands.poll() ?: break).invoke(studio)
+                        if (studio.hasWork && !closing) studio.advance(speed) { closing || commands.isNotEmpty() }
+                        if (!closing) published = studio.frame()
+                    } catch (exception: Exception) {
+                        if (closing || exception is InterruptedException) break
+                        NeuroLog.error("ui", "ui.worker.failed", exception, "windowId" to windowId)
+                        studio.fail(exception.message ?: exception.javaClass.simpleName)
+                        published = studio.frame()
+                    }
                 }
+            } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+            finally {
+                try { studio.close() } catch (exception: Exception) {
+                    NeuroLog.error("ui", "ui.worker.cleanup.failed", exception, "windowId" to windowId)
+                    throw exception
+                } finally { NeuroLog.info("ui", "ui.worker.stopped", "windowId" to windowId) }
             }
-        } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
-        finally {
-            try { studio.close() } catch (exception: Exception) {
-                NeuroLog.error("ui", "ui.worker.cleanup.failed", exception, "windowId" to windowId)
-                throw exception
-            } finally { NeuroLog.info("ui", "ui.worker.stopped", "windowId" to windowId) }
         }
     }
 
@@ -410,13 +428,13 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             if (!searchSession.isCurrent(token)) return@offer
             try {
                 studio.setRunning(false)
-                studio.close()
+                studio.closeTraining()
                 require(studio.activeConfig == expectedConfig && studio.frame().samples == expectedSamples) {
                     "Active configuration changed before search started. Try again on the current run."
                 }
                 val data = studio.searchData(evaluation, fraction, splitSeed)
                 published = studio.frame()
-                val report = NeuroArchitectureSearch { model, selected, precision, batch -> trainingSessionFactory(model, selected, precision, batch) }.search(data, config, { progress ->
+                val report = NeuroArchitectureSearch(trainingSessionFactory).search(data, config, { progress ->
                     EventQueue.invokeLater {
                         if (!closing && searchSession.isCurrent(token)) architectureSearch.updateProgress(progress)
                     }
@@ -549,7 +567,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         status.foreground = if (next.state == StudioState.FAILED) ERROR else ACCENT
         deviceStatus.text = next.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision}" }
             ?: "${next.config.backend} · ${if (next.state == StudioState.FAILED) "unavailable" else "awaiting training"}"
-        deviceStatus.toolTipText = next.deviceInfo?.let { "${it.identity} · kernel ${it.kernelVersion}" }
+        deviceStatus.toolTipText = next.deviceInfo?.let { "${it.identity} · ${it.engine} · ${it.sigmoid} · SIMD ${it.simdBits} · kernel ${it.kernelVersion}" }
         activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}   ·   batch ${next.config.batchSize}" + if (next.replayNote.isEmpty()) "" else "   ·   ${next.replayNote}"
         metrics[0].text = "%,d".format(Locale.ROOT, next.diagnostics.epoch())
         metricDetails[0].text = "of %,d epochs".format(Locale.ROOT, next.config.maxEpochs)
@@ -1010,13 +1028,14 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             val export = args.firstOrNull { it.startsWith("--screenshots=") }?.substringAfter('=')
             if (export != null) {
                 val directory = File(export).apply { mkdirs() }
-                val studio = NeuroStudio()
-                studio.setRunning(true)
-                while (studio.hasWork) studio.advance(100)
-                studio.compareSeeds()
-                val snapshot = studio.frame()
-                val searchPreview = NeuroArchitectureSearch().search(studio.searchData(ArchitectureEvaluation.TRAINING_FIT),
-                    ArchitectureSearchConfig(maxLayers = 2, maxWidth = 3, maxEpochs = 2500, maxParameters = 32))
+                val (snapshot, searchPreview) = NeuroStudio().use { studio ->
+                    studio.setRunning(true)
+                    while (studio.hasWork) studio.advance(100)
+                    studio.compareSeeds()
+                    val report = NeuroArchitectureSearch().search(studio.searchData(ArchitectureEvaluation.TRAINING_FIT),
+                        ArchitectureSearchConfig(maxLayers = 2, maxWidth = 3, maxEpochs = 2500, maxParameters = 32))
+                    studio.frame() to report
+                }
                 EventQueue.invokeAndWait {
                     installTheme()
                     NeuroXorCanvas(snapshot, false).use { ui ->

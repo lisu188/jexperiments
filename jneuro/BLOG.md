@@ -2,7 +2,7 @@
 
 ## Scope and runtime
 
-JNeuro is a small dense feed-forward neural network implemented directly on primitive arrays. The JVM implementation is Kotlin: the training engine, Vector API kernels, optional native BLAS adapter, CUDA training sessions, diagnostics, desktop application, correctness tests, and JMH benchmarks. GPU arithmetic lives in a small CUDA C++ source compiled to packaged PTX. There is no retained handwritten Java implementation in `jneuro/src`; generated JMH Java harnesses are build outputs only.
+JNeuro is a small dense feed-forward neural network implemented directly on primitive arrays. The JVM implementation is Kotlin: the training engine, Vector API kernels, optional native BLAS adapter, CUDA training sessions, diagnostics, desktop application and correctness tests. The benchmark source set also contains small handwritten Java JMH and command-line drivers. GPU arithmetic lives in a CUDA C++ source compiled to packaged PTX; a separate C++ AVX2 experiment tests native CPU training. Generated JMH harness classes remain build outputs.
 
 The migration uses Kotlin 2.4.20, the stable release published on 7 September 2026. Kotlin language/API level 2.4 and warnings-as-errors are configured explicitly. The runtime and toolchain remain JDK 27, while JVM bytecode targets 26, the highest target supported by this Kotlin release. The distinction matters: a class-file target is not a promise that incubating JDK 27 APIs will run on JDK 26.
 
@@ -107,7 +107,7 @@ try (var training = network.newTrainingSession(TrainingBackend.CUDA)) {
 }
 ```
 
-`TrainingDeviceInfo` reports the actual backend, device name, identity, precision and kernel version. The `CUDA` backend uses FP64; its identity includes the device UUID and driver version, and its kernel version is the packaged PTX SHA-256. Selection is explicit: an unavailable CUDA driver, unsupported device, failed kernel load or exhausted device memory produces an error that can be resolved by selecting CPU or fixing the reported environment. The separate `CUBLAS` backend adds FP32 and matrix multiplication through optional native libraries, as described below.
+`TrainingDeviceInfo` reports the actual backend, device name, identity, precision and kernel version. With the default `REFERENCE` engine, the `CUDA` backend uses FP64; its identity includes the device UUID and driver version, and its kernel version is the packaged PTX SHA-256. Selection is explicit: an unavailable CUDA driver, unsupported device, failed kernel load or exhausted device memory produces an error that can be resolved by selecting CPU or fixing the reported environment. The separate `CUBLAS` backend adds FP32 and matrix multiplication through optional native libraries, as described below. The specialized `SMALL` engine described later also implements driver-only FP32 training.
 
 The native adapter uses the JDK Foreign Function and Memory API against the installed CUDA Driver API. On Windows it loads `nvcuda.dll`; on Linux it tries `libcuda.so.1` and then the WSL driver path. It selects device ordinal zero, requires compute capability 7.5 or newer, retains its primary context and creates a private stream. The installed driver JIT-compiles packaged PTX. Running training does not require a local CUDA toolkit, Python service, extra Java numerical framework or downloading a model. JavaExec tasks enable native access; direct Java launches need `--enable-native-access=ALL-UNNAMED` as well as the module's Vector API flags.
 
@@ -190,7 +190,7 @@ try (var training = network.newTrainingSession(
 
 The third factory argument is the default batch size for `trainEpoch`, `train` and `trainUntil`. The `trainMiniBatch` method can override it for a call. Closing any session releases its exclusive writer ownership and keeps completed host state available for CPU continuation.
 
-AUTO chooses CUBLAS only if estimated work for the effective batch reaches 2,000,000 floating-point operations and the native stack is available. The estimate sums `6 * batch * inputWidth * outputWidth` across layers and clamps the batch to the dataset size. Tiny workloads resolve to CPU before probing any native libraries. This is a deterministic heuristic, not a measured speedup guarantee. CPU always reports its actual FP64 precision even if AUTO was requested with FP32.
+With `REFERENCE`, AUTO chooses CUBLAS only if estimated work for the effective batch reaches 2,000,000 floating-point operations and the native stack is available. The estimate sums `6 * batch * inputWidth * outputWidth` across layers and clamps the batch to the dataset size. Tiny workloads resolve to CPU before probing any native libraries. This is a deterministic heuristic, not a measured speedup guarantee. The reference CPU engine reports its actual FP64 precision even if AUTO was requested with FP32; `SMALL` has a separate CPU FP32 implementation.
 
 ```java
 try (var training = network.newTrainingSession(
@@ -231,11 +231,11 @@ The native adapters and orchestration remain inside the ordinary 90% JaCoCo gate
 
 `cpuGpuBenchmark` and the retained `cudaBenchmark` task run the same command-line harness. The default `smoke` profile uses 128 samples, a 32/64/32/4 network, two epochs, batches 16 and 64, one warmup and three measured repetitions. The explicit `matrix` profile uses 1024 samples with 128/256/128/32 and 256/512/256/32 networks. Both profiles compare CPU FP64, driver CUDA FP64, cuBLAS FP64 and cuBLAS FP32. These are hardware-bound entrypoints: explicitly requested GPU engines fail if unavailable; the harness never substitutes CPU silently.
 
-Every round starts with the same seed, weights, momentum, dataset and shuffle state. The harness calls `session.trainMiniBatch(epochs, batchSize, 1)` for every engine, with one CPU worker, and rotates the measured backend order each repetition. Warmups exercise the complete path but are excluded from the reported samples. A separate CPU reference runs outside timing, including when `--backends` selects only GPU engines.
+Every round starts with the same seed, weights, momentum, dataset and shuffle state. In the default `MINIBATCH` mode, the harness calls `session.trainMiniBatch(epochs, batchSize, 1)` for every engine, with one CPU worker, and rotates the measured backend order each repetition. Warmups exercise the complete path but are excluded from the reported samples. A separate CPU reference runs outside timing, including when `--backends` selects only GPU engines. The `EPOCH` and `CHUNK` modes added with `SMALL` are described below.
 
 The console prints median training-call and total times alongside speedups against the measured CPU median. A speedup above 1 means faster than CPU for that workload. Both JSON and CSV reports retain every measured round, separate session-open/training/close timings, device identity and precision. JSON additionally records complete minimum/median/p95 summaries, JVM/OS, logging level, seed, CUDA resource hashes and benchmark class hash. CSV includes training minimum/median/p95, total median and speedups beside each round. Pass `-PneuroBenchmarkRevision=<revision>` to record source provenance; otherwise that field says `unspecified`. The default report prefix is `build/reports/cuda-benchmark/benchmark`, resolved from the JNeuro module directory when launched by Gradle.
 
-The total interval includes session open, training and close, including native initialization, transfers and diagnostics. Both GPU engines publish and compute RMSE on the CPU after every epoch; the matrix CPU engine computes RMSE once at the end of the multi-epoch call. These timings therefore compare the current application execution paths, including their different diagnostic costs. It excludes model/dataset construction and post-run comparison. The cuBLAS implementation creates handles, compiles kernels and allocates buffers inside the training call, so its training column includes those costs. The driver backend performs its retained setup during session open. Comparing both columns makes that difference visible; neither column is an isolated GEMM or kernel throughput measurement.
+The total interval includes session open, training and close, including native initialization, transfers and diagnostics. In this original reference comparison, both GPU engines publish and compute RMSE on the CPU after every epoch; the matrix CPU engine computes RMSE once at the end of the multi-epoch call. These timings therefore compare application execution paths, including their different diagnostic costs. The interval excludes model/dataset construction and post-run comparison. The cuBLAS implementation creates handles, compiles kernels and allocates buffers inside the training call, so its training column includes those costs. The driver backend performs its retained setup during session open. Comparing both columns makes that difference visible; neither column is an isolated GEMM or kernel throughput measurement.
 
 Each warmup and measured round verifies every weight, bias and momentum value, RMSE, and completed epoch/sample counters against the CPU reference. FP64 uses absolute tolerance `1e-10` plus relative tolerance `1e-8`; FP32 uses `5e-5` plus `2e-3`. Non-finite results or mismatches fail the run. Partial JSON reports carry a failure status and the failing stage/backend. CSV marks any retained rows as failed; a failure before the first measured round produces a header-only CSV. The original error is preserved if writing the report also fails. Tolerances account for precision and reduction ordering; this verifies the tested trajectory, not arbitrary long-run convergence equivalence.
 
@@ -253,6 +253,170 @@ A local Windows 11 run on September 30, 2026 used an Intel Core i5-14400F with o
 | 256/512/256/32 | 1024 / 5 / 256 | 7042.04 ms | 683.85 ms | 1350.08 ms | 1367.02 ms |
 
 Across both batches in both profiles and the custom 2/8/8/8/1 case, all 160 measured rounds passed full-state numerical validation. The largest listed case was 10.30 times faster through the driver CUDA backend including setup/cleanup; the tiny cases favored CPU. For 2/8/8/8/1 at batch 64, training alone took 0.495 ms on CPU versus 3.348 ms on CUDA, so even excluding session setup did not favor GPU. This is a bounded local application benchmark with one CPU worker, not a claim about every CPU configuration, sustained kernel throughput, or a general GPU speedup. Repeat the command on the target machine and inspect the distributions rather than treating these medians as a release performance guarantee.
+
+## SMALL: specializing tiny networks without changing the default engine
+
+The reference measurements above make `2/8/8/8/1` a useful optimization target: it has only 177 trainable weights and biases. The specialized family is deliberately finite: two inputs, one through four hidden layers, each independently chosen from widths 4, 8 and 16, and one output. That covers 120 topologies, including mixed widths such as `2/4/16/8/16/1`. Its largest member, `2/16/16/16/16/1`, has 881 parameters. A direct `2/1` network and arbitrary widths continue to use `REFERENCE`.
+
+Engine and device are separate choices. Existing calls default to `TrainingEngine.REFERENCE`, CPU, FP64 and the exact sigmoid. Selecting `SMALL` enables the specialized CPU or driver-CUDA implementation; `SMALL` with AUTO currently resolves to CPU. It does not probe cuBLAS or guess a GPU crossover from network size. An unsupported SMALL topology or a SMALL/CUBLAS combination is rejected explicitly.
+
+```java
+// Same public model and dataset, explicit training implementation.
+try (var session = model.newTrainingSession(
+        TrainingBackend.CPU, Neuro.TrainingPrecision.FP64,
+        64, TrainingEngine.SMALL)) {
+    session.trainMiniBatch(10, 64, 1);
+}
+```
+
+The batch hint controls `trainEpoch`, `train` and `trainChunk`: a hint of one uses online SGD, and a larger hint uses averaged mini-batches. Calling `trainMiniBatch(..., 1, ...)` explicitly retains matrix-style batch-one arithmetic. Online SGD and batch-one matrix training have the same mathematical update but different floating-point grouping in hidden deltas and weight scaling; the specialized kernels preserve those two conventions. `train` and `trainUntil` still publish each completed epoch. Multi-epoch publication requires the explicit chunk API.
+
+### CPU training SIMD and precision
+
+Earlier inference sessions vectorized predictions from a model snapshot. `SmallCpuTraining` instead owns mutable training weights, biases, both momentum buffers, activations, deltas and gradients. Its single-model layout keeps each neuron's input weights contiguous and maintains a transposed copy for the forward pass. Vector lanes represent output neurons: broadcast one input, multiply the corresponding contiguous neuron weights and accumulate in the same input order. Backpropagation and optimizer updates use vector operations where the layer width permits them, with scalar tails for the one-neuron output.
+
+The implementation supports 128-bit and 256-bit species and a scalar path. It clamps the selected width to the JVM's preferred species and never requests 512-bit vectors. With FP32 and only width-four hidden layers it chooses 128 bits instead of leaving half of a 256-bit vector idle. Inline dispatch puts static `SPECIES_128` or `SPECIES_256` constants at the intrinsic call sites, giving C2 a constant vector shape. The `simdBits` metadata reports the selected implementation width; confirming machine instructions and establishing a speedup still requires the target JVM's compiled-code and benchmark evidence.
+
+```java
+// Read the resolved training path, including precision and SIMD selection.
+var device = session.getInfo();
+System.out.println(device.getEngine());
+System.out.println(device.getPrecision());
+System.out.println(device.getSimdBits());
+System.out.println(device.getSigmoid());
+```
+
+The CPU implementation streams samples through reusable activation/delta/gradient arrays rather than allocating a batch-by-layer activation matrix. A mini-batch still accumulates gradients in sample order and applies momentum once after its actual sample count, including a short final batch. Forward sums and momentum use explicit `Math.fma`; unrelated multiplications retain their original grouping. This limits allocation and setup work without changing the optimizer's update frequency.
+
+FP32 is a real compute-state choice. The CPU kernel stores weights, biases, gradients, momentum, activations and deltas in `FloatArray`, converts inputs and hyperparameters on construction, and widens the completed checkpoint back into the model's public double arrays at publication. Requesting FP32 therefore changes the training trajectory; it is not merely a smaller input buffer. Reopening a CPU FP64 session imports the last rounded checkpoint, including momentum. It cannot recover the precision discarded by FP32 training.
+
+```java
+try (var session = model.newTrainingSession(
+        TrainingBackend.CPU, Neuro.TrainingPrecision.FP32,
+        16, TrainingEngine.SMALL)) {
+    session.trainMiniBatch(5, 16, 1);
+}
+// The model now contains the completed FP32 trajectory, widened to doubles.
+```
+
+EXACT remains the default activation. It evaluates `Math.exp` per lane on CPU; vectorizing the surrounding affine transforms does not turn that call into a custom approximate exponential. FAST is an explicit hyperparameter: it reduces the magnitude into a base-two exponent and remainder, evaluates the existing degree-five polynomial, and rescales it. The polynomial arithmetic can be vectorized, but the selected mode is recorded in every training identity and replay. FAST and FP32 need separate paired-seed convergence measurements, including epochs to target and failures to converge, in addition to throughput measurements.
+
+### Chunks, recoverable shuffle state and publication
+
+`TrainingChunkRequest` makes deferred publication visible in the API. A request may train at most 64 epochs in one call, accepts an optional target/error-check interval and cancellation supplier, and has a default 25 ms cooperative time budget.
+
+```java
+var request = new TrainingChunkRequest(
+    64, null, 1, () -> cancelled.get(), 25_000_000L);
+var result = session.trainChunk(request);
+int committed = result.getCommittedEpochs();
+var reason = result.getTermination();
+```
+
+The session initially trains one epoch to estimate the cost. Later launches use the remaining time estimate, the 64-epoch cap, and the next target-check boundary to choose a count. Cancellation is inspected between calls into the compute kernel. A submitted CPU/native/GPU chunk runs to completion before the host can cancel it; the time budget is advisory and can be exceeded by one expensive epoch, launch or driver operation. `COMPLETED`, `CONVERGED`, `CANCELLED` and `BUDGET` distinguish the reasons for returning. Callers advance their visible progress by `committedEpochs`, never by the requested count.
+
+`TrainingShuffle` reserves the ordered sample permutations before computation. The reservation contains the random-generator position associated with each epoch; committing consumes exactly that prefix and makes its generator position recoverable. Order arrays are recycled after commit. A failed chunk leaves its pending orders available, so closing and reopening from the last host checkpoint retries the same samples in the same order. Adding data invalidates obsolete order buffers and resumes from the last committed random-generator position with the new dataset size. Dataset mutation still requires releasing the model's exclusive training owner first.
+
+The compute kernel only returns a private `NeuroTrainingState`. `SmallTrainingSession` validates topology, buffer dimensions and every parameter/momentum value before copying it into the host model, advancing epoch/sample counts and computing the new RMSE. A failure after private computation may have advanced that kernel's internal state, so the session becomes terminal and must be closed. The host retains its last completed checkpoint and remains usable after close. This rule covers native status errors, CUDA dispatch/synchronization failures, partial downloads and non-finite outputs; a submitted kernel is never itself evidence of a published epoch.
+
+### Multiple models per vector and independent trial progress
+
+`SmallCpuCohort` uses a second layout: a structure of arrays where adjacent lanes contain the same parameter from different models. Four FP64 models or eight FP32 models fit a 256-bit group. Each lane has independent weights, momentum and shuffle orders; lanes never reduce into each other's gradients. This avoids having to fill a vector with neurons from a very narrow layer. The last group is padded, and activity masks keep inactive models' public states unchanged.
+
+The public `NeuroTrainingCohort` requires distinct models with identical topology, dataset values and hyperparameters except seed. It acquires every model as a writer before opening compute state. CPU groups can run on a bounded worker pool; CUDA uses one packed cohort on one stream. All completed group results are validated before any enabled sibling model is published. If a CPU task fails or the caller is interrupted, the implementation joins every submitted worker before releasing resources; an interrupted wait is not evidence that a worker stopped using its buffers.
+
+```java
+// models have the same shape/data/hyperparameters and independent seeds.
+try (var service = new NeuroTrainingDeviceService(1);
+     var cohort = service.openCohort(models, TrainingBackend.CPU,
+             Neuro.TrainingPrecision.FP64, 64, 4)) {
+    boolean[] active = new boolean[models.size()];
+    java.util.Arrays.fill(active, true);
+    var results = cohort.trainChunk(request, active);
+}
+```
+
+Each result reports that model's committed epochs and termination reason. Models reaching a target can stop while their siblings continue. Search uses compatible seeds as a cohort while retaining per-seed checkpoints, scores and success/failure status. The search scheduler already supplies bounded parallel workers, so a cohort evaluated on a search worker does not create another nested pool. Architecture candidates still obey the SMALL shape family and the configured search bounds and parameter budget.
+
+### Fused CUDA: one block per model, one packed result per chunk
+
+The SMALL CUDA engine uses the installed driver and the packaged PTX, independently of cuBLAS/NVRTC. `small_train_fp64` and `small_train_fp32` keep one model's parameters and momentum in shared memory during a chunk. The launcher passes `models * 128` work items to the existing 128-thread launch adapter, giving exactly one block per model. A single model therefore occupies one block; launching it on a GPU does not by itself expose device-wide parallelism.
+
+Each block handles the epoch and mini-batch loops internally. Forward activations and deltas are tiled over eight samples; gradient accumulation preserves sample order across tiles. Parameters, velocities and gradients plus the eight-sample activation/delta tile require under 30 KiB of explicit FP64 shared storage for the largest supported shape, below the 48 KiB design bound. Scratch storage does not grow with dataset size or the requested mini-batch. A short final tile and a short final batch use their actual counts. The source preserves the online/matrix arithmetic distinction and uses explicit FMA with compiler contraction disabled for other expressions.
+
+Weights, biases and momentum are packed together. Inputs and targets are uploaded once per session and shared across models in a cohort; topology and state buffers also remain resident. Each chunk uploads its reserved orders and active-model flags, launches once, synchronizes and downloads one complete packed state buffer. The host reuses same-size order staging, activity and permutation-validation arrays, and alternates two packed download buffers. A partial download can therefore damage staging without overwriting the last successful packed result. The host checks the entire result before any model publication. The device order buffer grows only when a larger chunk requires it, with memory admission checked before allocation. A failed or non-finite chunk poisons the compute session and preserves the host checkpoint.
+
+FP32 uses float arithmetic and float shared working state inside the fused kernel. Its global packed state and host transfer ABI remain double precision: values are cast on entry and widened on exit. Inputs and targets also use the common double upload ABI. Thus FP32 currently reduces compute/shared-memory precision, **not** the byte size of persistent global state or the packed download. The device metadata explicitly includes `small-v2/packed-fp64/` and the packaged PTX hash alongside the actual compute precision.
+
+```java
+try (var service = new NeuroTrainingDeviceService(1)) {
+    try (var session = service.openSession(model, TrainingBackend.CUDA,
+            Neuro.TrainingPrecision.FP64, 64, TrainingEngine.SMALL)) {
+        session.trainChunk(request);
+    }
+    // Another session may reuse the released driver/context/module/stream lease.
+}
+```
+
+`NeuroTrainingDeviceService` is the explicit owner of reusable native driver leases. A lease retains the CUDA primary context, loaded module, cached entrypoints and private stream between sessions. Each retained driver also owns an exact-size buffer pool capped at 1 MiB and 64 allocations. A session release returns eligible storage to that pool; larger/excess allocations are freed. Reopening uploads the new model/dataset into borrowed storage, so pooled capacity does not imply that old tensor values remain a usable model. Live allocations are tracked separately, and pending stream work completes before storage becomes reusable. Session close drains unreleased allocations; a broken lease flushes the entire pool and closes its driver. Service close frees every pooled buffer before releasing native handles.
+
+Concurrent leases have a configured limit and fail immediately when exhausted. Device allocation also uses the existing shared 80% admission budget and current free-memory check. Free-memory reporting remains the driver's physical value, including memory already held by the pool; the active-session estimate is consequently conservative. There is no waiting queue and no process-global hidden context cache. Close every session/cohort before closing its service; cleanup attempts all owned resources and preserves suppressed failures.
+
+### Studio pacing, search scoring and replay
+
+The Studio exposes engine, backend, training precision and sigmoid mode separately, and displays the resolved device identity, engine, precision, SIMD width and kernel provenance. The worker owns a device service, so resetting a model can reuse an available CUDA driver lease. Training remains off the Swing event thread. Command polling while training is paced at 50 ms, and the current Swing refresh timer is 75 ms; these are pacing intervals, not a hard real-time frame-rate promise. User commands can wake the worker earlier.
+
+SMALL work within one Studio advancement has a 25 ms cooperative budget and checks queued commands between compute calls. Requests stop at the maximum epoch and the next visible checkpoint milestone. Normal Studio target checking remains per epoch (`checkEvery = 1`), so it deliberately does not skip over a convergence point merely to make a larger GPU launch. Search instead limits chunks to the next configured scoring boundary and retains each seed's best checkpoint; reaching the target is still distinct from completing a full-budget search trial.
+
+Replay records whether a trial used a cohort. A cohort trial reopens the cohort implementation even when replaying just one seed, preserving the arithmetic path instead of switching to a single-model neuron-lane kernel. Replay checks the complete `TrainingDeviceInfo`: backend, device/driver identity, precision, kernel version, engine, SIMD width and sigmoid mode. It advances only to the recorded scoring boundaries and verifies the recovered score before replacing the displayed model. This intentionally rejects incompatible provenance rather than promising bitwise replay after a driver, compiler or arithmetic-mode change.
+
+### Native AVX2/FMA experiment and its retention gate
+
+The optional native experiment targets only `2/8/8/8/1` in FP64. It uses persistent FFM state/data/order buffers and a structure-of-arrays C++ loop with four independent models per AVX2 vector. Remaining models, including a single model, use scalar native arithmetic. One FFM training call processes a 1..64-epoch chunk; copying the completed buffer, constructing a full checkpoint and publishing it are part of the application path being measured. The experiment preallocates orders for 64 epochs and rejects workloads requiring more than 64 MiB for that buffer.
+
+The dispatcher is compiled separately from the AVX2 translation unit. At runtime it checks AVX2 and FMA support; Windows also checks OSXSAVE/AVX support and enabled XState before entering the vector unit. This gives unsupported CPUs a scalar path without executing forced AVX2 instructions in the dispatcher. No AVX-512 target is requested. The Windows workflow builds a DLL with the runner's existing MSVC toolchain and `/fp:strict`, with `/arch:AVX2` restricted to the vector unit; the artifact records compiler flags, source hashes, revision and library hash. The library path is explicit through `jneuro.small.native`, exposed to Gradle tasks as `-PneuroSmallNative=...`.
+
+This is a benchmark candidate, not a new public `TrainingBackend`. Acceptance requires full-state parity first. Retaining it as a production option additionally requires representative end-to-end medians at least 20% better than the optimized JVM path with no p95 regression, including packing, copying and publication. A faster isolated inner loop or a winning best sample does not satisfy that gate. The scalar exact exponential, off-heap copies and small-cohort tails are real costs, and the current experiment does not support the other 119 SMALL shapes or FP32.
+
+### Reproducing the comparisons
+
+CPU-only runs can select an explicit list without touching a CUDA installation. `MINIBATCH` measures the existing bulk mini-batch API, `EPOCH` measures repeated public epoch calls, and `CHUNK` uses bounded deferred-publication requests. `EPOCH` and `CHUNK` use online SGD when batch size is one. Compare the same mode, dataset, batch, precision and sigmoid before interpreting speedups.
+
+```text
+./gradlew :jneuro:cpuGpuBenchmark --args="--topology 2,8,8,8,1 --samples 128 --epochs 64 --batches 16,64 --backends CPU,SMALL_SCALAR_FP64,SMALL_128_FP64,SMALL_256_FP64 --mode CHUNK --sigmoid EXACT --warmups 3 --repeats 9 --output build/reports/small-experiments/cpu"
+```
+
+The following is hardware-bound. It requires a compatible NVIDIA driver; requested GPU paths fail if unavailable. `--retained-device true` keeps the explicit service alive across benchmark sessions, so measured session-close times exclude final service destruction. Warmups can absorb the first driver/module initialization. Use `false` to measure fresh service ownership and keep the two lifecycle regimes separate in reports.
+
+```text
+./gradlew :jneuro:cpuGpuBenchmark --args="--topology 2,8,8,8,1 --samples 128 --epochs 64 --batches 64 --backends CPU,SMALL_CUDA_FP64,SMALL_CUDA_FP32 --mode CHUNK --retained-device true --warmups 3 --repeats 9 --output build/reports/small-experiments/cuda-retained"
+```
+
+`SmallTrainingJmhBenchmark.publicEpochs` measures ten public epochs per invocation and reports time per epoch using `@OperationsPerInvocation(10)`. Invocation setup recreates the same seeded trajectory and is excluded from timing, as is session close. The benchmark returns the resulting RMSE. Its scalar, 128-bit, 256-bit, FP32 and reference variants use the same workload description; `-prof gc` exposes allocation costs. JVM warmup and multiple forks matter for the Vector API, and generated-instruction inspection is separate evidence from Java source containing vector calls.
+
+```text
+./gradlew :jneuro:jmh --args="com.lis.neuro.SmallTrainingJmhBenchmark.publicEpochs -p engine=REFERENCE_SCALAR,REFERENCE_MATRIX,SMALL_SCALAR,SMALL_128,SMALL_256 -p workload=MINI_BATCH -p sigmoid=EXACT -p topology=2-8-8-8-1 -p samples=128 -p batchSize=64 -wi 3 -i 5 -w 1s -r 1s -f 3 -prof gc -jvmArgsAppend --add-modules=jdk.incubator.vector -rf json -rff build/reports/small-experiments/jmh.json"
+```
+
+The separate `smallExperiments` command measures complete cohort session lifetimes, including order reservations, state validation and host publication. It rotates engine order between rounds, checks full parameter/momentum state and epoch/sample counters against independently trained references, and writes per-round CSV plus an environment/provenance file. `REFERENCE_PARALLEL` is a useful baseline: running several scalar/matrix models concurrently can be more effective than packing them into one SIMD group. The CPU-only example below can add `SMALL_CUDA` on a GPU workstation.
+
+```text
+./gradlew :jneuro:smallExperiments --args="--mode cohort --models 32 --epochs 64 --samples 128 --batch 64 --parallelism 4 --warmups 3 --repeats 9 --engines REFERENCE_MATRIX,REFERENCE_PARALLEL,SMALL_SEQUENTIAL,SMALL_CPU --output build/reports/small-experiments/cohort.csv"
+./gradlew :jneuro:smallExperiments --args="--mode quality --seeds 32 --epochs 10000 --check-every 25 --target 0.05 --output build/reports/small-experiments/quality.csv"
+```
+
+The quality mode runs paired seeds across FP64/FP32 and EXACT/FAST, retaining convergence, final RMSE, elapsed time and epochs to the selected target. It is a bounded but longer CPU experiment. Native checks require the explicitly built artifact and fail if it is missing; selecting `NATIVE` adds the native candidate to cohort timings.
+
+```text
+./gradlew :jneuro:nativeSmallCheck -PneuroSmallNative=C:/path/to/jneuro-small.dll
+./gradlew :jneuro:smallExperiments -PneuroSmallNative=C:/path/to/jneuro-small.dll --args="--mode cohort --models 32 --epochs 64 --samples 128 --batch 64 --parallelism 4 --warmups 3 --repeats 9 --engines SMALL_CPU,NATIVE --output build/reports/small-experiments/native-gate.csv"
+```
+
+### SMALL validation and measured results
+
+The ordinary tests exercise all 120 CPU shapes, precision/mode choices, momentum continuation, order reservations, commit/failure boundaries, dataset growth and cohort activity. Injected CUDA drivers and native FFM upcalls assert allocations, argument layouts, launch counts, partial failure and cleanup; they establish orchestration behavior rather than GPU/native arithmetic. Strict CUDA acceptance compares full state against scalar CPU for every supported shape in FP64/FP32 and EXACT/FAST, with additional online, ragged-batch, 64-epoch, cohort and continuation cases. Native acceptance compares its limited shape across scalar, vector and tail-model execution. Missing requested hardware/libraries fail those explicit tasks. Module line coverage and GUI path coverage retain their separate 90% gates.
+
+**Measured SMALL results are pending the completed validation and benchmark runs.** The earlier reference-engine table remains the historical baseline. Add the source revision, runtime/device identity, artifact hashes, full-state acceptance result, median/p95 distributions, allocation data, and paired-seed convergence results before asserting a SMALL speedup or a native-retention decision. A source implementation, successful compilation or injected-driver test alone establishes none of those performance claims.
 
 ## Structured application logging
 

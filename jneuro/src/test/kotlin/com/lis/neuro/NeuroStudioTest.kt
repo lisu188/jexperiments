@@ -4,6 +4,97 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroStudioTest {
+    @Test fun closingTrainingAllowsExactResumeAndTerminalCloseRejectsNewWork() {
+        val config = StudioConfig(hidden = "4", maxEpochs = 10, targetError = 0.0, engine = TrainingEngine.SMALL)
+        val expected = NeuroStudio(config).use { studio ->
+            studio.step(3)
+            while (studio.hasWork) studio.advance(3)
+            studio.frame().diagnostics.parameters()
+        }
+        val sessions = RecordingTrainingSessions()
+        for (injected in listOf(false, true)) {
+            val studio = if (injected) NeuroStudio(config, openSession = sessions::open) else NeuroStudio(config)
+            studio.use {
+                studio.step(2)
+                while (studio.hasWork) studio.advance(2)
+                val before = studio.frame().diagnostics.parameters()
+                studio.closeTraining()
+                studio.closeTraining()
+                assertEquals(2, studio.epochs)
+                assertArrayEquals(before, studio.frame().diagnostics.parameters())
+                studio.step(1)
+                assertEquals(1, studio.advance(1))
+                assertArrayEquals(expected, studio.frame().diagnostics.parameters(), 1e-10)
+            }
+            studio.close()
+            studio.closeTraining()
+            assertThrows(IllegalStateException::class.java) { studio.step(1) }
+            assertThrows(IllegalStateException::class.java) { studio.advance(1) }
+            assertThrows(IllegalStateException::class.java) { studio.setRunning(true) }
+            assertThrows(IllegalStateException::class.java) { studio.apply(config) }
+            assertThrows(IllegalStateException::class.java) { studio.compareSeeds(1) }
+        }
+        assertEquals(2, sessions.opened.get())
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+    }
+
+    @Test fun smallEngineChunksRespectStepsMilestonesLimitsAndCancellation() {
+        val sessions = RecordingTrainingSessions()
+        val config = StudioConfig(hidden = "4", maxEpochs = 70, targetError = 0.0,
+            engine = TrainingEngine.SMALL, precision = Neuro.TrainingPrecision.FP32, sigmoid = Neuro.SigmoidMode.FAST)
+        NeuroStudio(config, openSession = sessions::open).use { studio ->
+            studio.step(70)
+            while (studio.epochs < 10) studio.advance(70) { studio.epochs >= 10 }
+            assertEquals(10, studio.epochs)
+            assertTrue(studio.hasWork)
+            while (studio.hasWork) studio.advance(70)
+            assertEquals(70, studio.epochs)
+            assertEquals(StudioState.LIMIT_REACHED, studio.state)
+            assertEquals(listOf(0, 10, 50, 70), studio.frame().checkpoints.map { it.epoch })
+            assertTrue(sessions.chunkRequests.all { it.checkEvery == 1 && it.targetError == 0.0 })
+            assertTrue(sessions.chunkRequests.first().maxEpochs <= 10)
+            assertEquals(TrainingEngine.SMALL, studio.frame().deviceInfo!!.engine)
+            assertEquals("FP32", studio.frame().deviceInfo!!.precision)
+            assertEquals("FAST", studio.frame().deviceInfo!!.sigmoid)
+            assertEquals(listOf(TrainingEngine.SMALL), sessions.engines.toList())
+        }
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+    }
+
+    @Test fun smallStudioStopsAtTheSameTargetEpochAsSingleEpochTraining() {
+        val config = StudioConfig(hidden = "4", maxEpochs = 200, targetError = 0.49,
+            engine = TrainingEngine.SMALL, precision = Neuro.TrainingPrecision.FP32, sigmoid = Neuro.SigmoidMode.FAST)
+        NeuroStudio(config).use { single ->
+            while (single.state !in setOf(StudioState.CONVERGED, StudioState.LIMIT_REACHED)) {
+                single.step(1); single.advance(1)
+            }
+            NeuroStudio(config).use { chunked ->
+                chunked.setRunning(true)
+                while (chunked.hasWork) chunked.advance(64)
+                assertEquals(single.epochs, chunked.epochs)
+                assertEquals(single.state, chunked.state)
+                assertEquals(single.currentError, chunked.currentError, 1e-10)
+                assertArrayEquals(single.frame().diagnostics.parameters(), chunked.frame().diagnostics.parameters(), 1e-10)
+            }
+        }
+    }
+
+    @Test fun enginePrecisionAndSigmoidConfigurationRemainExplicit() {
+        assertEquals(TrainingEngine.REFERENCE, StudioConfig().engine)
+        assertEquals(Neuro.SigmoidMode.EXACT, StudioConfig().sigmoid)
+        assertThrows(IllegalArgumentException::class.java) { StudioConfig(hidden = "6", engine = TrainingEngine.SMALL) }
+        assertThrows(IllegalArgumentException::class.java) { StudioConfig(hidden = "4,4,4,4,4", engine = TrainingEngine.SMALL) }
+        for (backend in listOf(TrainingBackend.CPU, TrainingBackend.CUDA, TrainingBackend.AUTO)) {
+            assertDoesNotThrow { StudioConfig(hidden = "4", backend = backend, engine = TrainingEngine.SMALL, precision = Neuro.TrainingPrecision.FP32) }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            StudioConfig(backend = TrainingBackend.CUBLAS, engine = TrainingEngine.SMALL)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            StudioConfig(backend = TrainingBackend.CPU, precision = Neuro.TrainingPrecision.FP32)
+        }
+    }
+
     @Test fun logsRequestedAndEffectiveDeviceAndRunLifecycleWithoutTrainingData() {
         NeuroApplicationLogCapture().use { capture ->
             val sessions = RecordingTrainingSessions()
@@ -37,7 +128,7 @@ class NeuroStudioTest {
     @Test fun failedStudyReportsItsCauseWithoutPublishingSeedResults() {
         NeuroApplicationLogCapture().use { capture ->
             val failure = IllegalStateException("seed backend unavailable")
-            NeuroStudio(openSession = { _, _, _, _ -> throw failure }).use { studio ->
+            NeuroStudio(openSession = { _, _, _, _, _ -> throw failure }).use { studio ->
                 assertSame(failure, assertThrows(IllegalStateException::class.java) { studio.compareSeeds(1) })
                 assertTrue(studio.frame().seeds.isEmpty())
             }
@@ -99,9 +190,9 @@ class NeuroStudioTest {
             val sessions = RecordingTrainingSessions().apply { failAfterCommit = true }
             lateinit var model: Neuro
             val config = StudioConfig(backend = backend, batchSize = batch, targetError = 0.0)
-            NeuroStudio(config, openSession = { network, selected, precision, batchSize ->
+            NeuroStudio(config, openSession = { network, selected, precision, batchSize, engine ->
                 model = network
-                sessions.open(network, selected, precision, batchSize)
+                sessions.open(network, selected, precision, batchSize, engine)
             }).use { studio ->
                 val initial = studio.frame()
                 studio.step(1)

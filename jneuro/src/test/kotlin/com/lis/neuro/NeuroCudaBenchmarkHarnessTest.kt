@@ -9,11 +9,42 @@ import java.nio.file.Path
 class NeuroCudaBenchmarkHarnessTest {
     @TempDir lateinit var temporary: Path
 
+    @Test fun smallEnginesAndPublicationModesVerifyCompleteStateAndReportActualSimd() {
+        val engines = listOf(NeuroCudaBenchmarkBackend.CPU, NeuroCudaBenchmarkBackend.SMALL_SCALAR_FP64, NeuroCudaBenchmarkBackend.SMALL_SCALAR_FP32,
+            NeuroCudaBenchmarkBackend.SMALL_128_FP64, NeuroCudaBenchmarkBackend.SMALL_256_FP64,
+            NeuroCudaBenchmarkBackend.SMALL_128_FP32, NeuroCudaBenchmarkBackend.SMALL_256_FP32)
+        for (mode in NeuroBenchmarkMode.entries) for (sigmoid in Neuro.SigmoidMode.entries) {
+            val config = NeuroCudaBenchmarkConfig(epochs = 2, warmups = 0, repeats = 1,
+                topology = listOf(2, 4, 8, 1), samples = 9, batches = listOf(7), backends = engines,
+                mode = mode, sigmoid = sigmoid)
+            val report = NeuroCudaBenchmarkHarness.run(config, environment = emptyMap())
+            assertEquals(engines.size, report.rounds.size)
+            assertTrue(report.rounds.all { it.validation.maximumScaledError <= 1.0 })
+            assertEquals(sigmoid.name, report.rounds.last().device.sigmoid)
+            assertTrue(report.rounds.last().device.simdBits in listOf(0, 128, 256))
+            assertTrue(NeuroCudaBenchmarkReports.json(report).contains("\"mode\":\"$mode\""))
+        }
+        val legacy = NeuroCudaBenchmarkConfig(epochs = 2, warmups = 0, repeats = 1,
+            topology = listOf(2, 8, 8, 8, 1), samples = 9, batches = listOf(7),
+            backends = listOf(NeuroCudaBenchmarkBackend.CPU, NeuroCudaBenchmarkBackend.CPU_LEGACY))
+        assertEquals(2, NeuroCudaBenchmarkHarness.run(legacy).rounds.size)
+        val parsed = NeuroCudaBenchmarkConfig.parse(arrayOf("--mode", "CHUNK", "--sigmoid", "FAST", "--retained-device", "true"))
+        assertEquals(NeuroBenchmarkMode.CHUNK, parsed.mode)
+        assertEquals(Neuro.SigmoidMode.FAST, parsed.sigmoid)
+        assertTrue(parsed.retainedDevice)
+        assertThrows(IllegalArgumentException::class.java) { legacy.copy(mode = NeuroBenchmarkMode.CHUNK) }
+        assertThrows(IllegalArgumentException::class.java) { NeuroCudaBenchmarkConfig.parse(arrayOf("--retained-device", "perhaps")) }
+        val actual = NeuroTest.prepared(intArrayOf(2, 4, 1))
+        NeuroTrainingDeviceService().use { service ->
+            NeuroCudaBenchmarkBackend.CPU.open(actual, 7, service).use { assertTrue(it.trainEpoch().isFinite()) }
+        }
+    }
+
     @Test fun defaultsAreBoundedAndArgumentsAreExplicitAndValidated() {
         val defaults = NeuroCudaBenchmarkConfig.parse(emptyArray())
         assertEquals("smoke", defaults.profile)
         assertEquals(listOf(16, 64), defaults.batches)
-        assertEquals(NeuroCudaBenchmarkBackend.entries, defaults.backends)
+        assertEquals(NeuroCudaBenchmarkBackend.entries.take(4), defaults.backends)
         assertEquals(listOf(128, 128), NeuroCudaBenchmarkHarness.workloads(defaults).map { it.samples })
         val parsed = NeuroCudaBenchmarkConfig.parse(arrayOf("--profile", "matrix", "--epochs", "3", "--warmups", "0",
             "--repeats", "2", "--batches", "8,32", "--backends", "cpu,cuda", "--output", temporary.resolve("result").toString()))

@@ -5,6 +5,30 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class AdaptiveArchitectureSearchTest {
+    @Test fun smallSearchBoundsAndMutationsRemainInsideTheSupportedFamily() {
+        val config = ArchitectureSearchConfig(engine = TrainingEngine.SMALL, maxLayers = 5, maxWidth = 20,
+            maxParameters = 100_000, initialHidden = listOf(6), restartAfter = 1, maxRestarts = 8)
+        assertEquals(NetworkArchitecture(listOf(4)), config.minimumArchitecture())
+        assertEquals(config.minimumArchitecture(), config.startingArchitecture())
+        val all = config.architectures()
+        assertEquals(120, all.size)
+        assertTrue(all.all { SmallNetworkShape.supports(it.topology()) })
+        val planner = AdaptiveArchitecturePlanner(config)
+        assertTrue(planner.mutations(ArchitectureProposal(NetworkArchitecture(listOf(4, 8)))).all {
+            config.acceptsArchitecture(it.architecture)
+        })
+        repeat(5) {
+            val proposal = requireNotNull(planner.next())
+            assertTrue(config.acceptsArchitecture(proposal.architecture))
+            planner.observe(candidate(proposal.architecture, Double.POSITIVE_INFINITY, ArchitectureTrialState.FAILED))
+        }
+        assertTrue(planner.restartCount > 0)
+        assertEquals(NetworkArchitecture(listOf(8)), ArchitectureSearchConfig(engine = TrainingEngine.SMALL,
+            minWidth = 5, maxWidth = 16).minimumArchitecture())
+        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(engine = TrainingEngine.SMALL, maxWidth = 3) }
+        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(engine = TrainingEngine.SMALL, minLayers = 5, maxLayers = 6) }
+    }
+
     @Test fun adaptiveIsDefaultAndInitialArchitectureIsCopiedBoundedAndNotEnumerated() {
         val hidden = mutableListOf(6)
         val config = ArchitectureSearchConfig(initialHidden = hidden)

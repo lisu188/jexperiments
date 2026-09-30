@@ -16,6 +16,24 @@ import org.junit.jupiter.api.Test
 
 /** Exercises the production downcalls against native upcall stubs, without a GPU or compiler. */
 class NativeCudaDriverTest {
+    @Test fun fusedCohortLaunchMarshalsPackedStateAndUsesOneBlockPerModel() {
+        Runtime().use { runtime ->
+            runtime.kernelArguments = List(6) { ValueLayout.JAVA_LONG } + List(5) { ValueLayout.JAVA_INT } +
+                List(3) { ValueLayout.JAVA_DOUBLE } + List(2) { ValueLayout.JAVA_INT }
+            runtime.driver().use { driver ->
+                for (kernel in listOf("small_train_fp64", "small_train_fp32")) {
+                    driver.launch(kernel, 3 * 128, 1L, 2L, 3L, 4L, 5L, 6L,
+                        3, 5, 19, 64, 11, 0.11, 0.31, 0.75, 1, 0)
+                }
+                assertEquals(listOf("small_train_fp64", "small_train_fp32"), runtime.requestedFunctions)
+                assertTrue(runtime.launches.all { it.dimensions == listOf(3, 1, 1, 128, 1, 1, 0) })
+                assertEquals(listOf(3, 5, 19, 64, 11), runtime.launches.first().arguments.slice(6..10))
+                assertEquals(listOf(0.11, 0.31, 0.75), runtime.launches.first().arguments.slice(11..13))
+            }
+            runtime.assertCallbacksSucceeded()
+        }
+    }
+
     @Test fun logsDeviceProvenanceAndBoundedTransferMetadataThroughFfm() {
         NativeLogCapture().use { logs ->
             Runtime().use { runtime ->

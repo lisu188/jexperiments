@@ -102,9 +102,9 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
         val shape = parent.architecture.hidden
         val result = LinkedHashMap<NetworkArchitecture, ArchitectureProposal>()
         fun add(widths: List<Int>, operation: String) {
-            if (widths.size !in config.minLayers..config.maxLayers || widths.any { it !in config.minWidth..config.maxWidth }) return
+            if (widths.size !in config.minLayers..config.supportedMaxLayers || widths.any { it !in config.minWidth..config.maxWidth }) return
             val architecture = try { NetworkArchitecture(widths) } catch (_: IllegalArgumentException) { return }
-            if (architecture == parent.architecture || architecture.parameters > config.maxParameters) return
+            if (architecture == parent.architecture || !config.acceptsArchitecture(architecture)) return
             result.putIfAbsent(architecture, ArchitectureProposal(architecture, parent.architecture, operation, parent.generation + 1))
         }
         for (layer in shape.indices) {
@@ -120,8 +120,8 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
                 add(widths, "Swap H${layer + 1}/H${layer + 2}")
             }
         }
-        if (shape.size < config.maxLayers) for (position in 0..shape.size) {
-            for (width in listOf(config.minWidth, shape[minOf(position, shape.lastIndex)]).distinct()) {
+        if (shape.size < config.supportedMaxLayers) for (position in 0..shape.size) {
+            for (width in listOf(config.widthChoices().first(), shape[minOf(position, shape.lastIndex)]).distinct()) {
                 val widths = shape.toMutableList(); widths.add(position, width)
                 add(widths, "Insert H${position + 1} ($width)")
             }
@@ -156,10 +156,10 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
             val minimum = config.minimumArchitecture()
             if (minimum !in issued) return ArchitectureProposal(minimum, mutation = "Minimum-size bootstrap")
             repeat(256) {
-                val depth = random.nextLong(config.minLayers.toLong(), config.maxLayers.toLong() + 1).toInt()
+                val depth = random.nextLong(config.minLayers.toLong(), config.supportedMaxLayers.toLong() + 1).toInt()
                 if (depth.toLong() * 2 + 3 > config.maxParameters) return@repeat
                 val architecture = try { NetworkArchitecture(List(depth) { randomWidth() }) } catch (_: IllegalArgumentException) { return@repeat }
-                if (architecture.parameters <= config.maxParameters && architecture !in issued) {
+                if (config.acceptsArchitecture(architecture) && architecture !in issued) {
                     return ArchitectureProposal(architecture, mutation = "Bootstrap restart $restarts (no valid parent)")
                 }
             }
@@ -177,7 +177,7 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
                 "H${layer + 1}: $previous → ${widths[layer]}"
             }
             1 -> {
-                if (widths.size >= config.maxLayers) return null
+                if (widths.size >= config.supportedMaxLayers) return null
                 val layer = random.nextInt(widths.size + 1)
                 val width = randomWidth()
                 widths.add(layer, width)
@@ -191,9 +191,12 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
             }
         }
         val architecture = try { NetworkArchitecture(widths) } catch (_: IllegalArgumentException) { return null }
-        if (architecture.parameters > config.maxParameters || architecture in issued) return null
+        if (!config.acceptsArchitecture(architecture) || architecture in issued) return null
         return ArchitectureProposal(architecture, parent.architecture, "Elite restart $restarts: $operation", parent.generation + 1)
     }
 
-    private fun randomWidth(): Int = random.nextLong(config.minWidth.toLong(), config.maxWidth.toLong() + 1).toInt()
+    private fun randomWidth(): Int = if (config.engine == TrainingEngine.SMALL) {
+        val widths = config.widthChoices().toList()
+        widths[random.nextInt(widths.size)]
+    } else random.nextLong(config.minWidth.toLong(), config.maxWidth.toLong() + 1).toInt()
 }

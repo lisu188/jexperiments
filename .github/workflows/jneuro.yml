@@ -38,11 +38,12 @@ jobs:
           distribution: temurin
           java-version: '27'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Require Kotlin-only module sources
+      - name: Require Kotlin application and test sources
         shell: bash
         run: |
           set -euo pipefail
-          test -z "$(find jneuro/src -name '*.java' -print -quit)"
+          # Java benchmark drivers exercise the public JVM API and JMH processor.
+          test -z "$(find jneuro/src/main jneuro/src/test -name '*.java' -print -quit)"
           test -f jneuro/src/main/kotlin/com/lis/neuro/Neuro.kt
           test -f jneuro/src/jmh/kotlin/com/lis/neuro/NeuroInferenceJmhBenchmark.kt
       - name: Install OpenBLAS for native verification

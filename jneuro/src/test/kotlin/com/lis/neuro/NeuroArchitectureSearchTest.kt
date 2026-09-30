@@ -6,6 +6,72 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroArchitectureSearchTest {
+    @Test fun smallSearchChunksPreserveScoringBoundariesAndFullTrialBudgets() {
+        val sessions = RecordingTrainingSessions()
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+            maxLayers = 1, minWidth = 4, maxWidth = 4, seeds = listOf(42), requiredSuccesses = 1,
+            maxEpochs = 7, checkEvery = 3, targetRmse = 1.0, parallelism = 1,
+            engine = TrainingEngine.SMALL, precision = Neuro.TrainingPrecision.FP32,
+            hyperParameters = Neuro.HyperParameters(0.6, 0.2, 1.0, 42, sigmoidMode = Neuro.SigmoidMode.FAST))
+        val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
+        val candidate = report.candidates.single()
+        val trial = candidate.trials.single()
+        assertEquals(7, trial.epochs)
+        assertEquals(listOf(0, 3, 6, 7), trial.history.map { it.epoch })
+        assertTrue(sessions.chunkRequests.all { it.targetError == null && it.maxEpochs <= 3 })
+        assertEquals(TrainingEngine.SMALL, trial.deviceInfo!!.engine)
+        assertEquals("FAST", trial.deviceInfo.sigmoid)
+        assertEquals("FP32", trial.deviceInfo.precision)
+        assertTrue(trial.deviceInfo.simdBits > 0)
+        NeuroStudio(openSession = sessions::open).use { studio ->
+            assertTrue(studio.replayArchitecture(report, candidate, trial))
+            assertEquals(TrainingEngine.SMALL, studio.activeConfig.engine)
+            assertEquals(Neuro.SigmoidMode.FAST, studio.activeConfig.sigmoid)
+            assertEquals(trial.deviceInfo, studio.frame().deviceInfo)
+            assertArrayEquals(trial.snapshot!!.parameters(), studio.frame().diagnostics.parameters(), 1e-10)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ArchitectureSearchConfig(engine = TrainingEngine.SMALL, backend = TrainingBackend.CUBLAS)
+        }
+    }
+
+    @Test fun referenceFastSigmoidProvenanceSurvivesSearchAndReplay() {
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+            maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1, maxEpochs = 3, checkEvery = 1,
+            hyperParameters = Neuro.HyperParameters(0.6, 0.2, 1.0, 42, sigmoidMode = Neuro.SigmoidMode.FAST))
+        val report = NeuroArchitectureSearch().search(ArchitectureSearchData.fitting(xor()), config)
+        val candidate = report.candidates.single()
+        val trial = candidate.trials.single()
+        assertEquals("FAST", trial.deviceInfo!!.sigmoid)
+        NeuroStudio().use { studio ->
+            assertTrue(studio.replayArchitecture(report, candidate, trial))
+            assertEquals(Neuro.SigmoidMode.FAST, studio.activeConfig.sigmoid)
+            assertEquals(TrainingEngine.REFERENCE, studio.activeConfig.engine)
+            assertArrayEquals(trial.snapshot!!.parameters(), studio.frame().diagnostics.parameters(), 1e-10)
+        }
+    }
+
+    @Test fun replayRejectsChangedSmallEngineSimdProvenanceBeforeInstallingState() {
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+            maxLayers = 1, minWidth = 4, maxWidth = 4, seeds = listOf(42), requiredSuccesses = 1,
+            maxEpochs = 2, checkEvery = 1, engine = TrainingEngine.SMALL)
+        val report = NeuroArchitectureSearch().search(ArchitectureSearchData.fitting(xor()), config)
+        val candidate = report.candidates.single()
+        val trial = candidate.trials.single()
+        NeuroStudio(openSession = { model, backend, precision, batch, engine ->
+            val delegate = model.newTrainingSession(backend, precision, batch, engine)
+            object : NeuroTrainingSession by delegate {
+                override val info = delegate.info.copy(simdBits = delegate.info.simdBits / 2)
+            }
+        }).use { studio ->
+            val before = studio.frame().diagnostics.parameters()
+            val failure = assertThrows(IllegalStateException::class.java) { studio.replayArchitecture(report, candidate, trial) }
+            assertTrue(failure.message!!.contains("recorded training device"))
+            assertArrayEquals(before, studio.frame().diagnostics.parameters())
+            assertEquals(0, studio.epochs)
+        }
+    }
+
     @Test fun searchLogsCorrelateParallelTrialsAndReplayProvenance() {
         NeuroApplicationLogCapture().use { capture ->
             val sessions = RecordingTrainingSessions()
@@ -41,7 +107,7 @@ class NeuroArchitectureSearchTest {
             val failure = IllegalStateException("fixture backend startup failure")
             val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
                 maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1, maxEpochs = 1, checkEvery = 1)
-            val report = NeuroArchitectureSearch { _, _, _, _ -> throw failure }
+            val report = NeuroArchitectureSearch { _, _, _, _, _ -> throw failure }
                 .search(ArchitectureSearchData.fitting(xor()), config)
             val trial = report.candidates.single().trials.single()
             assertEquals(ArchitectureTrialState.FAILED, trial.state)
