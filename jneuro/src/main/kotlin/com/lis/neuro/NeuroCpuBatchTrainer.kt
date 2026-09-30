@@ -161,7 +161,7 @@ internal object NeuroCpuBatchTrainer {
         var failure: IllegalStateException? = null
         var interrupted = false
         fun record(problem: IllegalStateException) {
-            if (failure == null) failure = problem else failure!!.addSuppressed(problem)
+            if (failure == null) failure = problem else failure.addSuppressed(problem)
         }
         // Workers can write live parameters. Drain all submitted work before releasing model ownership,
         // even when the caller is interrupted or another worker fails.

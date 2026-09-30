@@ -86,7 +86,7 @@ network.trainMiniBatch(10, batchSize = 16, parallelism = 2)
 
 Online training updates after every shuffled sample. Fixed-epoch training computes its final reported error after the last epoch; sparse checks in `trainUntil` avoid repeatedly evaluating the entire training set when only periodic convergence checks are needed.
 
-Mini-batch training is now expressed as true batch matrices rather than a loop of per-sample forward/backprop passes. Each batch gathers rows into contiguous activation and target matrices, evaluates every layer across the batch, propagates dense delta matrices, computes weight gradients as the equivalent of D^T × A, reduces bias gradients, and applies one averaged momentum update. The same path supports deterministic single-thread execution and partitioned CPU execution, giving the later native/GPU backends a compatible matrix-shaped training contract.
+The two/three-argument mini-batch API above retains per-sample forward/backpropagation with averaged batch gradients. The explicit `Neuro.BatchBackend` overload described below adds a matrix implementation: it gathers contiguous activation and target rows, evaluates layers across the batch, propagates dense delta matrices, computes weight gradients as the equivalent of D^T × A, reduces bias gradients, and applies one averaged momentum update. Its single-thread and partitioned CPU paths provide a comparison for cuBLAS while preserving the original overload's numerical behavior.
 
 Training and test errors remain root-mean-square error over all samples and output dimensions:
 
