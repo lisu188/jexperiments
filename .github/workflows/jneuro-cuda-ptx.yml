@@ -1,0 +1,51 @@
+name: JNeuro CUDA PTX
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, feat/jneuro-cuda-training]
+    paths:
+      - 'jneuro/src/main/cuda/**'
+      - 'jneuro/src/main/resources/com/lis/neuro/cuda/**'
+      - 'jneuro/tools/build_cuda.py'
+      - '.github/workflows/jneuro-cuda-ptx.yml'
+  pull_request:
+    paths:
+      - 'jneuro/src/main/cuda/**'
+      - 'jneuro/src/main/resources/com/lis/neuro/cuda/**'
+      - 'jneuro/tools/build_cuda.py'
+      - '.github/workflows/jneuro-cuda-ptx.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jneuro-cuda-ptx-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: nvidia/cuda:13.0.2-devel-ubuntu24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install build-script interpreter
+        run: apt-get update && apt-get install -y --no-install-recommends python3
+      - name: Generate packaged PTX for download
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/feat/jneuro-cuda-training'
+        run: python3 jneuro/tools/build_cuda.py build
+      - name: Verify generated PTX matches committed source and artifact
+        if: github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/feat/jneuro-cuda-training'
+        run: python3 jneuro/tools/build_cuda.py build --check
+      - name: Verify packaged hashes and ABI
+        run: python3 jneuro/tools/build_cuda.py verify
+      - name: Upload compiled PTX and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-cuda-ptx
+          path: |
+            jneuro/src/main/resources/com/lis/neuro/cuda/train.ptx
+            jneuro/src/main/resources/com/lis/neuro/cuda/train.properties
+          if-no-files-found: error
+          retention-days: 7
