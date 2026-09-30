@@ -64,6 +64,63 @@ class NeuroGuiTest {
         }
     }
 
+    @Test fun smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls() {
+        assertEquals(TrainingEngine.REFERENCE, edt { current.config.engine })
+        choose(combo("Training engine"), TrainingEngine.SMALL.ordinal)
+        choose(combo("Training backend"), TrainingBackend.AUTO.ordinal)
+        advanced()
+        assertTrue(edt { combo("Training precision").isEnabled })
+        choose(combo("Training precision"), Neuro.TrainingPrecision.FP32.ordinal)
+        choose(combo("Sigmoid"), Neuro.SigmoidMode.FAST.ordinal)
+        assertEquals(TrainingEngine.REFERENCE, edt { current.config.engine })
+        configure("4", 100, 0.0)
+        click(button("1 epoch"))
+        await("SMALL FP32 exact one epoch") { current.diagnostics.epoch() == 1 }
+        val device = edt { current.deviceInfo!! }
+        assertEquals(TrainingEngine.SMALL, device.engine)
+        assertEquals(TrainingBackend.CPU, device.backend)
+        assertEquals("FP32", device.precision)
+        assertEquals("FAST", device.sigmoid)
+        assertTrue(device.simdBits > 0)
+        click(button("10 epochs"))
+        await("SMALL ten epoch command") { current.diagnostics.epoch() == 11 }
+        assertTrue(edt { current.checkpoints.any { it.epoch == 10 } })
+        tab("Architecture search"); searchSettings(25)
+        click(button("Start search"))
+        await("SMALL search rejects unsupported bounds") {
+            (field(panel, "summary") as JLabel).text.contains("SMALL search bounds")
+        }
+        number("Max width", "4", panel)
+        click(button("Start search"))
+        await("SMALL search result") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertEquals(TrainingEngine.SMALL, report.config.engine)
+        assertEquals(Neuro.SigmoidMode.FAST, report.config.hyperParameters.sigmoidMode)
+        assertTrue(report.candidates.all { it.valid && it.trials.all { trial -> trial.epochs == 25 && trial.cohort && trial.deviceInfo?.engine == TrainingEngine.SMALL } })
+        val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
+        click(button("Replay selected run"))
+        await("SMALL scored replay") { current.replayNote.isNotEmpty() }
+        assertEquals(trial.deviceInfo, edt { current.deviceInfo })
+        assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
+        choose(combo("Training engine"), TrainingEngine.REFERENCE.ordinal)
+        choose(combo("Training backend"), TrainingBackend.CPU.ordinal)
+        assertFalse(edt { combo("Training precision").isEnabled })
+        assertEquals(Neuro.TrainingPrecision.FP64, edt { combo("Training precision").selectedItem })
+        assertEquals(TrainingEngine.SMALL, edt { current.config.engine })
+        choose(combo("Training engine"), TrainingEngine.SMALL.ordinal)
+        choose(combo("Training backend"), TrainingBackend.CUBLAS.ordinal)
+        shortcut(KeyEvent.VK_ENTER)
+        await("incompatible SMALL CUBLAS rejected") { errorText().contains("select REFERENCE") }
+        assertEquals(TrainingEngine.SMALL, edt { current.config.engine })
+        assertEquals(trial.deviceInfo, edt { current.deviceInfo })
+        choose(combo("Training backend"), TrainingBackend.CPU.ordinal)
+        text(input("Hidden layers"), "6")
+        shortcut(KeyEvent.VK_ENTER)
+        await("SMALL rejects unsupported hidden width") { errorText().contains("width 4, 8 or 16") }
+        assertEquals("4", edt { current.config.hidden })
+        assertEquals(trial.deviceInfo, edt { current.deviceInfo })
+    }
+
     @Test fun detailedLogsFollowNativeControlsExportAndShutdown() {
         NeuroApplicationLogCapture().use { capture ->
             configure("2", 2, 0.0)
@@ -281,7 +338,7 @@ class NeuroGuiTest {
         edt { ui.trainingSessionFactory = sessions::open }
         choose(combo("Training backend"), TrainingBackend.CUBLAS.ordinal)
         advanced()
-        choose(combo("GPU precision"), Neuro.TrainingPrecision.FP32.ordinal)
+        choose(combo("Training precision"), Neuro.TrainingPrecision.FP32.ordinal)
         number("Batch size", "3")
         configure("2", 25, 0.0)
         click(button("1 epoch"))
@@ -320,12 +377,37 @@ class NeuroGuiTest {
         assertEquals(sessions.opened.get(), sessions.closed.get())
     }
 
+    @Test fun lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow() {
+        edt { window.setSize(1000, 700) }
+        advanced()
+        val editor = input("Batch size")
+        val scroll = edt { SwingUtilities.getAncestorOfClass(JScrollPane::class.java, editor) as JScrollPane }
+        wheel(scroll, -100)
+        await("sidebar scrolled to top") { scroll.verticalScrollBar.value == 0 }
+        assertTrue(edt { editor.visibleRect.isEmpty }, "The batch editor must begin below the smaller viewport")
+        number("Batch size", "3")
+        assertTrue(edt { scroll.verticalScrollBar.value > 0 && !editor.visibleRect.isEmpty })
+
+        wheel(scroll, -100)
+        await("native scroll hides lower settings") { scroll.verticalScrollBar.value == 0 && editor.visibleRect.isEmpty }
+        wheel(scroll, 100)
+        await("native scroll reveals batch editor") { !editor.visibleRect.isEmpty }
+        number("Batch size", "5")
+        number("Maximum epochs", "1")
+        number("Target RMSE", "0")
+        shortcut(KeyEvent.VK_ENTER)
+        await("lower editor value applied and trained") {
+            current.config.batchSize == 5 && current.diagnostics.epoch() == 1 && current.state == StudioState.LIMIT_REACHED
+        }
+        assertEquals(TrainingBackend.CPU, edt { current.deviceInfo!!.backend })
+    }
+
     @Test fun automaticBatchBackendAppliesPrecisionAndStepsOnce() {
         advanced()
-        assertFalse(edt { combo("GPU precision").isEnabled })
+        assertFalse(edt { combo("Training precision").isEnabled })
         choose(combo("Training backend"), TrainingBackend.AUTO.ordinal)
-        assertTrue(edt { combo("GPU precision").isEnabled })
-        choose(combo("GPU precision"), Neuro.TrainingPrecision.FP32.ordinal)
+        assertTrue(edt { combo("Training precision").isEnabled })
+        choose(combo("Training precision"), Neuro.TrainingPrecision.FP32.ordinal)
         number("Batch size", "7")
         number("Maximum epochs", "20")
         number("Target RMSE", "0")
@@ -344,8 +426,8 @@ class NeuroGuiTest {
         assertEquals(7, edt { current.config.batchSize })
         assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
         choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
-        assertFalse(edt { combo("GPU precision").isEnabled })
-        assertEquals(Neuro.TrainingPrecision.FP64, edt { combo("GPU precision").selectedItem })
+        assertFalse(edt { combo("Training precision").isEnabled })
+        assertEquals(Neuro.TrainingPrecision.FP64, edt { combo("Training precision").selectedItem })
         assertEquals(TrainingBackend.AUTO, edt { current.config.backend })
     }
 
@@ -749,13 +831,27 @@ class NeuroGuiTest {
         robot.waitForIdle()
     }
     private fun text(component: JTextComponent, value: String) {
-        reveal(component); click(component)
+        click(component)
+        await("text editor visible and focused") { component.isFocusOwner && !component.visibleRect.isEmpty }
         edt { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(value),null) }
         shortcut(KeyEvent.VK_A); shortcut(KeyEvent.VK_V)
         await("text input") { component.text == value }
     }
     private fun reveal(component: JComponent) {
-        edt { component.scrollRectToVisible(Rectangle(0,0,component.width,component.height)) }
+        edt {
+            val bounds = Rectangle(0, 0, component.width, component.height)
+            component.scrollRectToVisible(bounds)
+            // JTextField handles its own horizontal scrolling without revealing enclosing vertical views.
+            var ancestor = component.parent
+            while (ancestor != null) {
+                if (ancestor is JViewport) {
+                    (ancestor.view as? JComponent)?.let { view ->
+                        view.scrollRectToVisible(SwingUtilities.convertRectangle(component, bounds, view))
+                    }
+                }
+                ancestor = ancestor.parent
+            }
+        }
         robot.waitForIdle()
     }
     private fun click(component: Component) {

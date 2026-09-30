@@ -224,14 +224,13 @@ class Neuro @JvmOverloads constructor(
     private val testSamples = ArrayList<Sample>()
     private val trainingWorkspace = Workspace(this.topology)
     private val inferenceSession = ThreadLocal.withInitial { newInferenceSession() }
-    private val shuffleRandom = SplittableRandom(hyperParameters.seed xor -7046029254386353131L)
+    private val trainingShuffle = TrainingShuffle(hyperParameters.seed xor -7046029254386353131L)
     private val batchGradient = GradientBuffer(layers)
     private val learningRate = hyperParameters.learningRate
     private val momentum = hyperParameters.momentum
     private val beta = hyperParameters.beta
     private var packedTraining: PackedDataset? = null
     private var packedTests: PackedDataset? = null
-    private var trainingOrder = IntArray(0)
     private var epochsTrained = 0L
     private var samplesSeen = 0L
     private var lastTrainingError = Double.NaN
@@ -239,7 +238,6 @@ class Neuro @JvmOverloads constructor(
     internal var trainingSessionLogId: String? = null
         private set
     private var ownerAccess = false
-    private var pendingDeviceOrder: IntArray? = null
 
     init {
         NeuroLog.debug("model", "model.created") { mapOf("model" to logId,
@@ -263,7 +261,8 @@ class Neuro @JvmOverloads constructor(
         validateSample(input, target)
         trainingSamples.add(Sample(input, target))
         packedTraining = null
-        pendingDeviceOrder = null
+        lastTrainingError = Double.NaN
+        trainingShuffle.invalidate()
         NeuroLog.trace("model", "dataset.sample.added") { mapOf("model" to logId,
             "dataset" to "training", "samples" to trainingSamples.size) }
         return this
@@ -296,8 +295,9 @@ class Neuro @JvmOverloads constructor(
     @JvmOverloads
     fun newTrainingSession(backend: TrainingBackend = TrainingBackend.CPU,
                            precision: TrainingPrecision = TrainingPrecision.FP64,
-                           batchSize: Int = 1): NeuroTrainingSession =
-        openConfiguredTrainingSession(this, backend, precision, batchSize)
+                           batchSize: Int = 1,
+                           engine: TrainingEngine = TrainingEngine.REFERENCE): NeuroTrainingSession =
+        openConfiguredTrainingSession(this, backend, precision, batchSize, engine = engine)
 
     internal fun backendWeightVelocity(layer: Int) = layers[layer].weightVelocity.copyOf()
     internal fun backendBiasVelocity(layer: Int) = layers[layer].biasVelocity.copyOf()
@@ -310,7 +310,7 @@ class Neuro @JvmOverloads constructor(
     internal fun backendCompleteEpoch(sampleCount: Int) {
         checkTrainingAccess()
         require(sampleCount == trainingSamples.size)
-        pendingDeviceOrder = null
+        trainingShuffle.commit(1)
         samplesSeen += sampleCount
         epochsTrained++
     }
@@ -361,18 +361,12 @@ class Neuro @JvmOverloads constructor(
             "session" to trainingSessionLogId, "requestedSession" to requestedSession, "operation" to operation)
     }
 
-    internal fun deviceTrainingOrder(): IntArray {
+    internal fun deviceTrainingOrder(): IntArray = reserveTrainingOrders(1)[0]
+
+    internal fun reserveTrainingOrders(epochs: Int): Array<IntArray> {
         checkTrainingAccess()
         requireTrainingSamples()
-        pendingDeviceOrder?.let {
-            NeuroLog.debug("training", "training.shuffle.resumed") { mapOf("model" to logId,
-                "session" to trainingSessionLogId, "samples" to it.size, "completedEpochs" to epochsTrained) }
-            return it.copyOf()
-        }
-        ensureTrainingOrder(trainingSamples.size)
-        shuffleTrainingOrder()
-        pendingDeviceOrder = trainingOrder.copyOf()
-        return trainingOrder.copyOf()
+        return trainingShuffle.reserve(trainingSamples.size, epochs)
     }
 
     internal fun recordTrainingError(value: Double) {
@@ -380,20 +374,37 @@ class Neuro @JvmOverloads constructor(
         lastTrainingError = value
     }
 
-    internal fun commitDeviceEpoch(state: NeuroTrainingState): Double {
-        // Validate every downloaded buffer before publishing any part of the epoch.
-        for (values in state.weights + state.biases + state.weightVelocity + state.biasVelocity) {
-            check(values.all { it.isFinite() }) { "CUDA training produced non-finite parameters." }
+    internal fun validateTrainingState(state: NeuroTrainingState) {
+        require(state.topology.contentEquals(topology)) { "Training state topology does not match model" }
+        val buffers = arrayOf(state.weights, state.biases, state.weightVelocity, state.biasVelocity)
+        require(buffers.all { it.size == layers.size }) { "Training state layer count does not match model" }
+        for (index in layers.indices) {
+            require(state.weights[index].size == layers[index].weights.size &&
+                state.weightVelocity[index].size == layers[index].weightVelocity.size &&
+                state.biases[index].size == layers[index].biases.size &&
+                state.biasVelocity[index].size == layers[index].biasVelocity.size) { "Training state buffer size does not match model" }
         }
+        for (values in buffers) for (buffer in values) {
+            check(buffer.all { it.isFinite() }) { "Training produced non-finite parameters." }
+        }
+    }
+
+    internal fun commitDeviceEpoch(state: NeuroTrainingState): Double = commitTrainingChunk(state, 1)
+
+    internal fun commitTrainingChunk(state: NeuroTrainingState, epochs: Int): Double {
+        checkTrainingAccess()
+        require(epochs in 1..64)
+        validateTrainingState(state)
+        // Validate the complete checkpoint before publishing parameters, momentum or progress.
+        trainingShuffle.commit(epochs)
         for (index in layers.indices) {
             state.weights[index].copyInto(layers[index].weights)
             state.biases[index].copyInto(layers[index].biases)
             state.weightVelocity[index].copyInto(layers[index].weightVelocity)
             state.biasVelocity[index].copyInto(layers[index].biasVelocity)
         }
-        pendingDeviceOrder = null
-        epochsTrained++
-        samplesSeen += trainingSamples.size
+        epochsTrained += epochs
+        samplesSeen += trainingSamples.size.toLong() * epochs
         lastTrainingError = trainingError()
         return lastTrainingError
     }
@@ -498,8 +509,7 @@ class Neuro @JvmOverloads constructor(
     fun testError(): Double = if (testSamples.isEmpty()) Double.NaN else error(testData(), trainingWorkspace)
 
     private fun trainOnlineEpoch(data: PackedDataset, evaluateError: Boolean): Double {
-        ensureTrainingOrder(data.size)
-        if (pendingDeviceOrder != null) pendingDeviceOrder = null else shuffleTrainingOrder()
+        val trainingOrder = deviceTrainingOrder()
         val started = System.nanoTime()
         val event = NeuroJfr.trainingEpoch(epochsTrained + 1, data.size)
         for (sample in trainingOrder) {
@@ -508,8 +518,7 @@ class Neuro @JvmOverloads constructor(
             backpropagate(data.targets, sample * data.outputSize, trainingWorkspace)
             applyOnlineGradient(data.inputs, inputOffset, trainingWorkspace)
         }
-        samplesSeen += data.size
-        epochsTrained++
+        backendCompleteEpoch(data.size)
         val error = if (evaluateError) error(data, trainingWorkspace) else Double.NaN
         if (evaluateError) lastTrainingError = error
         NeuroJfr.commitTrainingEpoch(event, error)
@@ -520,8 +529,7 @@ class Neuro @JvmOverloads constructor(
     private fun trainMiniBatchEpoch(data: PackedDataset, batchSize: Int, parallelism: Int,
                                     pool: ForkJoinPool?, workers: Array<WorkerState>) {
         val started = System.nanoTime()
-        ensureTrainingOrder(data.size)
-        if (pendingDeviceOrder != null) pendingDeviceOrder = null else shuffleTrainingOrder()
+        val trainingOrder = deviceTrainingOrder()
         var start = 0
         while (start < data.size) {
             val end = minOf(data.size, start + batchSize)
@@ -548,8 +556,7 @@ class Neuro @JvmOverloads constructor(
             applyBatchGradient(batchGradient, count)
             start = end
         }
-        samplesSeen += data.size
-        epochsTrained++
+        backendCompleteEpoch(data.size)
         logCpuEpochCompleted(started, batchSize)
     }
 
@@ -778,17 +785,6 @@ class Neuro @JvmOverloads constructor(
         requireFinite(target, "target")
     }
     private fun requireTrainingSamples() = check(trainingSamples.isNotEmpty()) { "no training samples" }
-    private fun ensureTrainingOrder(size: Int) {
-        if (trainingOrder.size != size) trainingOrder = IntArray(size) { it }
-    }
-    private fun shuffleTrainingOrder() {
-        for (index in trainingOrder.lastIndex downTo 1) {
-            val other = shuffleRandom.nextInt(index + 1)
-            val value = trainingOrder[index]
-            trainingOrder[index] = trainingOrder[other]
-            trainingOrder[other] = value
-        }
-    }
 
     companion object {
         private const val DEFAULT_SEED = 0x5EEDL

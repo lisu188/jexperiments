@@ -39,8 +39,8 @@ internal object NeuroCudaBenchmarkHarness {
 
     fun run(config: NeuroCudaBenchmarkConfig, clock: () -> Long = System::nanoTime,
             sessionFactory: (Neuro, NeuroCudaBenchmarkBackend, Int) -> NeuroTrainingSession = { model, engine, batch ->
-                model.newTrainingSession(engine.backend, engine.precision, batch)
-            }, environment: Map<String, Any?> = environment(),
+                engine.open(model, batch)
+            }, environment: Map<String, Any?> = environment(config),
             onWorkloadCompleted: (NeuroCudaBenchmarkWorkload, Int, Int) -> Unit = { _, _, _ -> }): NeuroCudaBenchmarkReport {
         val cases = workloads(config)
         val rounds = ArrayList<NeuroCudaBenchmarkRound>()
@@ -52,10 +52,10 @@ internal object NeuroCudaBenchmarkHarness {
                 currentWorkload = workload.name
                 currentBackend = NeuroCudaBenchmarkBackend.CPU
                 stage = "reference"
-                val reference = prepared(workload)
+                val reference = prepared(workload, config.sigmoid)
                 // The reference is always CPU, including GPU-only selections, and is outside measured data.
                 reference.newTrainingSession(TrainingBackend.CPU, batchSize = workload.batchSize).use {
-                    it.trainMiniBatch(config.epochs, workload.batchSize, 1)
+                    train(it, config.epochs, workload.batchSize, config.mode)
                 }
                 val state = reference.exportTrainingState()
                 val error = reference.trainingError()
@@ -63,7 +63,7 @@ internal object NeuroCudaBenchmarkHarness {
                 repeat(config.warmups) {
                     for (engine in config.backends) {
                         currentBackend = engine
-                        measure(workload, engine, -1, config.epochs, reference.statistics(), state, error, clock, sessionFactory)
+                        measure(workload, engine, -1, config, reference.statistics(), state, error, clock, sessionFactory)
                     }
                 }
                 stage = "measured"
@@ -72,7 +72,7 @@ internal object NeuroCudaBenchmarkHarness {
                     val order = config.backends.drop(offset) + config.backends.take(offset)
                     for (engine in order) {
                         currentBackend = engine
-                        rounds += measure(workload, engine, round + 1, config.epochs, reference.statistics(), state, error, clock, sessionFactory)
+                        rounds += measure(workload, engine, round + 1, config, reference.statistics(), state, error, clock, sessionFactory)
                     }
                 }
                 // Progress runs after every timed session has closed and its state has been verified.
@@ -87,10 +87,11 @@ internal object NeuroCudaBenchmarkHarness {
         return NeuroCudaBenchmarkReport(config, cases, rounds.toList(), summaries(rounds), environment)
     }
 
-    private fun measure(workload: NeuroCudaBenchmarkWorkload, engine: NeuroCudaBenchmarkBackend, round: Int, epochs: Int,
+    private fun measure(workload: NeuroCudaBenchmarkWorkload, engine: NeuroCudaBenchmarkBackend, round: Int, config: NeuroCudaBenchmarkConfig,
                         referenceStatistics: Neuro.Statistics, reference: NeuroTrainingState, referenceError: Double,
                         clock: () -> Long, factory: (Neuro, NeuroCudaBenchmarkBackend, Int) -> NeuroTrainingSession): NeuroCudaBenchmarkRound {
-        val model = prepared(workload)
+        val epochs = config.epochs
+        val model = prepared(workload, config.sigmoid)
         NeuroLog.debug("benchmark", "benchmark.round.started") { mapOf("workload" to workload.name,
             "backend" to engine, "round" to round, "epochs" to epochs, "batchSize" to workload.batchSize) }
         val start = clock()
@@ -102,7 +103,7 @@ internal object NeuroCudaBenchmarkHarness {
             check(session.info.backend == engine.backend && session.info.precision == engine.precision.name) {
                 "Requested $engine but session resolved ${session.info.backend}/${session.info.precision}"
             }
-            session.trainMiniBatch(epochs, workload.batchSize, 1)
+            train(session, epochs, workload.batchSize, config.mode)
             trainingEnd = clock()
         } catch (failure: Throwable) {
             primary = failure
@@ -124,6 +125,21 @@ internal object NeuroCudaBenchmarkHarness {
         }
         return NeuroCudaBenchmarkRound(workload.name, engine, round, opened - start, trainingEnd - opened,
             closed - trainingEnd, closed - start, rmse, statistics.epochsTrained, statistics.samplesSeen, session.info, validation)
+    }
+
+    internal fun train(session: NeuroTrainingSession, epochs: Int, batch: Int, mode: NeuroBenchmarkMode) {
+        when (mode) {
+            NeuroBenchmarkMode.MINIBATCH -> session.trainMiniBatch(epochs, batch, 1)
+            NeuroBenchmarkMode.EPOCH -> repeat(epochs) { session.trainEpoch() }
+            NeuroBenchmarkMode.CHUNK -> {
+                var completed = 0
+                while (completed < epochs) {
+                    val result = session.trainChunk(TrainingChunkRequest(epochs - completed))
+                    check(result.committedEpochs > 0) { "Benchmark chunk made no progress" }
+                    completed += result.committedEpochs
+                }
+            }
+        }
     }
 
     internal fun validate(expected: NeuroTrainingState, actual: NeuroTrainingState, expectedError: Double,
@@ -173,15 +189,15 @@ internal object NeuroCudaBenchmarkHarness {
         }
     }
 
-    internal fun prepared(workload: NeuroCudaBenchmarkWorkload): Neuro =
-        Neuro(workload.topology.toIntArray(), Neuro.HyperParameters(0.05, 0.1, 1.0, SEED, Neuro.Kernel.VECTOR)).also { model ->
+    internal fun prepared(workload: NeuroCudaBenchmarkWorkload, sigmoid: Neuro.SigmoidMode = Neuro.SigmoidMode.EXACT): Neuro =
+        Neuro(workload.topology.toIntArray(), Neuro.HyperParameters(0.05, 0.1, 1.0, SEED, Neuro.Kernel.VECTOR, sigmoid)).also { model ->
             repeat(workload.samples) { sample ->
                 model.addTrainingSample(DoubleArray(workload.topology.first()) { ((sample * 17 + it * 13) and 255) / 255.0 },
                     DoubleArray(workload.topology.last()) { ((sample + it) and 1).toDouble() })
             }
         }
 
-    private fun environment(): Map<String, Any?> {
+    private fun environment(config: NeuroCudaBenchmarkConfig): Map<String, Any?> {
         NeuroLog.initialize()
         fun hash(resource: String): String? = NeuroCudaBenchmarkHarness::class.java.getResourceAsStream(resource)?.use {
             MessageDigest.getInstance("SHA-256").digest(it.readAllBytes()).joinToString("") { value -> "%02x".format(value) }
@@ -190,6 +206,8 @@ internal object NeuroCudaBenchmarkHarness {
             NeuroCudaBenchmarkHarness::class.java.getResourceAsStream("/com/lis/neuro/cuda/train.properties")?.use(properties::load)
         }.entries.associate { it.key.toString() to it.value.toString() }
         return linkedMapOf("timestamp" to Instant.now().toString(), "javaVersion" to System.getProperty("java.runtime.version"),
+            "processId" to ProcessHandle.current().pid(), "jvmStartMillis" to java.lang.management.ManagementFactory.getRuntimeMXBean().startTime,
+            "jvmArguments" to java.lang.management.ManagementFactory.getRuntimeMXBean().inputArguments,
             "javaVm" to System.getProperty("java.vm.name"), "os" to System.getProperty("os.name"),
             "osVersion" to System.getProperty("os.version"), "architecture" to System.getProperty("os.arch"),
             "availableProcessors" to Runtime.getRuntime().availableProcessors(), "cpu" to System.getenv("PROCESSOR_IDENTIFIER"),
@@ -198,8 +216,8 @@ internal object NeuroCudaBenchmarkHarness {
             "benchmarkClassSha256" to hash("/com/lis/neuro/NeuroCudaBenchmarkHarness.class"),
             "ptxSha256" to hash("/com/lis/neuro/cuda/train.ptx"), "cudaBuildPropertiesSha256" to hash("/com/lis/neuro/cuda/train.properties"),
             "cublasKernelSourceSha256" to hash("/cuda/jneuro.cu"), "cudaBuild" to cudaBuild, "seed" to SEED,
-            "learningRate" to 0.05, "momentum" to 0.1, "beta" to 1.0, "sigmoid" to "EXACT", "cpuKernel" to "VECTOR",
-            "timingScope" to "fresh model/data preparation and numerical validation excluded; open, full trainMiniBatch call, close included; CPU parallelism=1",
+            "learningRate" to 0.05, "momentum" to 0.1, "beta" to 1.0, "sigmoid" to config.sigmoid.name, "cpuKernel" to "VECTOR",
+            "timingScope" to "fresh model/data preparation and numerical validation excluded; open, ${config.mode} training, close included; CPU parallelism=1",
             "cublasTiming" to "Runtime allocation, NVRTC compilation, transfers and cleanup occur within the training call; open separately probes device metadata",
             "order" to "measured backend order rotates once per repetition; all warmups excluded", "p95Definition" to "nearest rank")
     }
@@ -230,7 +248,7 @@ internal object NeuroCudaBenchmarkReports {
             value > 0.0 && value < 0.001 -> "<0.001x"
             else -> format("%.3fx", value)
         }
-        val columns = "%-23s %-12s %15s %15s %13s %13s"
+        val columns = "%-23s %-20s %15s %15s %13s %13s"
         return buildString {
             appendLine("CPU/GPU training comparison: profile=${report.config.profile}, epochs=${report.config.epochs}, " +
                 "warmups=${report.config.warmups}, repeats=${report.config.repeats}, CPU parallelism=1, " +
@@ -243,7 +261,7 @@ internal object NeuroCudaBenchmarkReports {
                     speedup(summary.trainingSpeedup), speedup(summary.totalSpeedup)))
             }
             appendLine("Speedup = CPU median / backend median; >1 means faster than CPU.")
-            appendLine("Train includes setup performed inside trainMiniBatch; total includes session open, train and close.")
+            appendLine("Train includes the selected training API; total includes session open, train and close. Mode=${report.config.mode}, sigmoid=${report.config.sigmoid}, retained-device=${report.config.retainedDevice}.")
             if (report.failure == null) append("Numerical verification: passed (${report.rounds.size} measured rounds; weights, biases, momentum buffers and RMSE).")
             else append("Numerical verification: incomplete (benchmark failed).")
         }
@@ -255,14 +273,16 @@ internal object NeuroCudaBenchmarkReports {
             "environment" to report.environment, "configuration" to mapOf("profile" to report.config.profile,
                 "epochs" to report.config.epochs, "warmups" to report.config.warmups, "repeats" to report.config.repeats,
                 "batches" to report.config.batches, "backends" to report.config.backends.map { it.name },
-                "topology" to report.config.topology, "samples" to report.config.sampleCount),
+                "topology" to report.config.topology, "samples" to report.config.sampleCount,
+                "mode" to report.config.mode, "sigmoid" to report.config.sigmoid, "retainedDevice" to report.config.retainedDevice),
             "workloads" to report.workloads.map { mapOf("name" to it.name, "topology" to it.topology, "samples" to it.samples, "batchSize" to it.batchSize) },
             "rounds" to report.rounds.map { round -> mapOf("workload" to round.workload, "backend" to round.backend.name,
                 "round" to round.round, "openNanos" to round.openNanos, "trainingNanos" to round.trainingNanos,
                 "closeNanos" to round.closeNanos, "totalNanos" to round.totalNanos, "rmse" to round.rmse,
                 "epochs" to round.epochs, "samplesSeen" to round.samplesSeen,
                 "device" to mapOf("name" to round.device.name, "identity" to round.device.identity,
-                    "backend" to round.device.backend.name, "precision" to round.device.precision, "kernelVersion" to round.device.kernelVersion),
+                    "backend" to round.device.backend.name, "precision" to round.device.precision, "kernelVersion" to round.device.kernelVersion,
+                    "engine" to round.device.engine, "simdBits" to round.device.simdBits, "sigmoid" to round.device.sigmoid),
                 "validation" to mapOf("elements" to round.validation.elements, "absoluteTolerance" to round.validation.absoluteTolerance,
                     "relativeTolerance" to round.validation.relativeTolerance, "maxAbsoluteError" to round.validation.maximumAbsoluteError,
                     "maxScaledError" to round.validation.maximumScaledError, "rmseError" to round.validation.rmseError)) },
@@ -292,7 +312,7 @@ internal object NeuroCudaBenchmarkReports {
     }
 
     private fun csvValue(value: Any?): String = "\"" + (value?.toString() ?: "").replace("\"", "\"\"") + "\""
-    private fun encode(value: Any?): String = when (value) {
+    internal fun encode(value: Any?): String = when (value) {
         null -> "null"
         is Boolean, is Number -> value.toString()
         is Map<*, *> -> value.entries.joinToString(",", "{", "}") { encode(it.key.toString()) + ":" + encode(it.value) }

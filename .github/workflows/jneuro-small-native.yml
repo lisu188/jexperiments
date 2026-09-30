@@ -1,0 +1,72 @@
+name: JNeuro native SMALL experiment
+on:
+  workflow_dispatch:
+    inputs:
+      benchmarks:
+        description: 'Run bounded CPU/native correctness and three-fork performance measurements'
+        type: boolean
+        default: false
+  push:
+    branches: [main, feat/jneuro-small-engine]
+    paths:
+      - 'jneuro/src/main/native/**'
+      - '.github/workflows/jneuro-small-native.yml'
+      - 'jneuro/tools/run_small_ci_benchmarks.ps1'
+  pull_request:
+    paths:
+      - 'jneuro/src/main/native/**'
+      - '.github/workflows/jneuro-small-native.yml'
+      - 'jneuro/tools/run_small_ci_benchmarks.ps1'
+permissions:
+  contents: read
+jobs:
+  windows-native:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated AVX2 translation unit and baseline dispatcher
+        shell: pwsh
+        run: |
+          $install = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $dev = Join-Path $install 'Common7\Tools\VsDevCmd.bat'
+          New-Item -ItemType Directory -Force native-small | Out-Null
+          $source = Join-Path $pwd 'jneuro\src\main\native'
+          $command = 'call "' + $dev + '" -arch=x64 && cd native-small && cl /nologo /O2 /MT /EHsc /std:c++17 /fp:strict /c "' + $source + '\small_native.cpp" && cl /nologo /O2 /MT /EHsc /std:c++17 /fp:strict /arch:AVX2 /c "' + $source + '\small_avx2.cpp" && link /nologo /DLL /OUT:jneuro-small.dll small_native.obj small_avx2.obj kernel32.lib'
+          cmd /c $command
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $files = Get-ChildItem jneuro/src/main/native -File | Sort-Object Name
+          @("revision=$env:GITHUB_SHA", "abi=1", "shape=2,8,8,8,1", "precision=FP64", "flags=/O2 /MT /EHsc /std:c++17 /fp:strict; AVX2 unit only: /arch:AVX2") + ($files | ForEach-Object { "source.$($_.Name).sha256=$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())" }) + "library.sha256=$((Get-FileHash native-small/jneuro-small.dll -Algorithm SHA256).Hash.ToLowerInvariant())" | Set-Content native-small/provenance.properties
+      - uses: actions/setup-java@v5
+        if: github.event_name == 'workflow_dispatch' && inputs.benchmarks
+        with:
+          distribution: temurin
+          java-version: '27'
+      - uses: gradle/actions/setup-gradle@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.benchmarks
+      - uses: actions/setup-python@v5
+        if: github.event_name == 'workflow_dispatch' && inputs.benchmarks
+        with:
+          python-version: '3.13'
+      - name: Check actual native library and measure CPU/native candidates
+        if: github.event_name == 'workflow_dispatch' && inputs.benchmarks
+        shell: pwsh
+        run: ./jneuro/tools/run_small_ci_benchmarks.ps1 -Library native-small/jneuro-small.dll -Output native-small/benchmarks -Revision $env:GITHUB_SHA
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-small-native-windows
+          path: |
+            native-small/jneuro-small.dll
+            native-small/provenance.properties
+          retention-days: 7
+      - name: Upload compact benchmark evidence and native acceptance results
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.benchmarks
+        uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-small-cpu-native-benchmarks
+          path: |
+            native-small/benchmarks/**
+            native-small/provenance.properties
+            jneuro/build/test-results/nativeSmallCheck/*.xml
+          if-no-files-found: error
+          retention-days: 7

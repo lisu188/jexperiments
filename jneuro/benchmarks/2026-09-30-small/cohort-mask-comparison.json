@@ -1,0 +1,173 @@
+{
+  "scope": "Latest normal C2 update methods only, from the recorded Windows JDK27/AVX2 probe. TLAB offset pattern is specific to this captured VM; not a portable allocation detector.",
+  "methods": [
+    {
+      "case": "FP64-128-cohort",
+      "method": "SmallDoubleCohortCompute::update",
+      "selected_compilation": "Compiled method (c2) 3263 3138       4       com.lis.neuro.SmallDoubleCohortCompute::update (415 bytes)",
+      "tlab_top_store_count": 4,
+      "tlab_top_store_instructions": [
+        "mov QWORD PTR [r15+0x1b0],rdi",
+        "mov QWORD PTR [r15+0x1b0],rdi",
+        "mov QWORD PTR [r15+0x1b0],r10",
+        "mov QWORD PTR [r15+0x1b0],r10"
+      ],
+      "masked_store_instructions": {},
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "static_call": 7,
+        "runtime_call new_array_blob (C2 runtime)": 2,
+        "runtime_call new_instance_blob (C2 runtime)": 2,
+        "runtime_call UncommonTrapBlob": 16,
+        "runtime_call rethrow_blob (C2 runtime)": 1,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call nmethod": 4,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 16,
+      "non_deoptimization_call_store_paths": 14
+    },
+    {
+      "case": "FP64-128-cohort",
+      "method": "SmallDoubleCohortCompute::updateOnline",
+      "selected_compilation": "Compiled method (c2) 8458 3185       4       com.lis.neuro.SmallDoubleCohortCompute::updateOnline (808 bytes)",
+      "tlab_top_store_count": 4,
+      "tlab_top_store_instructions": [
+        "mov QWORD PTR [r15+0x1b0],r10",
+        "mov QWORD PTR [r15+0x1b0],r10",
+        "mov QWORD PTR [r15+0x1b0],r10",
+        "mov QWORD PTR [r15+0x1b0],r10"
+      ],
+      "masked_store_instructions": {},
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "static_call": 7,
+        "runtime_call new_array_blob (C2 runtime)": 2,
+        "runtime_call new_instance_blob (C2 runtime)": 2,
+        "runtime_call UncommonTrapBlob": 44,
+        "runtime_call rethrow_blob (C2 runtime)": 1,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call nmethod": 4,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 28,
+      "non_deoptimization_call_store_paths": 14
+    },
+    {
+      "case": "FP64-256-cohort",
+      "method": "SmallDoubleCohortCompute::update",
+      "selected_compilation": "Compiled method (c2) 3150 3141       4       com.lis.neuro.SmallDoubleCohortCompute::update (415 bytes)",
+      "tlab_top_store_count": 0,
+      "tlab_top_store_instructions": [],
+      "masked_store_instructions": {
+        "vmaskmovpd": 8
+      },
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "runtime_call UncommonTrapBlob": 7,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 8,
+      "non_deoptimization_call_store_paths": 0
+    },
+    {
+      "case": "FP64-256-cohort",
+      "method": "SmallDoubleCohortCompute::updateOnline",
+      "selected_compilation": "Compiled method (c2) 7116 3191       4       com.lis.neuro.SmallDoubleCohortCompute::updateOnline (808 bytes)",
+      "tlab_top_store_count": 0,
+      "tlab_top_store_instructions": [],
+      "masked_store_instructions": {
+        "vmaskmovpd": 6
+      },
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "runtime_call UncommonTrapBlob": 15,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 6,
+      "non_deoptimization_call_store_paths": 0
+    },
+    {
+      "case": "FP32-128-cohort",
+      "method": "SmallFloatCohortCompute::update",
+      "selected_compilation": "Compiled method (c2) 3076 3133       4       com.lis.neuro.SmallFloatCohortCompute::update (415 bytes)",
+      "tlab_top_store_count": 0,
+      "tlab_top_store_instructions": [],
+      "masked_store_instructions": {
+        "vmaskmovps": 8
+      },
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "runtime_call UncommonTrapBlob": 7,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 8,
+      "non_deoptimization_call_store_paths": 0
+    },
+    {
+      "case": "FP32-128-cohort",
+      "method": "SmallFloatCohortCompute::updateOnline",
+      "selected_compilation": "Compiled method (c2) 6344 3177       4       com.lis.neuro.SmallFloatCohortCompute::updateOnline (808 bytes)",
+      "tlab_top_store_count": 0,
+      "tlab_top_store_instructions": [],
+      "masked_store_instructions": {
+        "vmaskmovps": 6
+      },
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "runtime_call UncommonTrapBlob": 15,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 6,
+      "non_deoptimization_call_store_paths": 0
+    },
+    {
+      "case": "FP32-256-cohort",
+      "method": "SmallFloatCohortCompute::update",
+      "selected_compilation": "Compiled method (c2) 2680 3138       4       com.lis.neuro.SmallFloatCohortCompute::update (415 bytes)",
+      "tlab_top_store_count": 0,
+      "tlab_top_store_instructions": [],
+      "masked_store_instructions": {
+        "vmaskmovps": 8
+      },
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "runtime_call UncommonTrapBlob": 8,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 12,
+      "non_deoptimization_call_store_paths": 0
+    },
+    {
+      "case": "FP32-256-cohort",
+      "method": "SmallFloatCohortCompute::updateOnline",
+      "selected_compilation": "Compiled method (c2) 5502 3181       4       com.lis.neuro.SmallFloatCohortCompute::updateOnline (808 bytes)",
+      "tlab_top_store_count": 0,
+      "tlab_top_store_instructions": [],
+      "masked_store_instructions": {
+        "vmaskmovps": 8
+      },
+      "call_annotations": {
+        "runtime_call ic_miss_blob (shared runtime)": 1,
+        "runtime_call UncommonTrapBlob": 16,
+        "runtime_call polling_page_return_handler_blob (shared runtime)": 1,
+        "runtime_call Stub::method_entry_barrier_stub (stub gen)": 1,
+        "runtime_call DeoptimizationBlob": 1
+      },
+      "full_vector_stack_store_count": 8,
+      "non_deoptimization_call_store_paths": 0
+    }
+  ]
+}

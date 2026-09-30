@@ -594,6 +594,7 @@ project(':jneuro') {
         implementation 'com.formdev:flatlaf:3.7.2'
         jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
         kaptJmh 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+        jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
     }
 
     java {
@@ -1218,7 +1219,7 @@ tasks.register('coverageVerification') {
 project(':jneuro') {
     def guiPython = providers.gradleProperty('guiPython').getOrElse(System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('windows') ? 'python' : 'python3')
     tasks.named('test') {
-        useJUnitPlatform { excludeTags 'gui', 'cuda' }
+        useJUnitPlatform { excludeTags 'gui', 'cuda', 'native-small' }
     }
     def verifyCudaResources = tasks.register('verifyCudaResources', Exec) {
         group = 'verification'
@@ -1228,7 +1229,7 @@ project(':jneuro') {
     def cudaResourceVerifierTest = tasks.register('cudaResourceVerifierTest', Exec) {
         group = 'verification'
         environment 'PYTHONDONTWRITEBYTECODE', '1'
-        commandLine guiPython, '-m', 'unittest', 'discover', '-s', file('tools'), '-p', 'test_build_cuda.py'
+        commandLine guiPython, '-m', 'unittest', 'discover', '-s', file('tools'), '-p', 'test_*.py'
     }
     tasks.named('check') { dependsOn verifyCudaResources, cudaResourceVerifierTest }
     tasks.register('gpuCheck', Test) {
@@ -1245,10 +1246,31 @@ project(':jneuro') {
         reports.html.required = true
         testLogging.showStandardStreams = true
     }
+    tasks.register('nativeSmallCheck', Test) {
+        group = 'verification'
+        description = 'Requires the experimental native SMALL library and checks actual scalar/AVX2 parity.'
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        useJUnitPlatform { includeTags 'native-small' }
+        systemProperty 'jneuro.small.native', providers.gradleProperty('neuroSmallNative').orElse('').get()
+        outputs.upToDateWhen { false }
+        maxParallelForks = 1
+    }
     tasks.register('cudaTest') {
         group = 'verification'
         description = 'Compatibility alias for hardware-required CUDA and cuBLAS acceptance.'
         dependsOn tasks.named('gpuCheck')
+    }
+    tasks.register('smallExperiments', JavaExec) {
+        group = 'verification'
+        description = 'Measures independent-model cohorts and paired-seed exact/approximate convergence.'
+        dependsOn tasks.named('jmhClasses')
+        classpath = sourceSets.jmh.runtimeClasspath
+        mainClass = 'com.lis.neuro.SmallTrainingExperiments'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
+        jvmArgs '-Xms128m', '-Xmx2g'
+        systemProperty 'jneuro.benchmark.sourceRevision', providers.gradleProperty('neuroBenchmarkRevision').orElse('unspecified').get()
+        if (providers.gradleProperty('neuroSmallNative').isPresent()) systemProperty 'jneuro.small.native', providers.gradleProperty('neuroSmallNative').get()
     }
     ['cudaBenchmark', 'cpuGpuBenchmark'].each { benchmarkTask ->
         tasks.register(benchmarkTask, JavaExec) {
@@ -1259,6 +1281,7 @@ project(':jneuro') {
             javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
             jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms128m', '-Xmx2g'
             systemProperty 'jneuro.benchmark.sourceRevision', providers.gradleProperty('neuroBenchmarkRevision').orElse('unspecified').get()
+            if (providers.gradleProperty('neuroSmallNative').isPresent()) systemProperty 'jneuro.small.native', providers.gradleProperty('neuroSmallNative').get()
         }
     }
     def guiTest = tasks.register('guiTest', Test) {

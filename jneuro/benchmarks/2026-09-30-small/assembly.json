@@ -1,0 +1,1950 @@
+{
+  "purpose": "Static C2 instruction evidence only; not a performance profile.",
+  "source_class_sha256": {
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallDoubleCompute.class": "b3c0fe847bad3e96da2219bc73d10d8b1874af06d1567538a553dbd88a06bd5f",
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallFloatCompute.class": "67f345caf1e1490f18128cbd355d87a07fe747cdc3ea1b93896df28080ad6adf",
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallDoubleCohortCompute.class": "ee48e1b185643af0601fdc9ff2b6f0c28fae7194eced5de8f4ed9be72350a2c9",
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallFloatCohortCompute.class": "f5bc9ce0f297fbf7b8e736d73eb589f70078f345834a2a84fc25847057b751df",
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallDoubleActivation.class": "999c61af29901022698bd8954dfcf38efdf868e2930330b15a6d5d67c6345082",
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallFloatActivation.class": "0ec579f7aee0143e9aacae47b995c059b30e3c06e3314eb26266853f51295128",
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallCpuTrainingKt.class": "406379d3ca4373e28e6d09f3adc26f322d50f042edf3738f64bee4ab49ebe8fe",
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallTrainingSession.class": "702e603c8c5fcbdeb77ec4750fc8915652514af7e50cc496426c9fb2bedb6f30",
+    "jneuro/build/classes/java/jmh/com/lis/neuro/SmallTrainingJmhBenchmark.class": "c9cd0065491582916c44b2e5f038a1e4a8654eb8b455b5bc8c47d6a8d51ce258"
+  },
+  "decoder_sha256": "3860a08f1383b759322794897983fbb34dd43e32b9adbbcf4cca0dcdfa54c6fa",
+  "cases": [
+    {
+      "case": "FP64-128-single",
+      "native_exit_code": 0,
+      "c2_compilations": 12,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=128 online=false",
+        "PROBE actualBits=128 online=true"
+      ],
+      "methods": [
+        {
+          "method": "SmallDoubleActivation::apply",
+          "selected_compilation": "Compiled method (c2) 1465 2969       4       com.lis.neuro.SmallDoubleActivation::apply (584 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 3000,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 20,
+            "vaddpd": 20
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 10,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 1669 2987       4       com.lis.neuro.SmallDoubleCompute::accumulate (389 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 1472,
+          "packed_fma": {
+            "vfmadd231pd": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 4,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {},
+          "scalar_fma": {},
+          "vector_stack_stores": 4,
+          "scalar_stack_stores": 12,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 4
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1ee91bbb78d",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1ee91bbb8b1",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1ee91bbb903",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::backward",
+          "selected_compilation": "Compiled method (c2) 2118 3018       4       com.lis.neuro.SmallDoubleCompute::backward (817 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3192,
+          "packed_fma": {
+            "vfmadd231pd": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 6,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubpd": 1,
+            "vmulpd": 7
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 15,
+          "scalar_stack_stores": 47,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 15
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1ee91bc6445",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1ee91bc649b",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1ee91bc644c",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1ee91bc649b",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1ee91bc64f1",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1ee91bc64f7",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::forward",
+          "selected_compilation": "Compiled method (c2) 1858 3007       4       com.lis.neuro.SmallDoubleCompute::forward (2661 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 5392,
+          "packed_fma": {
+            "vfmadd231pd": 32
+          },
+          "packed_fma_by_bits": {
+            "128": 32,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 7
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 8
+          },
+          "vector_stack_stores": 20,
+          "scalar_stack_stores": 40,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 20
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1ee91bc0cfc",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1ee91bc0d43",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1ee91bc0d10",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1ee91bc0d43",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1ee91bc0d50",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1ee91bc0d8f",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::update",
+          "selected_compilation": "Compiled method (c2) 1648 2989       4       com.lis.neuro.SmallDoubleCompute::update (335 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 920,
+          "packed_fma": {
+            "vfmadd231pd": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 6,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 6,
+            "vaddpd": 6
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 1
+          },
+          "vector_stack_stores": 10,
+          "scalar_stack_stores": 5,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 10
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1ee91bbb2dd",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1ee91bbb2eb",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1ee91bbb2ff",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 2219 3025       4       com.lis.neuro.SmallDoubleCompute::updateOnline (562 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 2008,
+          "packed_fma": {
+            "vfmadd231pd": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 4,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 4,
+            "vaddpd": 4
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 1
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 23,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallDoubleCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    },
+    {
+      "case": "FP64-128-cohort",
+      "native_exit_code": 0,
+      "c2_compilations": 19,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=128 online=false models=9 active=8",
+        "PROBE actualBits=128 online=true models=9 active=8"
+      ],
+      "methods": [
+        {
+          "method": "SmallDoubleActivation::apply",
+          "selected_compilation": "Compiled method (c2) 2806 3120       4       com.lis.neuro.SmallDoubleActivation::apply (584 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 2944,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 30,
+            "vaddpd": 30
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 10,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::backward",
+          "selected_compilation": "Compiled method (c2) 8646 3186       4       com.lis.neuro.SmallDoubleCohortCompute::backward (998 bytes)",
+          "compilation_count": 6,
+          "selected_osr": false,
+          "code_bytes": 5376,
+          "packed_fma": {
+            "vfmadd231pd": 5
+          },
+          "packed_fma_by_bits": {
+            "128": 5,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubpd": 1,
+            "vmulpd": 7
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 21,
+          "scalar_stack_stores": 26,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 21
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x23215bb8aec",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x23215bb8b53",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x23215bb8b62",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x23215bb8bb3",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x23215bb8b68",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x23215bb8bb3",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::forward",
+          "selected_compilation": "Compiled method (c2) 3411 3137       4       com.lis.neuro.SmallDoubleCohortCompute::forward (3796 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3232,
+          "packed_fma": {
+            "vfmadd231pd": 20
+          },
+          "packed_fma_by_bits": {
+            "128": 20,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 7
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 9,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 3241 3135       4       com.lis.neuro.SmallDoubleCohortCompute::accumulate (553 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 2152,
+          "packed_fma": {
+            "vfmadd231pd": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 6,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {},
+          "scalar_fma": {},
+          "vector_stack_stores": 6,
+          "scalar_stack_stores": 23,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 6
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x23215b9dd5c",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x23215b9df37",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x23215b9df88",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::update",
+          "selected_compilation": "Compiled method (c2) 3263 3138       4       com.lis.neuro.SmallDoubleCohortCompute::update (415 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 3120,
+          "packed_fma": {
+            "vfmadd231pd": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 1,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 1,
+            "vaddpd": 1
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 16,
+          "scalar_stack_stores": 2,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 2,
+            "other_call_path": 14
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x23215b9e4ae",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x23215b9e6b1",
+              "classification": "other_call_path",
+              "next_call": {
+                "address": "0x23215b9e6f7",
+                "annotation": "static_call"
+              }
+            },
+            {
+              "store_address": "0x23215b9e81e",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 8458 3185       4       com.lis.neuro.SmallDoubleCohortCompute::updateOnline (808 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 5720,
+          "packed_fma": {
+            "vfmadd231pd": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 1,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 2,
+            "vaddpd": 1
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 4
+          },
+          "vector_stack_stores": 28,
+          "scalar_stack_stores": 4,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 2,
+            "other_call_path": 14,
+            "deoptimization_exit": 12
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x23215bb6df1",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x23215bb70e8",
+              "classification": "other_call_path",
+              "next_call": {
+                "address": "0x23215bb7133",
+                "annotation": "static_call"
+              }
+            },
+            {
+              "store_address": "0x23215bb7270",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallDoubleCohortCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    },
+    {
+      "case": "FP64-256-single",
+      "native_exit_code": 0,
+      "c2_compilations": 18,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=256 online=false",
+        "PROBE actualBits=256 online=true"
+      ],
+      "methods": [
+        {
+          "method": "SmallDoubleActivation::apply",
+          "selected_compilation": "Compiled method (c2) 1558 2980       4       com.lis.neuro.SmallDoubleActivation::apply (584 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 2824,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 5,
+            "vaddpd": 5
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 1,
+          "scalar_stack_stores": 11,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 1
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x2293c009081",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 1984 3013       4       com.lis.neuro.SmallDoubleCompute::accumulate (389 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 1600,
+          "packed_fma": {
+            "vfmadd231pd": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 1,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {},
+          "scalar_fma": {
+            "vfmadd231sd": 1
+          },
+          "vector_stack_stores": 1,
+          "scalar_stack_stores": 12,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 1
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x2293c00f254",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::backward",
+          "selected_compilation": "Compiled method (c2) 2717 3030       4       com.lis.neuro.SmallDoubleCompute::backward (817 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3280,
+          "packed_fma": {
+            "vfmadd231pd": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 6,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubpd": 1,
+            "vmulpd": 7
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 13,
+          "scalar_stack_stores": 47,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 13
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x2293c01bec8",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x2293c01bf13",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x2293c01bf68",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x2293c01bf73",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x2293c01bf88",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x2293c01bfcf",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::forward",
+          "selected_compilation": "Compiled method (c2) 2426 3026       4       com.lis.neuro.SmallDoubleCompute::forward (2661 bytes)",
+          "compilation_count": 5,
+          "selected_osr": false,
+          "code_bytes": 5448,
+          "packed_fma": {
+            "vfmadd231pd": 30
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 30,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 6
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 8
+          },
+          "vector_stack_stores": 20,
+          "scalar_stack_stores": 45,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 20
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x2293c019c23",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x2293c019c77",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x2293c019c39",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x2293c019c77",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x2293c019c84",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x2293c019ccb",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::update",
+          "selected_compilation": "Compiled method (c2) 1919 3004       4       com.lis.neuro.SmallDoubleCompute::update (335 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 960,
+          "packed_fma": {
+            "vfmadd231pd": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 6,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 6,
+            "vaddpd": 6
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 1
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 3,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 3140 3041       4       com.lis.neuro.SmallDoubleCompute::updateOnline (562 bytes)",
+          "compilation_count": 5,
+          "selected_osr": false,
+          "code_bytes": 2144,
+          "packed_fma": {
+            "vfmadd231pd": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 1,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 1,
+            "vaddpd": 1
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 2
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 29,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallDoubleCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    },
+    {
+      "case": "FP64-256-cohort",
+      "native_exit_code": 0,
+      "c2_compilations": 21,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=256 online=false models=9 active=8",
+        "PROBE actualBits=256 online=true models=9 active=8"
+      ],
+      "methods": [
+        {
+          "method": "SmallDoubleActivation::apply",
+          "selected_compilation": "Compiled method (c2) 2572 3130       4       com.lis.neuro.SmallDoubleActivation::apply (584 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3000,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 30,
+            "vaddpd": 30
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 10,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::backward",
+          "selected_compilation": "Compiled method (c2) 6863 3189       4       com.lis.neuro.SmallDoubleCohortCompute::backward (998 bytes)",
+          "compilation_count": 6,
+          "selected_osr": false,
+          "code_bytes": 5352,
+          "packed_fma": {
+            "vfmadd231pd": 5
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 5,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubpd": 7,
+            "vmulpd": 16
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 21,
+          "scalar_stack_stores": 26,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 21
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1b9954a2f6c",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1b9954a2fc7",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1b9954a2fd6",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1b9954a300b",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1b9954a2fdc",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1b9954a300b",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::forward",
+          "selected_compilation": "Compiled method (c2) 3090 3138       4       com.lis.neuro.SmallDoubleCohortCompute::forward (3796 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3184,
+          "packed_fma": {
+            "vfmadd231pd": 16
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 16,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 5
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 9,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 3194 3142       4       com.lis.neuro.SmallDoubleCohortCompute::accumulate (553 bytes)",
+          "compilation_count": 4,
+          "selected_osr": false,
+          "code_bytes": 2104,
+          "packed_fma": {
+            "vfmadd231pd": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 4,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vaddpd": 3
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 4,
+          "scalar_stack_stores": 23,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 4
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1b99548ca68",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1b99548cc46",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1b99548cc98",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::update",
+          "selected_compilation": "Compiled method (c2) 3150 3141       4       com.lis.neuro.SmallDoubleCohortCompute::update (415 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 1768,
+          "packed_fma": {
+            "vfmadd231pd": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 4,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 4,
+            "vaddpd": 8
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 8,
+          "scalar_stack_stores": 17,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 8
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1b99548c0af",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1b99548c20e",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1b99548c3a6",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallDoubleCohortCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 7116 3191       4       com.lis.neuro.SmallDoubleCohortCompute::updateOnline (808 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3072,
+          "packed_fma": {
+            "vfmadd231pd": 3
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 3,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulpd": 6,
+            "vaddpd": 6
+          },
+          "scalar_fma": {
+            "vfmadd231sd": 4
+          },
+          "vector_stack_stores": 6,
+          "scalar_stack_stores": 12,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 6
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1b9954a5cb0",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1b9954a5d0d",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x1b9954a5dd2",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallDoubleCohortCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    },
+    {
+      "case": "FP32-128-single",
+      "native_exit_code": 0,
+      "c2_compilations": 15,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=128 online=false",
+        "PROBE actualBits=128 online=true"
+      ],
+      "methods": [
+        {
+          "method": "SmallFloatCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 2269 3016       4       com.lis.neuro.SmallFloatCompute::accumulate (389 bytes)",
+          "compilation_count": 4,
+          "selected_osr": false,
+          "code_bytes": 1528,
+          "packed_fma": {
+            "vfmadd231ps": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 1,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {},
+          "scalar_fma": {
+            "vfmadd231ss": 1
+          },
+          "vector_stack_stores": 1,
+          "scalar_stack_stores": 12,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 1
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1d861983d54",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatActivation::apply",
+          "selected_compilation": "Compiled method (c2) 1666 2978       4       com.lis.neuro.SmallFloatActivation::apply (571 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 2728,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 5,
+            "vaddps": 5
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 1,
+          "scalar_stack_stores": 9,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 1
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1d861978a43",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::backward",
+          "selected_compilation": "Compiled method (c2) 2502 3022       4       com.lis.neuro.SmallFloatCompute::backward (813 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3192,
+          "packed_fma": {
+            "vfmadd231ps": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 6,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubps": 1,
+            "vmulps": 7
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 13,
+          "scalar_stack_stores": 47,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 13
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x1d8619867c3",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1d861986813",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1d86198686a",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1d861986873",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x1d861986888",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x1d8619868cf",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::forward",
+          "selected_compilation": "Compiled method (c2) 2149 3009       4       com.lis.neuro.SmallFloatCompute::forward (2661 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 3408,
+          "packed_fma": {
+            "vfmadd231ps": 10
+          },
+          "packed_fma_by_bits": {
+            "128": 10,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 2
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 8
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 8,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::update",
+          "selected_compilation": "Compiled method (c2) 2132 3002       4       com.lis.neuro.SmallFloatCompute::update (335 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 960,
+          "packed_fma": {
+            "vfmadd231ps": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 6,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 6,
+            "vaddps": 6
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 1
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 3,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 2838 3033       4       com.lis.neuro.SmallFloatCompute::updateOnline (562 bytes)",
+          "compilation_count": 4,
+          "selected_osr": false,
+          "code_bytes": 2080,
+          "packed_fma": {
+            "vfmadd231ps": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 1,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 1,
+            "vaddps": 1
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 2
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 29,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallFloatCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    },
+    {
+      "case": "FP32-128-cohort",
+      "native_exit_code": 0,
+      "c2_compilations": 22,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=128 online=false models=9 active=8",
+        "PROBE actualBits=128 online=true models=9 active=8"
+      ],
+      "methods": [
+        {
+          "method": "SmallFloatActivation::apply",
+          "selected_compilation": "Compiled method (c2) 2852 3129       4       com.lis.neuro.SmallFloatActivation::apply (571 bytes)",
+          "compilation_count": 4,
+          "selected_osr": false,
+          "code_bytes": 2864,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 30,
+            "vaddps": 30
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 8,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::backward",
+          "selected_compilation": "Compiled method (c2) 6209 3176       4       com.lis.neuro.SmallFloatCohortCompute::backward (998 bytes)",
+          "compilation_count": 6,
+          "selected_osr": false,
+          "code_bytes": 5064,
+          "packed_fma": {
+            "vfmadd231ps": 5
+          },
+          "packed_fma_by_bits": {
+            "128": 5,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubps": 5,
+            "vmulps": 13
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 21,
+          "scalar_stack_stores": 26,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 21
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x257a3460f63",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x257a3460fc7",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x257a3460fd6",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x257a3461027",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x257a3460fdc",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x257a3461027",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 3140 3139       4       com.lis.neuro.SmallFloatCohortCompute::accumulate (553 bytes)",
+          "compilation_count": 5,
+          "selected_osr": false,
+          "code_bytes": 1976,
+          "packed_fma": {
+            "vfmadd231ps": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 4,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vaddps": 2
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 4,
+          "scalar_stack_stores": 22,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 4
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x257a344c300",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x257a344c4e4",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x257a344c538",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::forward",
+          "selected_compilation": "Compiled method (c2) 2927 3130       4       com.lis.neuro.SmallFloatCohortCompute::forward (3796 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3144,
+          "packed_fma": {
+            "vfmadd231ps": 16
+          },
+          "packed_fma_by_bits": {
+            "128": 16,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 5
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 9,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::update",
+          "selected_compilation": "Compiled method (c2) 3076 3133       4       com.lis.neuro.SmallFloatCohortCompute::update (415 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 1736,
+          "packed_fma": {
+            "vfmadd231ps": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 4,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 4,
+            "vaddps": 8
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 8,
+          "scalar_stack_stores": 17,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 8
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x257a344b12d",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x257a344b28e",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x257a344b41a",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 6344 3177       4       com.lis.neuro.SmallFloatCohortCompute::updateOnline (808 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 3128,
+          "packed_fma": {
+            "vfmadd231ps": 3
+          },
+          "packed_fma_by_bits": {
+            "128": 3,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 6,
+            "vaddps": 6
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 4
+          },
+          "vector_stack_stores": 6,
+          "scalar_stack_stores": 12,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 6
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x257a3462524",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x257a3462592",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x257a346268e",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallFloatCohortCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    },
+    {
+      "case": "FP32-256-single",
+      "native_exit_code": 0,
+      "c2_compilations": 19,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=256 online=false",
+        "PROBE actualBits=256 online=true"
+      ],
+      "methods": [
+        {
+          "method": "SmallFloatCompute::backward",
+          "selected_compilation": "Compiled method (c2) 2932 3037       4       com.lis.neuro.SmallFloatCompute::backward (813 bytes)",
+          "compilation_count": 4,
+          "selected_osr": false,
+          "code_bytes": 2928,
+          "packed_fma": {
+            "vfmadd231ps": 6
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 6,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubps": 1,
+            "vmulps": 7
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 8,
+          "scalar_stack_stores": 42,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 8
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x20a107bd68b",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x20a107bd6df",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x20a107bd73a",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x20a107bd743",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x20a107bd758",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x20a107bd79b",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatActivation::apply",
+          "selected_compilation": "Compiled method (c2) 1689 2978       4       com.lis.neuro.SmallFloatActivation::apply (571 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 2808,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 5,
+            "vaddps": 5
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 1,
+          "scalar_stack_stores": 10,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 1
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x20a107a7236",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 2294 3022       4       com.lis.neuro.SmallFloatCompute::accumulate (389 bytes)",
+          "compilation_count": 5,
+          "selected_osr": false,
+          "code_bytes": 1656,
+          "packed_fma": {
+            "vfmadd231ps": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 1,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {},
+          "scalar_fma": {
+            "vfmadd231ss": 1
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 12,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::forward",
+          "selected_compilation": "Compiled method (c2) 2167 3018       4       com.lis.neuro.SmallFloatCompute::forward (2661 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3896,
+          "packed_fma": {
+            "vfmadd231ps": 10
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 10,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 2
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 8
+          },
+          "vector_stack_stores": 1,
+          "scalar_stack_stores": 9,
+          "vector_store_path_classification": {
+            "unclassified_control_flow": 1
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x20a107b1fa9",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::update",
+          "selected_compilation": "Compiled method (c2) 1902 3008       4       com.lis.neuro.SmallFloatCompute::update (335 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 896,
+          "packed_fma": {
+            "vfmadd231ps": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 4,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 4,
+            "vaddps": 4
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 1
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 3,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 3371 3040       4       com.lis.neuro.SmallFloatCompute::updateOnline (562 bytes)",
+          "compilation_count": 5,
+          "selected_osr": false,
+          "code_bytes": 2120,
+          "packed_fma": {
+            "vfmadd231ps": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 1,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 1,
+            "vaddps": 1
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 2
+          },
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 40,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallFloatCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    },
+    {
+      "case": "FP32-256-cohort",
+      "native_exit_code": 0,
+      "c2_compilations": 16,
+      "incomplete_compilations": 0,
+      "actual_width_lines": [
+        "PROBE actualBits=256 online=false models=9 active=8",
+        "PROBE actualBits=256 online=true models=9 active=8"
+      ],
+      "methods": [
+        {
+          "method": "SmallFloatActivation::apply",
+          "selected_compilation": "Compiled method (c2) 2459 3133       4       com.lis.neuro.SmallFloatActivation::apply (571 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 2912,
+          "packed_fma": {},
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 0,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 30,
+            "vaddps": 30
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 8,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "fast_polynomial_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::backward",
+          "selected_compilation": "Compiled method (c2) 5136 3176       4       com.lis.neuro.SmallFloatCohortCompute::backward (998 bytes)",
+          "compilation_count": 4,
+          "selected_osr": false,
+          "code_bytes": 5296,
+          "packed_fma": {
+            "vfmadd231ps": 5
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 5,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vsubps": 1,
+            "vmulps": 7
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 21,
+          "scalar_stack_stores": 26,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 21
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x182907cf62b",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x182907cf683",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x182907cf692",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x182907cf6c7",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x182907cf698",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x182907cf6c7",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::forward",
+          "selected_compilation": "Compiled method (c2) 2761 3141       4       com.lis.neuro.SmallFloatCohortCompute::forward (3796 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3184,
+          "packed_fma": {
+            "vfmadd231ps": 16
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 16,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 5
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 9,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::accumulate",
+          "selected_compilation": "Compiled method (c2) 2717 3139       4       com.lis.neuro.SmallFloatCohortCompute::accumulate (553 bytes)",
+          "compilation_count": 2,
+          "selected_osr": false,
+          "code_bytes": 1848,
+          "packed_fma": {
+            "vfmadd231ps": 1
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 1,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {},
+          "scalar_fma": {},
+          "vector_stack_stores": 0,
+          "scalar_stack_stores": 25,
+          "vector_store_path_classification": {},
+          "vector_store_examples": [],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::update",
+          "selected_compilation": "Compiled method (c2) 2680 3138       4       com.lis.neuro.SmallFloatCohortCompute::update (415 bytes)",
+          "compilation_count": 1,
+          "selected_osr": false,
+          "code_bytes": 1904,
+          "packed_fma": {
+            "vfmadd231ps": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 4,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 4,
+            "vaddps": 4
+          },
+          "scalar_fma": {},
+          "vector_stack_stores": 12,
+          "scalar_stack_stores": 23,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 4,
+            "unclassified_control_flow": 8
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x182907be060",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x182907be0c3",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x182907be07d",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x182907be0c3",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x182907be0d6",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        },
+        {
+          "method": "SmallFloatCohortCompute::updateOnline",
+          "selected_compilation": "Compiled method (c2) 5502 3181       4       com.lis.neuro.SmallFloatCohortCompute::updateOnline (808 bytes)",
+          "compilation_count": 3,
+          "selected_osr": false,
+          "code_bytes": 3408,
+          "packed_fma": {
+            "vfmadd231ps": 4
+          },
+          "packed_fma_by_bits": {
+            "128": 0,
+            "256": 4,
+            "512": 0
+          },
+          "expected_width_packed_arithmetic": {
+            "vmulps": 8,
+            "vaddps": 4
+          },
+          "scalar_fma": {
+            "vfmadd231ss": 4
+          },
+          "vector_stack_stores": 8,
+          "scalar_stack_stores": 15,
+          "vector_store_path_classification": {
+            "deoptimization_exit": 2,
+            "unclassified_control_flow": 6
+          },
+          "vector_store_examples": [
+            {
+              "store_address": "0x182907d353f",
+              "classification": "deoptimization_exit",
+              "next_call": {
+                "address": "0x182907d35bf",
+                "annotation": "runtime_call UncommonTrapBlob"
+              }
+            },
+            {
+              "store_address": "0x182907d35d5",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            },
+            {
+              "store_address": "0x182907d3625",
+              "classification": "unclassified_control_flow",
+              "next_call": null
+            }
+          ],
+          "expected_width_and_precision_fma_verified": true
+        }
+      ],
+      "uncaptured_targets": [
+        "SmallFloatCohortCompute::updateBatch"
+      ],
+      "all_captured_compute_methods_have_expected_fma": true,
+      "fast_polynomial_verified": true,
+      "valid_complete_capture": true
+    }
+  ],
+  "all_eight_cases_verified": true,
+  "caveats": [
+    "Static instruction counts are not dynamic execution frequencies or timing results.",
+    "Select the latest normal compilation per method; OSR and superseded compilations are separate code versions, not additive work.",
+    "updateBatch has no standalone C2 compilation in these captures; its vector update callees are present. This is consistent with inlining but not an inlining trace.",
+    "Scalar output dot products, range reduction, exponent scaling and some control/tail paths remain scalar by design.",
+    "Stack stores can preserve deoptimization state; only explicit unconditional paths ending in annotated UncommonTrapBlob are classified as deoptimization exits. Remaining stores are not automatically hot-loop spills."
+  ],
+  "verification_scope": "Expected-width packed FMA in all captured compute methods and packed FAST polynomial arithmetic. This does not certify all mask operations intrinsic, zero allocation, hot-path spill frequency, or performance.",
+  "gaps": [
+    {
+      "case": "FP64-128-cohort",
+      "methods": [
+        "SmallDoubleCohortCompute::update",
+        "SmallDoubleCohortCompute::updateOnline"
+      ],
+      "finding": "Latest FP64-128 cohort update/updateOnline each have four inline TLAB top stores, seven static helper calls, two new-array and two new-instance allocator slow paths, and no native masked-store instructions. Packed FMA arithmetic is present; the masked update path still uses helpers/allocations.",
+      "evidence": "fp64-128-mask-path.txt",
+      "cause_status": "The masked vector operations are the likely source; exact callee names are not retained by the filtered capture, so that attribution remains an inference.",
+      "impact": "The captured default FP64-256 updates have no TLAB top stores, static helper calls, or allocator slow paths and use native vmaskmovpd stores. FP32-128/256 similarly use native vmaskmovps without these allocation paths.",
+      "comparison_evidence": "cohort-mask-comparison.json"
+    }
+  ]
+}

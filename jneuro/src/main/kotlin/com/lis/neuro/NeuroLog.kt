@@ -145,6 +145,8 @@ internal object NeuroLog {
 
     fun info(component: String, event: String, vararg fields: Pair<String, Any?>) =
         emit(Level.INFO, component, event, null) { fields.toMap() }
+    fun info(component: String, event: String, fields: () -> Map<String, Any?>) =
+        emit(Level.INFO, component, event, null, fields)
     fun debug(component: String, event: String, fields: () -> Map<String, Any?> = { emptyMap() }) =
         emit(Level.FINE, component, event, null, fields)
     fun trace(component: String, event: String, fields: () -> Map<String, Any?> = { emptyMap() }) =

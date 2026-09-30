@@ -1,0 +1,1093 @@
+{
+  "schemaVersion": 1,
+  "implementationRevision": "b987d7b5048beaf255fe8ec05500d3104b4696da",
+  "latestLocalCpuTestRevision": "2eb27878f2b508ebecd91d9b03ffc2cf779ed989",
+  "lineCoverage": {
+    "type": "LINE",
+    "missed": "217",
+    "covered": "7015"
+  },
+  "checks": {
+    "test": {
+      "totals": {
+        "tests": 265,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      },
+      "reports": [
+        {
+          "file": "TEST-com.lis.neuro.AdaptiveArchitectureSearchTest.xml",
+          "sha256": "1497b9f4e28d4f208c417e762bb3eb483bb2dbb6d231fe5bbc33f2deda41fda2",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.ArchitectureSearchPanelTest.xml",
+          "sha256": "14d39f62b05d45612cc7f3863dac1f5d399dc03a3916d16d16192eecb4af944e",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.ArchitectureWorkerLifecycleTest.xml",
+          "sha256": "bf35d901202395d50460df6dd6aea5e46cfcbfc4d5d8cd57e44522ca0e952447",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.CublasTrainingSessionTest.xml",
+          "sha256": "64f1917cde6eac1bcf9fa58ca07981397f7503f484251a2a88d87ea0c5851cef",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.CudaTrainingTest.xml",
+          "sha256": "94e77e75e3c8ec5b4a3ccf023845017ac4135172a11c862e0ccd68ce734550c2",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.EliteParentSelectionTest.xml",
+          "sha256": "4f98239442c140626d05d106c83f64cc705e7d9a4d84b67cfc385606bf486d55",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NativeCudaDriverTest.xml",
+          "sha256": "6e2eba55a1d4a917da6022044d1c50b654ab1fb7123a53e39bb0aa90d7a06c5f",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NativeLoggingTest.xml",
+          "sha256": "a2297685ae269469c12b8186b4c340507654534f062e9d6e1e17481668b9afb7",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NativeSmallTrainingTest.xml",
+          "sha256": "70546f8938a89e7cc12e655696e802a5e8f91af46e11272ced031f084cfb9d82",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroArchitectureCohortTest.xml",
+          "sha256": "380a1b54318c10ece3ed302e26a6f6815fe885e4bcbea4aad0008021f29d99cc",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroArchitectureSearchTest.xml",
+          "sha256": "7201d329efb8874b071ec4c7eb3adef25cead54f01ec557396e0b236214e9f58",
+          "tests": 22,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroBaselineTopologyTest.xml",
+          "sha256": "ae83751df86151f6b5355ba9a3c1ffb17d18f062af78da906929dbaa07bb6a04",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroCpuBatchTrainerTest.xml",
+          "sha256": "a940bed105752581f1c0ac61dafcc03bbf507aea1ffb5e61f7f2e58310a9794b",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroCudaBatchBackendTest.xml",
+          "sha256": "95bc6e7699b4bed7da436779d3ffca58bb09f43b8db1f97b2e57c0e49de46d02",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroCudaBenchmarkHarnessTest.xml",
+          "sha256": "5980b0d0eeab3cb6d66491d0900d2909a5a550ff9a41311cae4be5e3c880596a",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroCudaBufferTest.xml",
+          "sha256": "ad5f219012fab93d41eb1a1e9b7a15833b2320ce79327b63cb37987f77574e65",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroCudaPlanTest.xml",
+          "sha256": "93517a572adc0c97d76e4970eb045c31730ec0c7cde57aa4a2f8106838b37948",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroGuiModelTest.xml",
+          "sha256": "d3bc4f816081ce54e8c0ecdb8658528a135ac45f718c5350c9a61633c26f572f",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroHardLearningSetsTest.xml",
+          "sha256": "f43998a1c7b4771dc2edaf6b67a02af629b617de4dffb546b44cd6456b304a76",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroLearningSetsTest.xml",
+          "sha256": "ca2dc66e669a59830e0aa00b950d6007d2b723b12b219321626114c79e1f987d",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroLogTest.xml",
+          "sha256": "bc4536787326238d391f398343c5716ba712c59d417b209a16c1e31f4f3d2b19",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroNativeAdaptersTest.xml",
+          "sha256": "6233c0b749df9f8d6739444976e300fccfd2bdd670b3b11ebea6b9a60f1d360f",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroNativeBlasTest.xml",
+          "sha256": "162c13b73a2f9e340a0801a298f798d1961da1e9009581e3dd4f3c71504dfa51",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 1
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroNvrtcKernelsTest.xml",
+          "sha256": "4d549f35476a8db9f7fb88783784567e4d92e27615080a01c1c966372b686c41",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroStudioTest.xml",
+          "sha256": "91a5eba398e15dc0d206621e96c9dac838fb7fe7cef6e080a1c48c5e98eabe1a",
+          "tests": 19,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroStudioUiTest.xml",
+          "sha256": "6faab545779bc6b7b34f93c3bcd99153e4fab4334b8acabe224ebf6a85d0ce0c",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroTest.xml",
+          "sha256": "5a6923fe969c092dc8b3e3247166e9fd9895f7d03f1b06f18c3903adbed7c613",
+          "tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroTopologyConfigTest.xml",
+          "sha256": "35d5a13108a30718b8c0ff7106c14f196de1b92f9b3ea59cf3619294f41cf99c",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroTrainingCohortTest.xml",
+          "sha256": "c89c4502953770d5770d2a520c8f2379edbbb9672fbda50be9090b823e75cafd",
+          "tests": 11,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroTrainingLoggingTest.xml",
+          "sha256": "2246ebf368db45666e6ccf093086c11e49d5fbabc43ddf15fd523ec29db35d26",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroTrainingSessionTest.xml",
+          "sha256": "e216214c021fbd880f53fe72ed0849c50db3aa833f7f85fa5ab89589375745e8",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroXorDiagnosticsTest.xml",
+          "sha256": "0cd1fbd57757894126357d351411fb0003017fa60b970434344559dc7ebbcb9d",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroXorGridTest.xml",
+          "sha256": "0f0bd920ba3c080b92414a8eede49546ba288207bde006cb2047ff1f7fff4fa5",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.ParallelArchitectureSearchTest.xml",
+          "sha256": "f0aba9a86aea162612c582fe8063b97bf973fea5aea569b129f0cf05d0ee2de0",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.SmallCpuCohortTest.xml",
+          "sha256": "377878cedea0e3f34da0ba78cd083aedaeb3409d4bc45723db93fd7c19818d90",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.SmallCpuTrainingTest.xml",
+          "sha256": "ae3ec638f00a055c0d58a5288294c383dcc708da881e985b10b863807d417d48",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.SmallCudaTrainingTest.xml",
+          "sha256": "1ba08dd6a4ce7d9478471eff95d7d6bc748c63c41b76c1674c1f82acac638178",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.SmallTrainingSessionTest.xml",
+          "sha256": "52c8cdc49a833c2a625dcded4e440c392a6b748d6d6fc7d3f9fccfa2773b2a3a",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.TrainingShuffleTest.xml",
+          "sha256": "e0d326409c0914d7aa6e3b37107b9b8d50e3016659478d408ac474129497d677",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-experiments.testing.MainEntrypointCoverageTest.xml",
+          "sha256": "eabbd55d498fea87893905752ff1eab3e2c411307b830d8e7dc3cde81ecb2048",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "gpuCheck": {
+      "totals": {
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "reports": [
+        {
+          "file": "TEST-com.lis.neuro.NeuroCudaAcceptanceTest.xml",
+          "sha256": "47596637adcd5279bc3df0bdac0cb4b11b3e73670e8e879191e8dfcc7a0e8ff5",
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroCudaIntegrationTest.xml",
+          "sha256": "42b6600c8914fc9c95a291608e8d8452fc0a3235d4949c404f7b89e4752ba724",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.NeuroCudaStudioAcceptanceTest.xml",
+          "sha256": "58b10906a130bdafa041ff057c7fbf07d95771c03894ee3d937b9cf482c389c3",
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "file": "TEST-com.lis.neuro.SmallCudaAcceptanceTest.xml",
+          "sha256": "8db7988b544d3945465fa754ebc58c3591f10fe15a1aa36329f2539d3a8f639b",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    },
+    "nativeSmallCheck": {
+      "totals": {
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "reports": [
+        {
+          "file": "TEST-com.lis.neuro.NativeSmallAcceptanceTest.xml",
+          "sha256": "e6e9ac5dbd9c1ff0a255a4601c6c9c0c3f5962d8be3733852e4de0161732450f",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ]
+    }
+  },
+  "pythonTools": {
+    "tests": 35,
+    "passed": 35
+  },
+  "ciExitHandling": {
+    "validNegativeGateExit": 0,
+    "invalidEvidenceExit": 1,
+    "aggregationErrorExit": 1
+  },
+  "gui": {
+    "sourceRevision": "e0f7de6f7f0b31977efe4ce91ddf50e150366767",
+    "run": "https://github.com/lisu188/jexperiments/actions/runs/36777722555",
+    "junit": {
+      "tests": "25",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "0"
+    },
+    "coverage": {
+      "total": 127,
+      "covered": 127,
+      "ratio": 1.0,
+      "covered_paths": [
+        "GUI-001",
+        "GUI-002",
+        "GUI-003",
+        "GUI-004",
+        "GUI-005",
+        "GUI-006",
+        "GUI-007",
+        "GUI-008",
+        "GUI-009",
+        "GUI-010",
+        "GUI-011",
+        "GUI-012",
+        "GUI-013",
+        "GUI-014",
+        "GUI-015",
+        "GUI-016",
+        "GUI-017",
+        "GUI-018",
+        "GUI-019",
+        "GUI-020",
+        "GUI-021",
+        "GUI-022",
+        "GUI-023",
+        "GUI-024",
+        "GUI-025",
+        "GUI-026",
+        "GUI-027",
+        "GUI-028",
+        "GUI-029",
+        "GUI-030",
+        "GUI-031",
+        "GUI-032",
+        "GUI-033",
+        "GUI-034",
+        "GUI-035",
+        "GUI-036",
+        "GUI-037",
+        "GUI-038",
+        "GUI-039",
+        "GUI-040",
+        "GUI-041",
+        "GUI-042",
+        "GUI-043",
+        "GUI-044",
+        "GUI-045",
+        "GUI-046",
+        "GUI-047",
+        "GUI-048",
+        "GUI-049",
+        "GUI-050",
+        "GUI-051",
+        "GUI-052",
+        "GUI-053",
+        "GUI-054",
+        "GUI-055",
+        "GUI-056",
+        "GUI-057",
+        "GUI-058",
+        "GUI-059",
+        "GUI-060",
+        "GUI-061",
+        "GUI-062",
+        "GUI-063",
+        "GUI-064",
+        "GUI-065",
+        "GUI-066",
+        "GUI-067",
+        "GUI-068",
+        "GUI-069",
+        "GUI-070",
+        "GUI-071",
+        "GUI-072",
+        "GUI-073",
+        "GUI-074",
+        "GUI-075",
+        "GUI-076",
+        "GUI-077",
+        "GUI-078",
+        "GUI-079",
+        "GUI-080",
+        "GUI-081",
+        "GUI-082",
+        "GUI-083",
+        "GUI-084",
+        "GUI-085",
+        "GUI-086",
+        "GUI-087",
+        "GUI-088",
+        "GUI-089",
+        "GUI-090",
+        "GUI-091",
+        "GUI-092",
+        "GUI-093",
+        "GUI-094",
+        "GUI-095",
+        "GUI-096",
+        "GUI-097",
+        "GUI-098",
+        "GUI-099",
+        "GUI-100",
+        "GUI-101",
+        "GUI-102",
+        "GUI-103",
+        "GUI-104",
+        "GUI-105",
+        "GUI-106",
+        "GUI-107",
+        "GUI-108",
+        "GUI-109",
+        "GUI-110",
+        "GUI-111",
+        "GUI-112",
+        "GUI-113",
+        "GUI-114",
+        "GUI-115",
+        "GUI-116",
+        "GUI-117",
+        "GUI-118",
+        "GUI-119",
+        "GUI-120",
+        "GUI-121",
+        "GUI-122",
+        "GUI-123",
+        "GUI-124",
+        "GUI-125",
+        "GUI-126",
+        "GUI-127"
+      ],
+      "uncovered_paths": [],
+      "paths": {
+        "GUI-001": {
+          "description": "Open a real window and observe the Ready state",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-002": {
+          "description": "Navigate to Overview with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-003": {
+          "description": "Navigate to Neurons with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-004": {
+          "description": "Navigate to Learning set with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-005": {
+          "description": "Navigate to Step effect with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-006": {
+          "description": "Navigate to Parameters with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-007": {
+          "description": "Navigate to Seeds with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-008": {
+          "description": "Navigate to Timeline with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-009": {
+          "description": "Navigate to Architecture search with a native mouse click",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-010": {
+          "description": "Open Architecture search from the sidebar Auto search action",
+          "method": "opensAndNavigatesEveryView"
+        },
+        "GUI-011": {
+          "description": "Reject malformed topology without applying it",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-012": {
+          "description": "Reject invalid seed input",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-013": {
+          "description": "Apply topology beyond former width and depth caps",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-014": {
+          "description": "Accept maximum epochs above the former cap",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-015": {
+          "description": "Accept a full-range Long seed",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-016": {
+          "description": "Preserve precise learning-rate and momentum values",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-017": {
+          "description": "Accept scientific notation below the old rate minimum",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-018": {
+          "description": "Reject zero learning rate semantically",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-019": {
+          "description": "Reject momentum outside its mathematical domain",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-020": {
+          "description": "Numeric editors have no minimum or maximum bounds",
+          "method": "validatesConfigurationAndAcceptsUncappedInputs"
+        },
+        "GUI-021": {
+          "description": "Commit depth, width and parameter budgets above former caps",
+          "method": "searchInputsAcceptValuesBeyondOldCaps"
+        },
+        "GUI-022": {
+          "description": "Commit epochs, check interval, threads and trial budgets above former caps",
+          "method": "searchInputsAcceptValuesBeyondOldCaps"
+        },
+        "GUI-023": {
+          "description": "Commit a time limit beyond Int range without truncation",
+          "method": "searchInputsAcceptValuesBeyondOldCaps"
+        },
+        "GUI-024": {
+          "description": "Commit validation fraction and tolerance beyond former preset bounds",
+          "method": "searchInputsAcceptValuesBeyondOldCaps"
+        },
+        "GUI-025": {
+          "description": "Commit more than twenty seeds and the matching success count",
+          "method": "searchInputsAcceptValuesBeyondOldCaps"
+        },
+        "GUI-026": {
+          "description": "Commit restart controls above former caps without starting unintended work",
+          "method": "searchInputsAcceptValuesBeyondOldCaps"
+        },
+        "GUI-027": {
+          "description": "Button: one epoch",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-028": {
+          "description": "Button: ten additional epochs",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-029": {
+          "description": "Keyboard: reset",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-030": {
+          "description": "Button: train and pause",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-031": {
+          "description": "Paused epochs stay stable",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-032": {
+          "description": "Keyboard: single epoch",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-033": {
+          "description": "Keyboard: resume and pause",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-034": {
+          "description": "Button: reset",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-035": {
+          "description": "Set custom epochs per refresh",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-036": {
+          "description": "Reject invalid refresh count without changing the active speed",
+          "method": "trainingButtonsAndKeyboardRespectState"
+        },
+        "GUI-037": {
+          "description": "Epoch-limit state and disabled training actions",
+          "method": "terminalTrainingStatesDisableControls"
+        },
+        "GUI-038": {
+          "description": "Target-reached state and disabled training actions",
+          "method": "terminalTrainingStatesDisableControls"
+        },
+        "GUI-039": {
+          "description": "All neurons in every hidden layer have reachable cards",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-040": {
+          "description": "Native scroll to the final neuron and render its actual activation",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-041": {
+          "description": "Native scroll back to the first hidden layer",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-042": {
+          "description": "No manual neuron pagination remains",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-043": {
+          "description": "Switch to the direct baseline and discard stale maps",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-044": {
+          "description": "Add a layer to the empty editor",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-045": {
+          "description": "Remove the final hidden layer",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-046": {
+          "description": "Reject removal from an empty editor",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-047": {
+          "description": "Scroll to a neuron beyond the former width cap",
+          "method": "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps"
+        },
+        "GUI-048": {
+          "description": "Choose a parameter layer",
+          "method": "parameterNavigationAndSmallWindowRemainUsable"
+        },
+        "GUI-049": {
+          "description": "Navigate to a later parameter range",
+          "method": "parameterNavigationAndSmallWindowRemainUsable"
+        },
+        "GUI-050": {
+          "description": "Reject an invalid parameter offset without applying it",
+          "method": "parameterNavigationAndSmallWindowRemainUsable"
+        },
+        "GUI-051": {
+          "description": "Scroll Parameters in a small real window",
+          "method": "parameterNavigationAndSmallWindowRemainUsable"
+        },
+        "GUI-052": {
+          "description": "Scroll expanded search settings and results",
+          "method": "parameterNavigationAndSmallWindowRemainUsable"
+        },
+        "GUI-053": {
+          "description": "Empty custom dataset state disables training",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-054": {
+          "description": "Left-click adds class one",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-055": {
+          "description": "Right-click adds class zero",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-056": {
+          "description": "Class selector affects a native click",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-057": {
+          "description": "Arrow keys and Enter add a keyboard-selected point",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-058": {
+          "description": "Undo a point",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-059": {
+          "description": "Clear all custom points",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-060": {
+          "description": "Complete a four-seed study without changing the active model",
+          "method": "seedComparisonCanCompleteAndBeCancelled"
+        },
+        "GUI-061": {
+          "description": "Cancel a long seed study",
+          "method": "seedComparisonCanCompleteAndBeCancelled"
+        },
+        "GUI-062": {
+          "description": "Controls remain usable after seed-study cancellation",
+          "method": "seedComparisonCanCompleteAndBeCancelled"
+        },
+        "GUI-063": {
+          "description": "Reject unordered search bounds",
+          "method": "searchValidationCancellationAndStaleResultsAreHandled"
+        },
+        "GUI-064": {
+          "description": "Reject validation mode for a truth table",
+          "method": "searchValidationCancellationAndStaleResultsAreHandled"
+        },
+        "GUI-065": {
+          "description": "Cancel a running search and retain its partial report",
+          "method": "searchValidationCancellationAndStaleResultsAreHandled"
+        },
+        "GUI-066": {
+          "description": "Reset invalidates the running search",
+          "method": "searchValidationCancellationAndStaleResultsAreHandled"
+        },
+        "GUI-067": {
+          "description": "Late search callbacks cannot repopulate invalidated results",
+          "method": "searchValidationCancellationAndStaleResultsAreHandled"
+        },
+        "GUI-068": {
+          "description": "Complete an exhaustive sweep without changing the active model",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-069": {
+          "description": "Select a result row",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-070": {
+          "description": "Inspect a scored result",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-071": {
+          "description": "Select a different result seed",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-072": {
+          "description": "Sort the result table by clicking a native header",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-073": {
+          "description": "Change recommendation policy",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-074": {
+          "description": "Select an architecture through the Pareto plot",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-075": {
+          "description": "Replay the selected checkpoint",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-076": {
+          "description": "Reset a replayed run",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-077": {
+          "description": "Apply an architecture as a fresh model",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-078": {
+          "description": "Save a readable PNG using the real file dialog",
+          "method": "pngExportAndCancelUseTheRealFileDialog"
+        },
+        "GUI-079": {
+          "description": "Cancel the file dialog without creating another file",
+          "method": "pngExportAndCancelUseTheRealFileDialog"
+        },
+        "GUI-080": {
+          "description": "Select and apply every dataset through the actual selector",
+          "method": "allDatasetsRemainSelectableAndTrainingErrorsRecover"
+        },
+        "GUI-081": {
+          "description": "Reject an unrepresentable topology without crashing the window",
+          "method": "allDatasetsRemainSelectableAndTrainingErrorsRecover"
+        },
+        "GUI-082": {
+          "description": "Recover by applying a valid configuration after an allocation rejection",
+          "method": "allDatasetsRemainSelectableAndTrainingErrorsRecover"
+        },
+        "GUI-083": {
+          "description": "Close the real window through the window manager",
+          "method": "windowCloseStopsTrainingAndSearchWorkers"
+        },
+        "GUI-084": {
+          "description": "Closing terminates the Studio, search and neuron-render workers",
+          "method": "windowCloseStopsTrainingAndSearchWorkers"
+        },
+        "GUI-085": {
+          "description": "Empty dataset disables starting architecture search",
+          "method": "customPointsSupportMouseKeyboardUndoAndClear"
+        },
+        "GUI-086": {
+          "description": "Change the recommendation to Smallest near best",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-087": {
+          "description": "Run adaptive search through the actual strategy selector and retain ancestry",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-088": {
+          "description": "Apply the configuration with the actual Apply & restart button",
+          "method": "allDatasetsRemainSelectableAndTrainingErrorsRecover"
+        },
+        "GUI-089": {
+          "description": "Stop search at a wall-clock deadline",
+          "method": "searchDeadlineDoesNotRecommendIncompleteCandidates"
+        },
+        "GUI-090": {
+          "description": "Incomplete candidates do not become recommendations",
+          "method": "searchDeadlineDoesNotRecommendIncompleteCandidates"
+        },
+        "GUI-091": {
+          "description": "Incomplete results cannot be applied or replayed",
+          "method": "searchDeadlineDoesNotRecommendIncompleteCandidates"
+        },
+        "GUI-092": {
+          "description": "Non-boolean datasets default search to validation",
+          "method": "validationSearchReplaysHeldOutPartition"
+        },
+        "GUI-093": {
+          "description": "Run validation search on a fixed held-out partition",
+          "method": "validationSearchReplaysHeldOutPartition"
+        },
+        "GUI-094": {
+          "description": "Replay keeps validation samples held out",
+          "method": "validationSearchReplaysHeldOutPartition"
+        },
+        "GUI-095": {
+          "description": "Reset validation replay restores the full Studio dataset",
+          "method": "validationSearchReplaysHeldOutPartition"
+        },
+        "GUI-096": {
+          "description": "Adaptive result ancestry names an eligible, fully evaluated elite for each descendant",
+          "method": "searchResultsSupportNativeSelectionInspectionReplayAndApply"
+        },
+        "GUI-097": {
+          "description": "Parallel trials set to 32 starts 32 concurrent elite offspring with one seed and exposes actual utilization",
+          "method": "parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization"
+        },
+        "GUI-098": {
+          "description": "CPU is the default; editing the backend selection alone does not change the active run",
+          "method": "backendSelectionRequiresApplyAndUnavailableCudaRecovers"
+        },
+        "GUI-099": {
+          "description": "Applying an unavailable CUDA backend shows a failure and never falls back to CPU",
+          "method": "backendSelectionRequiresApplyAndUnavailableCudaRecovers"
+        },
+        "GUI-100": {
+          "description": "Select CPU after CUDA failure and complete a training epoch",
+          "method": "backendSelectionRequiresApplyAndUnavailableCudaRecovers"
+        },
+        "GUI-101": {
+          "description": "Selected CUDA device and FP64 precision appear after training starts",
+          "method": "selectedBackendRoutesControlsStudySearchReplayAndShutdown"
+        },
+        "GUI-102": {
+          "description": "One epoch, ten epochs, train and pause route through the selected backend",
+          "method": "selectedBackendRoutesControlsStudySearchReplayAndShutdown"
+        },
+        "GUI-103": {
+          "description": "Seed comparison uses the active backend and closes all study sessions",
+          "method": "selectedBackendRoutesControlsStudySearchReplayAndShutdown"
+        },
+        "GUI-104": {
+          "description": "Architecture search inherits the active backend and records device metadata for each trial",
+          "method": "selectedBackendRoutesControlsStudySearchReplayAndShutdown"
+        },
+        "GUI-105": {
+          "description": "Replay preserves the scored trial backend and Reset prepares a fresh model",
+          "method": "selectedBackendRoutesControlsStudySearchReplayAndShutdown"
+        },
+        "GUI-106": {
+          "description": "Native window close releases an active backend session",
+          "method": "selectedBackendRoutesControlsStudySearchReplayAndShutdown"
+        },
+        "GUI-107": {
+          "description": "Unavailable CUDA search reports its backend failure and cannot replay failed trials",
+          "method": "backendSelectionRequiresApplyAndUnavailableCudaRecovers"
+        },
+        "GUI-108": {
+          "description": "Reject a replay on a different CUDA device while retaining scored results, selection and the paused main model",
+          "method": "rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry"
+        },
+        "GUI-109": {
+          "description": "Unavailable CUDA replay keeps completed search snapshots inspectable and permits retry",
+          "method": "rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry"
+        },
+        "GUI-110": {
+          "description": "Retry after CUDA recovers installs the recorded checkpoint and only then invalidates the completed search",
+          "method": "rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry"
+        },
+        "GUI-111": {
+          "description": "Select AUTO training backend and apply a custom batch size",
+          "method": "automaticBatchBackendAppliesPrecisionAndStepsOnce"
+        },
+        "GUI-112": {
+          "description": "Reset after Apply and train exactly one epoch through the AUTO batch backend, reporting its resolved CPU device",
+          "method": "automaticBatchBackendAppliesPrecisionAndStepsOnce"
+        },
+        "GUI-113": {
+          "description": "Select FP32 for AUTO and retain the requested precision while reporting actual CPU FP64 execution",
+          "method": "automaticBatchBackendAppliesPrecisionAndStepsOnce"
+        },
+        "GUI-114": {
+          "description": "Changing to the FP64 CUDA backend resets and disables the precision editor without changing the active run",
+          "method": "automaticBatchBackendAppliesPrecisionAndStepsOnce"
+        },
+        "GUI-115": {
+          "description": "Select CUBLAS with FP32 and train a configured mini-batch epoch",
+          "method": "cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize"
+        },
+        "GUI-116": {
+          "description": "Architecture search inherits CUBLAS, FP32 and batch size and records its resolved device",
+          "method": "cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize"
+        },
+        "GUI-117": {
+          "description": "Replay preserves the scored CUBLAS precision and batch size",
+          "method": "cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize"
+        },
+        "GUI-118": {
+          "description": "Reject zero batch size without changing the active model",
+          "method": "cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize"
+        },
+        "GUI-119": {
+          "description": "Applying settings and stepping through native controls writes correlated configuration, run and effective-device events",
+          "method": "detailedLogsFollowNativeControlsExportAndShutdown"
+        },
+        "GUI-120": {
+          "description": "Native tab navigation and PNG file-dialog export log the selected view, destination and completed artifact",
+          "method": "detailedLogsFollowNativeControlsExportAndShutdown"
+        },
+        "GUI-121": {
+          "description": "Native window close logs shutdown and worker completion after releasing the active training session",
+          "method": "detailedLogsFollowNativeControlsExportAndShutdown"
+        },
+        "GUI-122": {
+          "description": "Select SMALL, AUTO, FP32 and FAST sigmoid; edits remain unapplied until restart and actual CPU engine metadata is shown",
+          "method": "smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls"
+        },
+        "GUI-123": {
+          "description": "SMALL one-epoch and ten-epoch commands preserve exact counts and the epoch-ten checkpoint",
+          "method": "smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls"
+        },
+        "GUI-124": {
+          "description": "SMALL search inherits precision and sigmoid, trains its full budget and replays the scored engine/device checkpoint",
+          "method": "smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls"
+        },
+        "GUI-125": {
+          "description": "Returning to REFERENCE CPU resets precision; incompatible SMALL/CUBLAS is rejected without changing the active run",
+          "method": "smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls"
+        },
+        "GUI-126": {
+          "description": "SMALL rejects unsupported hidden widths and search bounds before altering the run or starting trials",
+          "method": "smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls"
+        },
+        "GUI-127": {
+          "description": "Resize to a small window, reach lower advanced numeric editors, scroll them out of view and back with the mouse wheel, and apply their values",
+          "method": "lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow"
+        }
+      },
+      "test_outcomes": {
+        "allDatasetsRemainSelectableAndTrainingErrorsRecover": true,
+        "automaticBatchBackendAppliesPrecisionAndStepsOnce": true,
+        "backendSelectionRequiresApplyAndUnavailableCudaRecovers": true,
+        "cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize": true,
+        "customPointsSupportMouseKeyboardUndoAndClear": true,
+        "detailedLogsFollowNativeControlsExportAndShutdown": true,
+        "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps": true,
+        "lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow": true,
+        "opensAndNavigatesEveryView": true,
+        "parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization": true,
+        "parameterNavigationAndSmallWindowRemainUsable": true,
+        "pngExportAndCancelUseTheRealFileDialog": true,
+        "rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry": true,
+        "searchDeadlineDoesNotRecommendIncompleteCandidates": true,
+        "searchInputsAcceptValuesBeyondOldCaps": true,
+        "searchResultsSupportNativeSelectionInspectionReplayAndApply": true,
+        "searchValidationCancellationAndStaleResultsAreHandled": true,
+        "seedComparisonCanCompleteAndBeCancelled": true,
+        "selectedBackendRoutesControlsStudySearchReplayAndShutdown": true,
+        "smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls": true,
+        "terminalTrainingStatesDisableControls": true,
+        "trainingButtonsAndKeyboardRespectState": true,
+        "validatesConfigurationAndAcceptsUncappedInputs": true,
+        "validationSearchReplaysHeldOutPartition": true,
+        "windowCloseStopsTrainingAndSearchWorkers": true
+      }
+    }
+  }
+}
