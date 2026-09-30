@@ -18,18 +18,18 @@ internal class ArchitectureSearchPanel(
     private val replayRun: (ArchitectureSearchResult, ArchitectureCandidate, ArchitectureTrial) -> Unit
 ) : JPanel(BorderLayout(12, 12)) {
     private val minLayers = NumericInputs.spinner(1, 1)
-    private val maxLayers = NumericInputs.spinner(3, 1)
+    private val maxLayers = NumericInputs.spinner(5, 1)
     private val minWidth = NumericInputs.spinner(1, 1)
-    private val maxWidth = NumericInputs.spinner(8, 1)
-    private val parameters = NumericInputs.spinner(256, 16)
-    private val target = NumericInputs.spinner(0.05, 0.01)
-    private val epochs = NumericInputs.spinner(10_000, 1000)
+    private val maxWidth = NumericInputs.spinner(16, 1)
+    private val parameters = NumericInputs.spinner(1_000_000, 16)
+    private val target = NumericInputs.spinner(0.001, 0.001)
+    private val epochs = NumericInputs.spinner(100_000, 1000)
     private val checkEvery = NumericInputs.spinner(25, 1)
     private val seeds = JTextField("1,42,123,999,2026", 17)
     private val successes = NumericInputs.spinner(4, 1)
     private val tolerance = NumericInputs.spinner(0.005, 0.001)
-    private val threads = NumericInputs.spinner(minOf(4, maxOf(1, Runtime.getRuntime().availableProcessors() - 1)), 1)
-    private val trials = NumericInputs.spinner(10_000, 100)
+    private val threads = NumericInputs.spinner(32, 1)
+    private val trials = NumericInputs.spinner(1_000_000, 100)
     private val seconds = NumericInputs.spinner(0L, 60L)
     private val fraction = NumericInputs.spinner(0.2, 0.05)
     private val splitSeed = JTextField("42", 10)
@@ -152,7 +152,6 @@ internal class ArchitectureSearchPanel(
 
     fun setSource(config: StudioConfig, samples: Int) {
         if (source != config) {
-            target.value = config.targetError; epochs.value = config.maxEpochs
             checkEvery.value = minOf(25, config.maxEpochs)
             evaluation.selectedItem = if (config.dataset in BOOLEAN_SETS) ArchitectureEvaluation.TRAINING_FIT else ArchitectureEvaluation.VALIDATION
         }
