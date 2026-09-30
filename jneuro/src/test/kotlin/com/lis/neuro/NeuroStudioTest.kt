@@ -116,10 +116,27 @@ class NeuroStudioTest {
         assertEquals(1.0, history.parameter(0)); assertEquals(0.0, history.prediction(0)); assertEquals(2.0, history.norm(0))
     }
 
+    @Test fun configuredBatchBackendAdvancesThroughMatrixTrainer() {
+        val config = StudioConfig("6", maxEpochs = 20, targetError = 0.0,
+            trainingBackend = Neuro.TrainingBackend.AUTO, batchSize = 7,
+            trainingPrecision = Neuro.TrainingPrecision.FP32)
+        val studio = NeuroStudio(config)
+        val before = studio.currentError
+        studio.step(4)
+        assertEquals(4, studio.advance(10))
+        assertEquals(4, studio.epochs)
+        assertEquals(Neuro.TrainingBackend.AUTO, studio.frame().config.trainingBackend)
+        assertEquals(7, studio.frame().config.batchSize)
+        assertEquals(Neuro.TrainingPrecision.FP32, studio.frame().config.trainingPrecision)
+        assertTrue(studio.currentError.isFinite())
+        assertTrue(studio.currentError < before)
+    }
+
     @Test fun validatesConfigurationCommandsAndDiffRendering() {
         for (config in listOf<() -> StudioConfig>(
             { StudioConfig("2,") }, { StudioConfig(maxEpochs = 0) }, { StudioConfig(targetError = -1.0) },
-            { StudioConfig(targetError = Double.NaN) }, { StudioConfig(learningRate = 0.0) }, { StudioConfig(momentum = 1.0) }))
+            { StudioConfig(targetError = Double.NaN) }, { StudioConfig(learningRate = 0.0) }, { StudioConfig(momentum = 1.0) },
+            { StudioConfig(batchSize = 0) }))
             assertThrows(IllegalArgumentException::class.java) { config() }
         val studio = NeuroStudio()
         assertThrows(IllegalArgumentException::class.java) { studio.step(0) }

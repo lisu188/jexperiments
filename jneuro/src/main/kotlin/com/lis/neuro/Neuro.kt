@@ -11,6 +11,8 @@ class Neuro @JvmOverloads constructor(
 ) {
     enum class Kernel { AUTO, SCALAR, VECTOR }
     enum class SigmoidMode { EXACT, FAST }
+    enum class TrainingBackend { CPU, CUDA, AUTO }
+    enum class TrainingPrecision { FP64, FP32 }
 
     @JvmRecord
     data class HyperParameters @JvmOverloads constructor(
@@ -42,12 +44,12 @@ class Neuro @JvmOverloads constructor(
     @JvmRecord data class TrainingResult(val epochs: Int, val error: Double, val converged: Boolean)
     @JvmRecord data class Statistics(val epochsTrained: Long, val samplesSeen: Long, val lastTrainingError: Double)
 
-    private class Sample(input: DoubleArray, target: DoubleArray) {
+    internal class Sample(input: DoubleArray, target: DoubleArray) {
         val input = input.copyOf()
         val target = target.copyOf()
     }
 
-    private class PackedDataset(samples: List<Sample>, val inputSize: Int, val outputSize: Int) {
+    internal class PackedDataset(samples: List<Sample>, val inputSize: Int, val outputSize: Int) {
         val size = samples.size
         val inputs = DoubleArray(size * inputSize)
         val targets = DoubleArray(size * outputSize)
@@ -59,7 +61,7 @@ class Neuro @JvmOverloads constructor(
         }
     }
 
-    private class Layer(val inputs: Int, val outputs: Int, random: SplittableRandom) {
+    internal class Layer(val inputs: Int, val outputs: Int, random: SplittableRandom) {
         val weights = DoubleArray(inputs * outputs)
         val biases = DoubleArray(outputs)
         val weightVelocity = DoubleArray(weights.size)
@@ -83,20 +85,6 @@ class Neuro @JvmOverloads constructor(
             capacity = maxOf(batchSize, maxOf(8, capacity * 2))
             for (layer in 1 until topology.lastIndex) activations[layer] = DoubleArray(capacity * topology[layer])
         }
-    }
-
-    private class GradientBuffer(layers: Array<Layer>) {
-        val weights = Array(layers.size) { DoubleArray(layers[it].weights.size) }
-        val biases = Array(layers.size) { DoubleArray(layers[it].biases.size) }
-        fun clear() {
-            for (values in weights) values.fill(0.0)
-            for (values in biases) values.fill(0.0)
-        }
-    }
-
-    private class WorkerState(topology: IntArray, layers: Array<Layer>) {
-        val workspace = Workspace(topology)
-        val gradient = GradientBuffer(layers)
     }
 
     inner class InferenceSession internal constructor() {
@@ -204,7 +192,6 @@ class Neuro @JvmOverloads constructor(
     private val trainingWorkspace = Workspace(this.topology)
     private val inferenceSession = ThreadLocal.withInitial { newInferenceSession() }
     private val shuffleRandom = SplittableRandom(hyperParameters.seed xor -7046029254386353131L)
-    private val batchGradient = GradientBuffer(layers)
     private val learningRate = hyperParameters.learningRate
     private val momentum = hyperParameters.momentum
     private val beta = hyperParameters.beta
@@ -248,6 +235,31 @@ class Neuro @JvmOverloads constructor(
     fun toFloatModel() = FloatModel(this)
     internal fun backendWeights(layer: Int) = layers[layer].weights.copyOf()
     internal fun backendBiases(layer: Int) = layers[layer].biases.copyOf()
+    internal fun backendWeightVelocity(layer: Int) = layers[layer].weightVelocity.copyOf()
+    internal fun backendBiasVelocity(layer: Int) = layers[layer].biasVelocity.copyOf()
+    internal fun backendLayers(): Array<Layer> = layers
+    internal fun backendTrainingData(): PackedDataset = trainingData()
+    internal fun backendNextTrainingOrder(size: Int): IntArray {
+        ensureTrainingOrder(size)
+        shuffleTrainingOrder()
+        return trainingOrder.copyOf()
+    }
+    internal fun backendCompleteEpoch(sampleCount: Int) {
+        samplesSeen += sampleCount
+        epochsTrained++
+    }
+    internal fun backendSetLastTrainingError(value: Double) {
+        lastTrainingError = value
+    }
+    internal fun backendRestoreLayer(layer: Int, weights: DoubleArray, biases: DoubleArray,
+                                     weightVelocity: DoubleArray, biasVelocity: DoubleArray) {
+        require(weights.size == layers[layer].weights.size && biases.size == layers[layer].biases.size &&
+            weightVelocity.size == layers[layer].weightVelocity.size && biasVelocity.size == layers[layer].biasVelocity.size)
+        weights.copyInto(layers[layer].weights)
+        biases.copyInto(layers[layer].biases)
+        weightVelocity.copyInto(layers[layer].weightVelocity)
+        biasVelocity.copyInto(layers[layer].biasVelocity)
+    }
 
     fun trainEpoch(): Double {
         requireTrainingSamples()
@@ -286,19 +298,19 @@ class Neuro @JvmOverloads constructor(
         NeuroJfr.commitTrainingRun(event, epochs, error, converged)
         return TrainingResult(epochs, error, converged)
     }
-    @JvmOverloads fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int = 1) {
+    @JvmOverloads fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int = 1,
+                                     backend: TrainingBackend = TrainingBackend.CPU,
+                                     precision: TrainingPrecision = TrainingPrecision.FP64) {
         require(epochs >= 0) { "epochs must be >= 0" }
         require(batchSize > 0) { "batchSize must be > 0" }
         require(parallelism > 0) { "parallelism must be > 0" }
         if (epochs == 0) return
         requireTrainingSamples()
         val data = trainingData()
-        val pool = if (parallelism > 1) ForkJoinPool(parallelism) else null
-        val workers = if (parallelism > 1) Array(parallelism) { WorkerState(topology, layers) } else emptyArray()
-        try {
-            repeat(epochs) { trainMiniBatchEpoch(data, batchSize, parallelism, pool, workers) }
-        } finally {
-            pool?.shutdown()
+        when (NeuroCuda.resolveBackend(backend, topology, batchSize)) {
+            TrainingBackend.CPU -> NeuroCpuBatchTrainer.train(this, data, epochs, batchSize, parallelism)
+            TrainingBackend.CUDA -> NeuroCudaBatchBackend.train(this, data, epochs, batchSize, precision)
+            TrainingBackend.AUTO -> error("AUTO backend must resolve before training")
         }
         lastTrainingError = error(data, trainingWorkspace)
     }
@@ -321,100 +333,6 @@ class Neuro @JvmOverloads constructor(
         if (evaluateError) lastTrainingError = error
         NeuroJfr.commitTrainingEpoch(event, error)
         return error
-    }
-
-    private fun trainMiniBatchEpoch(data: PackedDataset, batchSize: Int, parallelism: Int,
-                                    pool: ForkJoinPool?, workers: Array<WorkerState>) {
-        ensureTrainingOrder(data.size)
-        shuffleTrainingOrder()
-        var start = 0
-        while (start < data.size) {
-            val end = minOf(data.size, start + batchSize)
-            val count = end - start
-            batchGradient.clear()
-            if (parallelism == 1 || count == 1) {
-                for (position in start until end) accumulateSampleGradient(data, trainingOrder[position], trainingWorkspace, batchGradient)
-            } else {
-                val activeWorkers = minOf(parallelism, count)
-                val futures = Array<Future<*>>(activeWorkers) { worker ->
-                    val state = workers[worker]
-                    state.gradient.clear()
-                    val workerStart = start + worker * count / activeWorkers
-                    val workerEnd = start + (worker + 1) * count / activeWorkers
-                    checkNotNull(pool).submit {
-                        for (position in workerStart until workerEnd) {
-                            accumulateSampleGradient(data, trainingOrder[position], state.workspace, state.gradient)
-                        }
-                    }
-                }
-                await(futures)
-                for (worker in 0 until activeWorkers) addGradient(batchGradient, workers[worker].gradient)
-            }
-            applyBatchGradient(batchGradient, count)
-            start = end
-        }
-        samplesSeen += data.size
-        epochsTrained++
-    }
-
-    private fun accumulateSampleGradient(data: PackedDataset, sample: Int, workspace: Workspace, gradient: GradientBuffer) {
-        val inputOffset = sample * data.inputSize
-        forward(data.inputs, inputOffset, workspace, null, 0)
-        backpropagate(data.targets, sample * data.outputSize, workspace)
-        for (layerIndex in layers.indices) {
-            val layer = layers[layerIndex]
-            val source = if (layerIndex == 0) data.inputs else workspace.activations[layerIndex]
-            val sourceOffset = if (layerIndex == 0) inputOffset else 0
-            val delta = workspace.deltas[layerIndex]
-            for (output in 0 until layer.outputs) {
-                val offset = output * layer.inputs
-                val scale = delta[output]
-                if (useVector(layer.inputs)) {
-                    NeuroVectorOps.addOuterProduct(gradient.weights[layerIndex], offset, source, sourceOffset, layer.inputs, scale)
-                } else {
-                    for (input in 0 until layer.inputs) {
-                        val index = offset + input
-                        gradient.weights[layerIndex][index] = Math.fma(source[sourceOffset + input], scale, gradient.weights[layerIndex][index])
-                    }
-                }
-                gradient.biases[layerIndex][output] += scale
-            }
-        }
-    }
-
-    private fun addGradient(destination: GradientBuffer, source: GradientBuffer) {
-        for (layer in layers.indices) {
-            if (useVector(destination.weights[layer].size)) {
-                NeuroVectorOps.add(destination.weights[layer], source.weights[layer], destination.weights[layer].size)
-            } else {
-                for (index in destination.weights[layer].indices) destination.weights[layer][index] += source.weights[layer][index]
-            }
-            for (index in destination.biases[layer].indices) destination.biases[layer][index] += source.biases[layer][index]
-        }
-    }
-
-    private fun applyBatchGradient(gradient: GradientBuffer, sampleCount: Int) {
-        val gradientScale = learningRate / sampleCount
-        for (layerIndex in layers.indices) {
-            val layer = layers[layerIndex]
-            for (output in 0 until layer.outputs) {
-                val offset = output * layer.inputs
-                if (useVector(layer.inputs)) {
-                    NeuroVectorOps.update(layer.weights, layer.weightVelocity, offset, gradient.weights[layerIndex], offset,
-                        layer.inputs, momentum, gradientScale)
-                } else {
-                    for (input in 0 until layer.inputs) {
-                        val index = offset + input
-                        val velocity = Math.fma(momentum, layer.weightVelocity[index], gradientScale * gradient.weights[layerIndex][index])
-                        layer.weightVelocity[index] = velocity
-                        layer.weights[index] += velocity
-                    }
-                }
-                val velocity = Math.fma(momentum, layer.biasVelocity[output], gradientScale * gradient.biases[layerIndex][output])
-                layer.biasVelocity[output] = velocity
-                layer.biases[output] += velocity
-            }
-        }
     }
 
     private fun forward(input: DoubleArray, inputOffset: Int, workspace: Workspace,

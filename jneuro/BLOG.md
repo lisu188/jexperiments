@@ -86,7 +86,7 @@ network.trainMiniBatch(10, batchSize = 16, parallelism = 2)
 
 Online training updates after every shuffled sample. Fixed-epoch training computes its final reported error after the last epoch; sparse checks in `trainUntil` avoid repeatedly evaluating the entire training set when only periodic convergence checks are needed.
 
-Mini-batch training accumulates gradients and applies a single averaged update. Parallel workers use private gradient buffers and workspaces. Their gradients are reduced in a fixed worker order rather than racing writes into shared model parameters.
+Mini-batch training is now expressed as true batch matrices rather than a loop of per-sample forward/backprop passes. Each batch gathers rows into contiguous activation and target matrices, evaluates every layer across the batch, propagates dense delta matrices, computes weight gradients as the equivalent of D^T × A, reduces bias gradients, and applies one averaged momentum update. The same path supports deterministic single-thread execution and partitioned CPU execution, giving the later native/GPU backends a compatible matrix-shaped training contract.
 
 Training and test errors remain root-mean-square error over all samples and output dimensions:
 
@@ -117,6 +117,16 @@ The studio follows a stricter single-owner rule: only its training worker access
 `NeuroNativeBlas` preserves the optional FFM CBLAS experiment. It resolves `cblas_dgemm`, transposes and copies parameters into off-heap memory, retains biases and scratch buffers, and performs batched layer evaluation using matrix multiplication followed by activation. The native session is also a snapshot, not a view of a concurrently trained model.
 
 Native BLAS is environment-bound and optional. The current library lookup targets common Linux OpenBLAS/BLAS/MKL names; an unavailable library does not prevent normal Java/Kotlin inference or the desktop UI. The benchmark requires `--enable-native-access=ALL-UNNAMED`, which its Gradle task supplies. Native tests compare outputs, batch resizing, and snapshot independence when a compatible library is installed.
+
+## CUDA training through FFM
+
+JNeuro also has optional FP64 and FP32 CUDA training backends that keep the dense mini-batch training algorithm in this project instead of delegating the model to a tensor framework. Java FFM resolves the CUDA Runtime, cuBLAS, NVRTC and Driver API dynamically. There is no CUDA Maven dependency and the ordinary CPU build remains usable on machines without NVIDIA libraries.
+
+The CUDA path uploads the packed training dataset and model state once. Each epoch transfers only the deterministic shuffled row order. A small `gatherRows` kernel materializes contiguous batch inputs and targets on-device. Forward propagation uses cuBLAS GEMM followed by a fused bias/sigmoid kernel. Backpropagation uses GEMM for hidden deltas and weight gradients, while CUDA kernels apply sigmoid derivatives, reduce bias gradients and update momentum/parameters. Weights, biases, velocity, activations, deltas and gradients stay resident until training completes, then the final model state is copied back to the regular `Neuro` arrays.
+
+`TrainingBackend.CPU` is the compatibility default, `CUDA` requires the complete CUDA stack, and `AUTO` chooses CUDA only when it is available and the estimated batch matrix work crosses a conservative threshold. `TrainingPrecision.FP64` is the reference CUDA path and default; `FP32` stores the entire resident training state as floats, uses `cublasSgemm_v2`, and copies the final parameters back into the public double-precision model. `NeuroCuda.status()` reports device availability without making CUDA a mandatory startup dependency. Runtime library locations can be overridden with `JNEURO_CUDA_RUNTIME`, `JNEURO_CUBLAS`, `JNEURO_NVRTC` and `JNEURO_CUDA_DRIVER`.
+
+The direct FFM adapters and hardware execution entrypoint are excluded narrowly from ordinary JaCoCo because they cannot execute meaningfully on CPU-only CI. Buffer lifecycle, sizing, backend selection and matrix training remain covered by normal tests, while `:jneuro:cudaTest` provides real CPU/GPU parity checks on CUDA hardware and `:jneuro:cudaBenchmark` measures the break-even point.
 
 ## The desktop redesign
 
@@ -244,7 +254,7 @@ These accessibility principles inform the redesign; they are not a claim that a 
 
 ## Deliberate limitations
 
-JNeuro remains an educational dense network, not a tensor framework. It still uses sigmoid activations, lacks automatic differentiation, softmax/cross-entropy, regularization, persistence, GPU execution, and adaptive optimizers such as Adam. Circle and Spiral can expose the limits of a narrow network and the training budget rather than guaranteeing a low error.
+JNeuro remains an educational dense network, not a tensor framework. It still uses sigmoid activations, lacks automatic differentiation, softmax/cross-entropy, regularization, persistence, and adaptive optimizers such as Adam. GPU execution is deliberately limited to the optional dense CUDA mini-batch backend rather than becoming a general tensor/autodiff layer. Circle and Spiral can expose the limits of a narrow network and the training budget rather than guaranteeing a low error.
 
 Training-set fit is not generalization evidence. The studio does not silently manufacture a validation set or claim calibrated probabilities. Its role is to expose the actual computation and make controlled architecture experiments easier to run and inspect.
 

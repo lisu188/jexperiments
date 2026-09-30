@@ -115,6 +115,17 @@ class NeuroGuiTest {
                 assertNull((it.model as SpinnerNumberModel).maximum)
             }
         }
+        number("Momentum", "0.9999")
+        choose(combo("Training backend"), Neuro.TrainingBackend.AUTO.ordinal)
+        choose(combo("GPU precision"), Neuro.TrainingPrecision.FP32.ordinal)
+        number("Batch size", "7")
+        shortcut(KeyEvent.VK_ENTER)
+        await("training backend applied") {
+            current.config.trainingBackend == Neuro.TrainingBackend.AUTO &&
+                current.config.trainingPrecision == Neuro.TrainingPrecision.FP32 && current.config.batchSize == 7
+        }
+        click(button("1 epoch"))
+        await("auto backend training") { current.diagnostics.epoch() == 1 && current.diagnostics.error().isFinite() }
     }
 
     @Test fun searchInputsAcceptValuesBeyondOldCaps() {

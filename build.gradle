@@ -629,7 +629,7 @@ project(':jneuro') {
     }
 
     tasks.withType(JavaExec).configureEach {
-        jvmArgs '--add-modules', 'jdk.incubator.vector'
+        jvmArgs '--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED'
     }
 
     tasks.withType(Test).configureEach {
@@ -1074,6 +1074,13 @@ def coverageExcludes = [
         '**/NeuroJfr*',
         '**/NeuroNativeBlas*',
         '**/NeuroNativeBlasBenchmark*',
+        '**/NeuroCudaRuntime*',
+        '**/NeuroCublas*',
+        '**/NeuroNvrtc*',
+        '**/NeuroCudaDriver*',
+        '**/NeuroCudaKernels*',
+        '**/NeuroCudaBatchBackend*',
+        '**/NeuroCudaTrainingBenchmark*',
         '**/NeuroPerformanceMatrix*',
         '**/NeuroVerification*'
     ],
@@ -1209,8 +1216,28 @@ tasks.register('coverageVerification') {
 
 project(':jneuro') {
     def guiPython = providers.gradleProperty('guiPython').getOrElse(System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('windows') ? 'python' : 'python3')
+    def java27 = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(27)
+    }
     tasks.named('test') {
-        useJUnitPlatform { excludeTags 'gui' }
+        useJUnitPlatform { excludeTags 'gui', 'cuda' }
+    }
+    tasks.register('cudaTest', Test) {
+        group = 'verification'
+        description = 'Runs hardware CUDA parity tests when a compatible NVIDIA CUDA stack is present.'
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath
+        useJUnitPlatform { includeTags 'cuda' }
+        jvmArgs '--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED'
+        javaLauncher = java27
+    }
+    tasks.register('cudaBenchmark', JavaExec) {
+        group = 'verification'
+        description = 'Compares CPU matrix training with the optional CUDA FP64 backend.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.NeuroCudaTrainingBenchmark'
+        javaLauncher = java27
+        jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms2g', '-Xmx8g'
     }
     def guiTest = tasks.register('guiTest', Test) {
         group = 'verification'

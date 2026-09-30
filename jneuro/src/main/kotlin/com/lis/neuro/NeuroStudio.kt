@@ -11,13 +11,17 @@ internal data class StudioConfig(
     val maxEpochs: Int = 10_000,
     val targetError: Double = 0.05,
     val learningRate: Double = 0.6,
-    val momentum: Double = 0.2
+    val momentum: Double = 0.2,
+    val trainingBackend: Neuro.TrainingBackend = Neuro.TrainingBackend.CPU,
+    val batchSize: Int = 1,
+    val trainingPrecision: Neuro.TrainingPrecision = Neuro.TrainingPrecision.FP64
 ) {
     init {
         NeuroTopologyConfig.parseHidden(hidden)
         require(maxEpochs > 0) { "Epoch limit must be positive." }
         require(targetError.isFinite() && targetError >= 0.0) { "Target RMSE must be finite and non-negative." }
         Neuro.HyperParameters(learningRate, momentum, 1.0, seed)
+        require(batchSize > 0) { "Batch size must be positive." }
     }
     fun topology(): IntArray = NeuroTopologyConfig.topology(NeuroTopologyConfig.parseHidden(hidden))
     fun description(): String = NeuroTopologyConfig.label(topology())
@@ -183,12 +187,25 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
         previousValues = before.values
         val requested = if (pendingEpochs > 0) minOf(speed, pendingEpochs) else speed
         var advanced = 0
-        while (advanced < requested && canTrain() && !cancelled()) {
-            error = network.trainEpoch()
+        if (config.trainingBackend == Neuro.TrainingBackend.CPU && config.batchSize == 1) {
+            while (advanced < requested && canTrain() && !cancelled()) {
+                error = network.trainEpoch()
+                check(error.isFinite()) { "Training produced a non-finite RMSE. Reset with different settings." }
+                epoch++
+                advanced++
+                if (pendingEpochs > 0) pendingEpochs--
+                if (epoch in MILESTONES || !canTrain()) captureCheckpoint()
+            }
+        } else if (canTrain() && !cancelled()) {
+            val count = minOf(requested, config.maxEpochs - epoch)
+            val parallelism = if (config.trainingBackend == Neuro.TrainingBackend.CUDA) 1
+                else Runtime.getRuntime().availableProcessors().coerceIn(1, 8)
+            network.trainMiniBatch(count, config.batchSize, parallelism, config.trainingBackend, config.trainingPrecision)
+            error = network.trainingError()
             check(error.isFinite()) { "Training produced a non-finite RMSE. Reset with different settings." }
-            epoch++
-            advanced++
-            if (pendingEpochs > 0) pendingEpochs--
+            epoch += count
+            advanced = count
+            if (pendingEpochs > 0) pendingEpochs = maxOf(0, pendingEpochs - count)
             if (epoch in MILESTONES || !canTrain()) captureCheckpoint()
         }
         if (advanced > 0) {

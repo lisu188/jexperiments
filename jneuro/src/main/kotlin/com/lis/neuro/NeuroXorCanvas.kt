@@ -32,6 +32,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private val rate = NumericInputs.spinner(0.6, 0.05)
     private val momentum = NumericInputs.spinner(0.2, 0.05)
     private val target = NumericInputs.spinner(0.05, 0.01)
+    private val trainingBackend = JComboBox(Neuro.TrainingBackend.entries.toTypedArray())
+    private val trainingPrecision = JComboBox(Neuro.TrainingPrecision.entries.toTypedArray())
+    private val batchSize = NumericInputs.spinner(1, 1)
     private val configError = JLabel(" ").apply { accessibleContext.accessibleName = "Configuration error" }
     private val description = JLabel()
     private val status = JLabel("Starting…")
@@ -102,6 +105,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             dataset.selectedItem = initial.config.dataset
             seed.text = initial.config.seed.toString()
             epochLimit.value = initial.config.maxEpochs
+            trainingBackend.selectedItem = initial.config.trainingBackend
+            trainingPrecision.selectedItem = initial.config.trainingPrecision
+            batchSize.value = initial.config.batchSize
             refresh()
         }
         if (startWorker) {
@@ -147,6 +153,12 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         field("Learning rate", rate, advanced)
         field("Momentum", momentum, advanced)
         field("Target RMSE", target, advanced)
+        field("Training backend", trainingBackend, advanced)
+        field("GPU precision", trainingPrecision, advanced)
+        field("Batch size", batchSize, advanced)
+        advanced.add(note(NeuroCuda.status().let { cuda ->
+            if (cuda.available) "CUDA: " + cuda.description else "CUDA unavailable: " + cuda.reason
+        }))
         advanced.isVisible = false
         sidebar.add(JCheckBox("Advanced settings").apply {
             isOpaque = false; alignmentX = 0f
@@ -300,10 +312,12 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
 
     private fun applySettings() {
         try {
-            epochLimit.commitEdit(); rate.commitEdit(); momentum.commitEdit(); target.commitEdit()
+            epochLimit.commitEdit(); rate.commitEdit(); momentum.commitEdit(); target.commitEdit(); batchSize.commitEdit()
             val config = StudioConfig(NeuroTopologyConfig.format(NeuroTopologyConfig.parseHidden(hidden.text)),
                 dataset.selectedItem as NeuroLearningSets.Kind, seed.text.trim().toLong(), (epochLimit.value as Number).toInt(),
-                (target.value as Number).toDouble(), (rate.value as Number).toDouble(), (momentum.value as Number).toDouble())
+                (target.value as Number).toDouble(), (rate.value as Number).toDouble(), (momentum.value as Number).toDouble(),
+                trainingBackend.selectedItem as Neuro.TrainingBackend, (batchSize.value as Number).toInt(),
+                trainingPrecision.selectedItem as Neuro.TrainingPrecision)
             configError.text = " "
             post { it.apply(config, true) }
         } catch (exception: Exception) { showConfigError(exception.message ?: "Check the configuration values.") }
@@ -473,6 +487,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             shownConfig = next.config
             neuronGallery.request(next.diagnostics, emptyList()) {}
             updating = true
+            trainingBackend.selectedItem = next.config.trainingBackend
+            trainingPrecision.selectedItem = next.config.trainingPrecision
+            batchSize.value = next.config.batchSize
             parameterLayer.removeAllItems()
             for (layer in 0 until next.diagnostics.layerCount()) parameterLayer.addItem("${layer + 1}: ${next.diagnostics.layerInputCount(layer)} → ${next.diagnostics.layerOutputCount(layer)}")
             selectedParameterLayer = 0; selectedParameterStart = 0
@@ -482,7 +499,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         architectureSearch.setSource(next.config, next.samples.size)
         status.text = if (searchRunning) "Architecture search…" else if (studyRunning) "Comparing seeds…" else next.state.label
         status.foreground = if (next.state == StudioState.FAILED) ERROR else ACCENT
-        activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}" + if (next.replayNote.isEmpty()) "" else "   ·   ${next.replayNote}"
+        activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}   ·   ${next.config.trainingBackend} ${next.config.trainingPrecision} batch ${next.config.batchSize}" +
+            if (next.replayNote.isEmpty()) "" else "   ·   ${next.replayNote}"
         metrics[0].text = "%,d".format(Locale.ROOT, next.diagnostics.epoch())
         metricDetails[0].text = "of %,d epochs".format(Locale.ROOT, next.config.maxEpochs)
         metrics[1].text = number(next.diagnostics.error(), 5)

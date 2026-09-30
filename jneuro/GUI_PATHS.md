@@ -105,3 +105,6 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-095 | Reset validation replay restores the full Studio dataset | `validationSearchReplaysHeldOutPartition` |
 | GUI-096 | Adaptive result ancestry names an eligible, fully evaluated elite for each descendant | `searchResultsSupportNativeSelectionInspectionReplayAndApply` |
 | GUI-097 | Parallel trials set to 32 starts 32 concurrent elite offspring with one seed and exposes actual utilization | `parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization` |
+| GUI-098 | Select AUTO training backend and apply a custom batch size | `validatesConfigurationAndAcceptsUncappedInputs` |
+| GUI-099 | Train one epoch through the selected AUTO batch backend | `validatesConfigurationAndAcceptsUncappedInputs` |
+| GUI-100 | Select FP32 as the GPU training precision and preserve it in the active configuration | `validatesConfigurationAndAcceptsUncappedInputs` |
