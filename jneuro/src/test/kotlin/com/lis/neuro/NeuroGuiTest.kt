@@ -64,6 +64,130 @@ class NeuroGuiTest {
         }
     }
 
+    @Test fun backendSelectionRequiresApplyAndUnavailableCudaRecovers() {
+        val sessions = RecordingTrainingSessions().apply { unavailable = true }
+        edt { ui.trainingSessionFactory = sessions::open }
+        assertEquals(TrainingBackend.CPU, edt { current.config.backend })
+        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        assertEquals(TrainingBackend.CPU, edt { current.config.backend })
+        assertEquals(0, sessions.opened.get())
+        shortcut(KeyEvent.VK_ENTER)
+        await("explicit CUDA unavailable error") {
+            current.state == StudioState.FAILED && current.config.backend == TrainingBackend.CUDA &&
+                errorText().contains("CUDA fixture unavailable")
+        }
+        assertEquals(0, edt { current.diagnostics.epoch() })
+        assertFalse(edt { button("Train").isEnabled })
+        assertEquals("CUDA · unavailable", edt { (field(ui, "deviceStatus") as JLabel).text })
+        assertEquals(listOf(TrainingBackend.CUDA), sessions.requested.toList())
+        screenshot("cuda-unavailable")
+        tab("Architecture search"); searchSettings(25)
+        click(button("Start search"))
+        await("CUDA search exposes unavailable backend") {
+            field(panel, "result") != null && (field(panel, "summary") as JLabel).text.contains("CUDA fixture unavailable")
+        }
+        val unavailableReport = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertTrue(unavailableReport.candidates.all { !it.valid })
+        assertFalse(edt { button("Replay selected run").isEnabled })
+        assertEquals(0, sessions.epochCalls.get())
+        choose(combo("Training backend"), TrainingBackend.CPU.ordinal)
+        number("Maximum epochs", "1")
+        advanced(); number("Target RMSE", "0")
+        shortcut(KeyEvent.VK_ENTER)
+        await("CPU recovery after explicit backend failure") {
+            current.state == StudioState.LIMIT_REACHED && current.deviceInfo?.backend == TrainingBackend.CPU
+        }
+        assertEquals(1, edt { current.diagnostics.epoch() })
+        assertTrue(edt { (field(ui, "deviceStatus") as JLabel).text.contains("CPU") })
+        assertEquals(TrainingBackend.CPU, sessions.requested.last())
+        assertTrue(sessions.requested.dropLast(1).all { it == TrainingBackend.CUDA })
+    }
+
+    @Test fun rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry() {
+        val sessions = RecordingTrainingSessions()
+        edt { ui.trainingSessionFactory = sessions::open }
+        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        configure("2", 25, 0.0)
+        click(button("1 epoch")); await("main model before replay search") { current.diagnostics.epoch() == 1 }
+        val original = edt { current }
+        tab("Architecture search"); searchSettings(25)
+        number("Target RMSE", "0", panel)
+        click(button("Start search")); await("search ready for rejected replay") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
+        val surface = edt { field(panel, "surface") }
+        sessions.identity = "different-device"
+        click(button("Replay selected run"))
+        await("incompatible replay error with retained report") {
+            field(ui, "searchRunning") == false && (field(panel, "summary") as JLabel).text.contains("recorded training device")
+        }
+        assertEquals("Architecture search", edt { tabs.getTitleAt(tabs.selectedIndex) })
+        assertSame(report, edt { field(panel, "result") })
+        assertSame(trial, edt { field(panel, "chosenTrial") })
+        assertSame(surface, edt { field(panel, "surface") })
+        assertEquals(original.state, edt { current.state })
+        assertEquals(original.config, edt { current.config })
+        assertEquals(original.diagnostics.epoch(), edt { current.diagnostics.epoch() })
+        assertArrayEquals(original.diagnostics.parameters(), edt { current.diagnostics.parameters() })
+        assertTrue(edt { button("Replay selected run").isEnabled })
+        sessions.identity = "fixture-device"; sessions.unavailable = true
+        click(button("Replay selected run"))
+        await("unavailable replay keeps completed search") {
+            field(ui, "searchRunning") == false && (field(panel, "summary") as JLabel).text.contains("CUDA fixture unavailable")
+        }
+        assertSame(report, edt { field(panel, "result") })
+        assertSame(surface, edt { field(panel, "surface") })
+        assertEquals(original.state, edt { current.state })
+        assertArrayEquals(original.diagnostics.parameters(), edt { current.diagnostics.parameters() })
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+        screenshot("cuda-replay-rejected")
+        sessions.unavailable = false
+        click(button("Replay selected run"))
+        await("replay retries after CUDA recovers") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
+        assertEquals("Overview", edt { tabs.getTitleAt(tabs.selectedIndex) })
+        assertEquals(trial.deviceInfo, edt { current.deviceInfo })
+        assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
+        assertNull(edt { field(panel, "result") })
+        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+    }
+
+    @Test fun selectedBackendRoutesControlsStudySearchReplayAndShutdown() {
+        val sessions = RecordingTrainingSessions()
+        edt { ui.trainingSessionFactory = sessions::open }
+        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        configure("2", 100_000, 0.0)
+        click(button("1 epoch"))
+        await("CUDA selected for epoch stepping") {
+            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUDA
+        }
+        assertEquals("CUDA · CUDA test fixture · FP64", edt { (field(ui, "deviceStatus") as JLabel).text })
+        click(button("10 epochs")); await("CUDA ten epoch step") { current.diagnostics.epoch() == 11 }
+        click(button("Train")); await("CUDA training") { current.state == StudioState.RUNNING }
+        click(button("Pause")); await("CUDA pause") { current.state == StudioState.PAUSED }
+        configure("2", 25, 0.0)
+        tab("Seeds"); click(button("Compare 4 seeds"))
+        await("CUDA seed study completed") { current.seeds.size == 4 && field(ui, "studyRunning") == false }
+        val studyCompleted = sessions.closed.get()
+        assertTrue(studyCompleted >= 4)
+        tab("Architecture search"); searchSettings(25)
+        number("Target RMSE", "0", panel)
+        assertEquals(TrainingBackend.CUDA, edt { panel.readConfig().backend })
+        click(button("Start search")); await("CUDA search completed") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertTrue(report.candidates.all { it.valid && it.trials.all { trial -> trial.deviceInfo?.backend == TrainingBackend.CUDA } })
+        assertTrue(sessions.closed.get() >= studyCompleted + report.candidates.sumOf { it.trials.size })
+        click(button("Replay selected run"))
+        await("CUDA replay installed") { current.replayNote.isNotEmpty() && current.deviceInfo?.backend == TrainingBackend.CUDA }
+        assertEquals(TrainingBackend.CUDA, edt { current.config.backend })
+        click(button("Reset")); await("CUDA reset") { current.state == StudioState.READY && current.diagnostics.epoch() == 0 }
+        click(button("1 epoch")); await("CUDA session open before close") { current.diagnostics.epoch() == 1 }
+        assertTrue(sessions.opened.get() > sessions.closed.get())
+        robot.keyPress(KeyEvent.VK_ALT); key(KeyEvent.VK_F4); robot.keyRelease(KeyEvent.VK_ALT)
+        await("native close releases CUDA session") { !window.isDisplayable && sessions.opened.get() == sessions.closed.get() }
+        assertTrue(sessions.epochCalls.get() > 0)
+        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+    }
+
     @Test fun opensAndNavigatesEveryView() {
         for (name in listOf("Overview", "Neurons", "Learning set", "Step effect", "Parameters", "Seeds", "Timeline", "Architecture search")) {
             tab(name)

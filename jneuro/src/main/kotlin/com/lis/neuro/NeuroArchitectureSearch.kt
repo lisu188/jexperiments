@@ -55,7 +55,8 @@ internal class ArchitectureSearchConfig(
     initialHidden: List<Int>? = null,
     val searchSeed: Long = 42,
     val restartAfter: Int = 12,
-    val maxRestarts: Int = 4
+    val maxRestarts: Int = 4,
+    val backend: TrainingBackend = TrainingBackend.CPU
 ) {
     val seeds: List<Long> = java.util.List.copyOf(seeds)
     val initialHidden: List<Int>? = initialHidden?.let { java.util.List.copyOf(it) }
@@ -216,7 +217,8 @@ internal class ArchitectureTrial(
     val elapsedNanos: Long,
     history: List<ArchitectureCheckpoint>,
     val snapshot: NeuroXorDiagnostics.Snapshot?,
-    val failure: String = ""
+    val failure: String = "",
+    val deviceInfo: TrainingDeviceInfo? = null
 ) {
     val history: List<ArchitectureCheckpoint> = java.util.List.copyOf(history)
 }
@@ -324,7 +326,9 @@ internal fun interface ArchitectureSearcher {
                onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult
 }
 
-internal class NeuroArchitectureSearch : ArchitectureSearcher {
+internal class NeuroArchitectureSearch(
+    private val openSession: (Neuro, TrainingBackend) -> NeuroTrainingSession = { model, backend -> model.newTrainingSession(backend) }
+) : ArchitectureSearcher {
     override fun search(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
                         onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
         return if (config.strategy == ArchitectureSearchStrategy.ADAPTIVE) searchAdaptive(data, config, onProgress, cancelled)
@@ -422,8 +426,9 @@ internal class NeuroArchitectureSearch : ArchitectureSearcher {
         var trainingAtBest = Double.POSITIVE_INFINITY
         var finalScore = Double.POSITIVE_INFINITY
         var bestSnapshot: NeuroXorDiagnostics.Snapshot? = null
+        var deviceInfo: TrainingDeviceInfo? = null
         fun result(state: ArchitectureTrialState, message: String = "") = ArchitectureTrial(seed, state, epoch, bestEpoch, best,
-            trainingAtBest, finalScore, epoch.toLong() * data.training.size, System.nanoTime() - start, history, bestSnapshot, message)
+            trainingAtBest, finalScore, epoch.toLong() * data.training.size, System.nanoTime() - start, history, bestSnapshot, message, deviceInfo)
         if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
         return try {
             val model = data.newNetwork(architecture, config.hyperParameters, seed)
@@ -442,15 +447,18 @@ internal class NeuroArchitectureSearch : ArchitectureSearcher {
                 }
                 progress(epoch, best)
             }
-            checkPoint()
-            while (epoch < config.maxEpochs) {
-                if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
-                val training = model.trainEpoch()
-                epoch++
-                check(training.isFinite()) { "Training produced a non-finite RMSE." }
-                if (epoch % config.checkEvery == 0 || epoch == config.maxEpochs) checkPoint()
+            openSession(model, config.backend).use { session ->
+                deviceInfo = session.info
+                checkPoint()
+                while (epoch < config.maxEpochs) {
+                    if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
+                    val training = session.trainEpoch()
+                    epoch++
+                    check(training.isFinite()) { "Training produced a non-finite RMSE." }
+                    if (epoch % config.checkEvery == 0 || epoch == config.maxEpochs) checkPoint()
+                }
+                result(ArchitectureTrialState.COMPLETED)
             }
-            result(ArchitectureTrialState.COMPLETED)
         } catch (exception: Exception) {
             if (exception is InterruptedException) { Thread.currentThread().interrupt(); result(ArchitectureTrialState.CANCELLED) }
             else result(ArchitectureTrialState.FAILED, exception.message ?: exception.javaClass.simpleName)

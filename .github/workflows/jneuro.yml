@@ -8,12 +8,14 @@ on:
       - 'build.gradle'
       - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
+      - '.github/workflows/jneuro-cuda-ptx.yml'
   pull_request:
     paths:
       - 'jneuro/**'
       - 'build.gradle'
       - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
+      - '.github/workflows/jneuro-cuda-ptx.yml'
 
 permissions:
   contents: read

@@ -6,6 +6,52 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroArchitectureSearchTest {
+    @Test fun selectedBackendIsRecordedAndReplayRequiresTheSameDevice() {
+        val sessions = RecordingTrainingSessions()
+        val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+            maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1,
+            maxEpochs = 2, checkEvery = 1, backend = TrainingBackend.CUDA)
+        val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
+        val candidate = report.candidates.single()
+        val trial = candidate.trials.single()
+        assertEquals(ArchitectureTrialState.COMPLETED, trial.state)
+        assertEquals(TrainingBackend.CUDA, trial.deviceInfo!!.backend)
+        assertEquals(1, sessions.closed.get())
+        NeuroStudio(openSession = sessions::open).use { studio ->
+            assertTrue(studio.replayArchitecture(report, candidate, trial))
+            assertEquals(trial.deviceInfo, studio.frame().deviceInfo)
+            assertEquals(TrainingBackend.CUDA, studio.activeConfig.backend)
+            val replay = studio.frame()
+            sessions.identity = "replacement-device"
+            assertThrows(IllegalStateException::class.java) { studio.replayArchitecture(report, candidate, trial) }
+            assertEquals(replay.config, studio.activeConfig)
+            assertArrayEquals(replay.diagnostics.parameters(), studio.frame().diagnostics.parameters())
+            sessions.unavailable = true
+            assertThrows(IllegalStateException::class.java) { studio.replayArchitecture(report, candidate, trial) }
+        }
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+    }
+
+    @Test fun backendFailuresRemainFailedTrialsAndReleaseResources() {
+        val sessions = RecordingTrainingSessions().apply { unavailable = true }
+        val data = ArchitectureSearchData.fitting(xor())
+        val config = ArchitectureSearchConfig(maxEpochs = 2, checkEvery = 1, backend = TrainingBackend.CUDA)
+        val engine = NeuroArchitectureSearch(sessions::open)
+        val missing = engine.evaluate(data, config, NetworkArchitecture(listOf(2)), 42, { false }, { _, _ -> })
+        assertEquals(ArchitectureTrialState.FAILED, missing.state)
+        assertEquals("CUDA fixture unavailable", missing.failure)
+        assertNull(missing.deviceInfo)
+        assertEquals(0, missing.epochs)
+        sessions.unavailable = false; sessions.failEpoch = true
+        val failed = engine.evaluate(data, config, NetworkArchitecture(listOf(2)), 42, { false }, { _, _ -> })
+        assertEquals(ArchitectureTrialState.FAILED, failed.state)
+        assertEquals(TrainingBackend.CUDA, failed.deviceInfo!!.backend)
+        assertEquals("CUDA fixture epoch failed", failed.failure)
+        assertEquals(1, sessions.closed.get())
+        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+    }
+
     @Test fun enumeratesUniqueParameterOrderedArchitecturesWithoutDiscardingPermutations() {
         val architectures = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE).architectures()
         assertEquals(584, architectures.size)

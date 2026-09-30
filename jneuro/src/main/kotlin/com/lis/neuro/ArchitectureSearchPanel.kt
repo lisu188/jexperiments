@@ -155,7 +155,7 @@ internal class ArchitectureSearchPanel(
             evaluation.selectedItem = if (config.dataset in BOOLEAN_SETS) ArchitectureEvaluation.TRAINING_FIT else ArchitectureEvaluation.VALIDATION
         }
         source = config; sourceSize = samples
-        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum}"
+        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · ${source.backend}"
         start.isEnabled = !running && samples > 0
     }
 
@@ -168,7 +168,7 @@ internal class ArchitectureSearchPanel(
             Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed), integer(threads), integer(trials), (seconds.value as Number).toLong(),
             strategy.selectedItem as ArchitectureSearchStrategy, NeuroTopologyConfig.parseHidden(source.hidden).toList(),
             searchSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Search seed must be an integer."),
-            integer(restartAfter), integer(restarts))
+            integer(restartAfter), integer(restarts), source.backend)
     }
 
     private fun submit() {
@@ -245,6 +245,11 @@ internal class ArchitectureSearchPanel(
         summary.text = "Search error: $message"; progressBar.string = "Search failed"
     }
 
+    fun replayFailed(message: String) {
+        summary.text = "Replay error: $message"
+        progressBar.string = "Replay failed; search results retained"
+    }
+
     fun invalidateResults() {
         strategy.isEnabled = true; policy.isEnabled = true; lineage = emptyMap()
         running = false; result = null; config = null; results = emptyList(); selected = null
@@ -280,9 +285,12 @@ internal class ArchitectureSearchPanel(
         val selection = currentSelection() ?: return
         val winner = selection.recommended
         summary.text = if (winner != null) "Recommended: ${winner.architecture} · ${winner.architecture.parameters} parameters · median ${scoreMode.label} ${number(winner.medianRmse)} · ${winner.successes}/${winner.expectedSeeds} successful seeds"
-            else if (selection.bestError == null) "No fully evaluated finite candidate. The search was incomplete or every completed architecture had a failed seed."
+            else if (selection.bestError == null) "No fully evaluated finite candidate. " +
+                (report.candidates.asSequence().flatMap { it.trials.asSequence() }.firstOrNull { it.failure.isNotEmpty() }?.let {
+                    "${report.config.backend}: ${it.failure}"
+                } ?: "The search was incomplete or every completed architecture had a failed seed.")
             else "No evaluated architecture met the target reliably. Best completed RMSE: ${number(selection.bestError.medianRmse)}."
-        summary.toolTipText = "${report.environment}; strategy ${report.config.strategy}; search seed ${report.config.searchSeed}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
+        summary.toolTipText = "${report.environment}; backend ${report.config.backend}; strategy ${report.config.strategy}; search seed ${report.config.searchSeed}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
     }
 
     private fun updateInspection() {
@@ -313,6 +321,7 @@ internal class ArchitectureSearchPanel(
             trial.failure.isNotEmpty() -> "Seed ${trial.seed}: ${trial.failure}"
             else -> "Seed ${trial.seed}: best ${scoreMode.label} ${number(trial.bestRmse)} at epoch ${trial.bestEpoch}; trained ${trial.epochs}. Apply = fresh run; replay = scored training partition."
         }
+        details.toolTipText = trial?.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision} · kernel ${it.kernelVersion} · ${it.identity}" }
         inspector.repaint(); plot.repaint()
     }
 

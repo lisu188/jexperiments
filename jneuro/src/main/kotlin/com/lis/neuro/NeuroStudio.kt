@@ -11,7 +11,8 @@ internal data class StudioConfig(
     val maxEpochs: Int = 10_000,
     val targetError: Double = 0.05,
     val learningRate: Double = 0.6,
-    val momentum: Double = 0.2
+    val momentum: Double = 0.2,
+    val backend: TrainingBackend = TrainingBackend.CPU
 ) {
     init {
         NeuroTopologyConfig.parseHidden(hidden)
@@ -63,14 +64,20 @@ internal data class StudioFrame(
     val checkpoints: List<StudioCheckpoint>,
     val seeds: List<StudioSeed>,
     val message: String = "",
-    val replayNote: String = ""
+    val replayNote: String = "",
+    val deviceInfo: TrainingDeviceInfo? = null
 )
 
-internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<NeuroLearningSets.Sample> = emptyList()) {
+internal class NeuroStudio(
+    config: StudioConfig = StudioConfig(), custom: List<NeuroLearningSets.Sample> = emptyList(),
+    private val openSession: (Neuro, TrainingBackend) -> NeuroTrainingSession = { model, backend -> model.newTrainingSession(backend) }
+) : AutoCloseable {
     private var config = config
     private var custom = custom.toList()
     private var samples = samplesFor(config, custom)
     private var network = createNetwork(config, config.seed, samples)
+    private var session: NeuroTrainingSession? = null
+    private var deviceInfo: TrainingDeviceInfo? = null
     private var epoch = 0
     private var error = network.trainingError()
     private var automatic = false
@@ -110,6 +117,8 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
     fun apply(next: StudioConfig, run: Boolean = false) {
         val nextSamples = samplesFor(next, custom)
         val nextNetwork = createNetwork(next, next.seed, nextSamples)
+        close()
+        deviceInfo = null
         config = next
         samples = nextSamples
         network = nextNetwork
@@ -184,7 +193,7 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
         val requested = if (pendingEpochs > 0) minOf(speed, pendingEpochs) else speed
         var advanced = 0
         while (advanced < requested && canTrain() && !cancelled()) {
-            error = network.trainEpoch()
+            error = trainingSession().trainEpoch()
             check(error.isFinite()) { "Training produced a non-finite RMSE. Reset with different settings." }
             epoch++
             advanced++
@@ -203,16 +212,19 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
     fun compareSeeds(limit: Int = config.maxEpochs, cancelled: () -> Boolean = { false }): List<StudioSeed> {
         require(limit > 0) { "Seed study epoch limit must be positive." }
         if (samples.isEmpty()) return emptyList()
+        close()
         val results = ArrayList<StudioSeed>()
         for (seed in STUDY_SEEDS) {
             if (cancelled()) return emptyList()
             val model = createNetwork(config, seed, samples)
             var trained = 0
             var rmse = model.trainingError()
-            while (trained < limit && rmse > config.targetError) {
-                if (cancelled()) return emptyList()
-                rmse = model.trainEpoch()
-                trained++
+            openSession(model, config.backend).use { training ->
+                while (trained < limit && rmse > config.targetError) {
+                    if (cancelled()) return emptyList()
+                    rmse = training.trainEpoch()
+                    trained++
+                }
             }
             val diagnostics = NeuroXorDiagnostics.capture(model, trained, rmse)
             results += StudioSeed(seed, trained, rmse, rmse <= config.targetError,
@@ -230,7 +242,7 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
         require(candidate.valid && report.candidates.any { it === candidate }) { "Choose a fully evaluated architecture from this search." }
         val hp = report.config.hyperParameters
         apply(config.copy(hidden = candidate.architecture.hidden.joinToString(","), maxEpochs = report.config.maxEpochs,
-            targetError = report.config.targetRmse, learningRate = hp.learningRate, momentum = hp.momentum))
+            targetError = report.config.targetRmse, learningRate = hp.learningRate, momentum = hp.momentum, backend = report.config.backend))
     }
 
     fun replayArchitecture(report: ArchitectureSearchResult, candidate: ArchitectureCandidate, trial: ArchitectureTrial,
@@ -238,16 +250,22 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
         require(candidate.valid && report.candidates.any { it === candidate } && candidate.trials.any { it === trial } &&
             trial.state == ArchitectureTrialState.COMPLETED) { "Choose a completed seed run from this search." }
         if (cancelled()) return false
+        close()
         val model = report.data.newNetwork(candidate.architecture, report.config.hyperParameters, trial.seed)
-        repeat(trial.bestEpoch) {
-            if (cancelled()) return false
-            model.trainEpoch()
+        val recordedDevice = requireNotNull(trial.deviceInfo) { "This trial has no recorded training backend; replay is unavailable." }
+        openSession(model, recordedDevice.backend).use { training ->
+            check(training.info == recordedDevice) { "Replay requires the recorded training device, precision and kernel version: ${recordedDevice.name}." }
+            repeat(trial.bestEpoch) {
+                if (cancelled()) return false
+                training.trainEpoch()
+            }
         }
         val score = report.data.score(model)
         check(score.isFinite() && kotlin.math.abs(score - trial.bestRmse) <= 1e-10) { "Replay did not reproduce the scored checkpoint." }
         if (cancelled()) return false
         applyArchitecture(report, candidate)
-        config = config.copy(seed = trial.seed)
+        config = config.copy(seed = trial.seed, backend = recordedDevice.backend)
+        deviceInfo = recordedDevice
         samples = report.data.training
         network = model
         epoch = trial.bestEpoch
@@ -262,6 +280,12 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
         automatic = false
         pendingEpochs = 0
         failure = message
+        render = null
+        layerImages = null
+        difference = null
+        try { close() } catch (exception: Exception) {
+            failure += " Resource cleanup: ${exception.message ?: exception.javaClass.simpleName}"
+        }
     }
 
     fun frame(): StudioFrame {
@@ -274,7 +298,18 @@ internal class NeuroStudio(config: StudioConfig = StudioConfig(), custom: List<N
             current.image.width).also { difference = it }
         return StudioFrame(config, state, current.diagnostics, samples, current.image,
             previousImage ?: current.image, previousEpoch, delta, images, selectedLayer, hiddenStart,
-            history.toList(), checkpoints.toList(), seedResults, failure, replayNote)
+            history.toList(), checkpoints.toList(), seedResults, failure, replayNote, deviceInfo)
+    }
+
+    private fun trainingSession(): NeuroTrainingSession = session ?: openSession(network, config.backend).also {
+        session = it
+        deviceInfo = it.info
+    }
+
+    override fun close() {
+        val current = session
+        session = null
+        current?.close()
     }
 
     private fun canTrain(): Boolean = samples.isNotEmpty() && epoch < config.maxEpochs &&

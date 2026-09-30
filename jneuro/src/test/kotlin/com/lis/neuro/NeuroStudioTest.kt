@@ -4,6 +4,71 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroStudioTest {
+    @Test fun selectedBackendSessionsAreReusedAndReleasedOnResetFailureAndClose() {
+        val sessions = RecordingTrainingSessions()
+        NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->
+            assertNull(studio.frame().deviceInfo)
+            studio.step(2); studio.advance()
+            studio.step(1); studio.advance()
+            assertEquals(1, sessions.opened.get())
+            assertEquals(3, sessions.epochCalls.get())
+            assertEquals(TrainingBackend.CUDA, studio.frame().deviceInfo!!.backend)
+            assertEquals("CUDA test fixture", studio.frame().deviceInfo!!.name)
+            studio.apply(studio.activeConfig)
+            assertEquals(1, sessions.closed.get())
+            assertNull(studio.frame().deviceInfo)
+            studio.step(1); studio.advance()
+            sessions.failEpoch = true
+            studio.step(1)
+            assertThrows(IllegalStateException::class.java) { studio.advance() }
+            studio.fail("Epoch failed")
+            assertEquals(2, sessions.closed.get())
+            assertEquals(1, studio.frame().diagnostics.epoch())
+            sessions.failEpoch = false
+            studio.apply(StudioConfig(dataset = NeuroLearningSets.Kind.CUSTOM, backend = TrainingBackend.CUDA))
+            studio.addSample(0.2, 0.3, 1.0); studio.step(1); studio.advance()
+            studio.addSample(0.4, 0.5, 0.0)
+            assertEquals(3, sessions.closed.get())
+            studio.step(1); studio.advance()
+        }
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+    }
+
+    @Test fun unavailableBackendNeverFallsBackAndSeedStudyClosesCancelledSessions() {
+        val sessions = RecordingTrainingSessions().apply { unavailable = true }
+        NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->
+            studio.step(1)
+            assertThrows(IllegalStateException::class.java) { studio.advance() }
+            assertEquals(listOf(TrainingBackend.CUDA), sessions.requested.toList())
+            assertEquals(0, studio.epochs)
+            sessions.unavailable = false
+            assertEquals(4, studio.compareSeeds(2).size)
+            assertEquals(4, sessions.closed.get())
+            var polls = 0
+            assertTrue(studio.compareSeeds(100) { ++polls > 3 }.isEmpty())
+            assertEquals(5, sessions.closed.get())
+            assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+        }
+    }
+
+    @Test fun failedBackendCleanupStillAllowsConfigurationRecovery() {
+        val sessions = RecordingTrainingSessions()
+        NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->
+            studio.step(1); studio.advance()
+            sessions.failClose = true
+            studio.fail("Epoch failed")
+            assertEquals(StudioState.FAILED, studio.state)
+            assertTrue(studio.frame().message.contains("Epoch failed"))
+            assertTrue(studio.frame().message.contains("CUDA fixture cleanup failed"))
+            sessions.failClose = false
+            studio.apply(StudioConfig())
+            studio.step(1); studio.advance()
+            assertEquals(TrainingBackend.CPU, studio.frame().deviceInfo!!.backend)
+        }
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+    }
+
     @Test fun trainsPausesStepsAndPreservesTerminalStates() {
         val studio = NeuroStudio()
         val initial = studio.frame()
