@@ -6,7 +6,7 @@ object NeuroNativeBlasBenchmark {
     private data class Scenario(val name: String, val topology: IntArray, val batchSize: Int, val iterations: Int)
     @Volatile private var blackhole = 0.0
 
-    @JvmStatic fun main(args: Array<String>) {
+    @JvmStatic fun main(args: Array<String>) = NeuroLog.application("NeuroNativeBlasBenchmark") {
         val scenarios = arrayOf(Scenario("medium", intArrayOf(128, 256, 128, 32), 64, 100),
             Scenario("large", intArrayOf(512, 1024, 512, 128), 128, 30))
         for (scenario in scenarios) run(scenario)

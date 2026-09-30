@@ -64,6 +64,41 @@ class NeuroGuiTest {
         }
     }
 
+    @Test fun detailedLogsFollowNativeControlsExportAndShutdown() {
+        NeuroApplicationLogCapture().use { capture ->
+            configure("2", 2, 0.0)
+            click(button("1 epoch"))
+            await("logged epoch step") { current.diagnostics.epoch() == 1 }
+            assertTrue(capture.events("ui.configuration.submitted").isNotEmpty())
+            assertTrue(capture.events("studio.configuration.applied").isNotEmpty())
+            val device = capture.fields(capture.events("studio.backend.ready").last())
+            assertEquals("CPU", device["effectiveBackend"].toString())
+            assertEquals("FP64", device["effectivePrecision"].toString())
+            assertNotNull(device["runId"])
+            assertTrue(capture.events("studio.step.requested").isNotEmpty())
+            tab("Neurons")
+            val navigation = capture.events("ui.view.selected").last()
+            assertEquals("NEURONS", capture.fields(navigation)["view"].toString())
+            click(button("Save PNG"))
+            await("logging save dialog") { Window.getWindows().filterIsInstance<JDialog>().any { it.isShowing } }
+            val chooser = edt { Window.getWindows().filterIsInstance<JDialog>().flatMap { descendants(it) }.filterIsInstance<JFileChooser>().first() }
+            val filename = edt { descendants(chooser).filterIsInstance<JTextField>().last { it.isEditable } }
+            val output = temporary.resolve("logged-export.png")
+            text(filename, output.toString())
+            click(edt { descendants(chooser).filterIsInstance<JButton>().first { it.text == "Save" } })
+            await("PNG export and structured event") { Files.exists(output) && capture.events("ui.export.completed").isNotEmpty() }
+            val exported = capture.fields(capture.events("ui.export.completed").single())
+            assertEquals(output.toFile().absolutePath, exported["path"].toString())
+            assertEquals(capture.fields(navigation)["windowId"], exported["windowId"])
+            assertNotNull(ImageIO.read(output.toFile()))
+            robot.keyPress(KeyEvent.VK_ALT); key(KeyEvent.VK_F4); robot.keyRelease(KeyEvent.VK_ALT)
+            await("logging native shutdown") { !window.isDisplayable && capture.events("ui.worker.stopped").isNotEmpty() }
+            val closed = capture.fields(capture.events("ui.window.close.requested").single())
+            assertEquals(exported["windowId"], closed["windowId"])
+            assertTrue(capture.events("studio.session.released").isNotEmpty())
+        }
+    }
+
     @Test fun backendSelectionRequiresApplyAndUnavailableCudaRecovers() {
         val sessions = RecordingTrainingSessions().apply { unavailable = true }
         edt { ui.trainingSessionFactory = sessions::open }

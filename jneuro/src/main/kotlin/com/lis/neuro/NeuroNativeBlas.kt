@@ -16,26 +16,37 @@ object NeuroNativeBlas {
 
     @JvmStatic fun tryCreate(network: Neuro): Optional<Session> {
         val arena = Arena.ofShared()
+        NeuroLog.debug("inference", "blas.session.requested") { mapOf("model" to network.logId) }
         return try {
             val resolved = resolveDgemm(arena)
             Optional.of(Session(network, arena, resolved.first, resolved.second))
         } catch (exception: IllegalArgumentException) {
             arena.close()
+            NeuroLog.debug("inference", "blas.unavailable") { mapOf("model" to network.logId,
+                "failureType" to exception.javaClass.simpleName, "reason" to exception.message) }
             Optional.empty()
         } catch (exception: IllegalStateException) {
             arena.close()
+            NeuroLog.debug("inference", "blas.unavailable") { mapOf("model" to network.logId,
+                "failureType" to exception.javaClass.simpleName, "reason" to exception.message) }
             Optional.empty()
         } catch (exception: IllegalCallerException) {
             arena.close()
+            NeuroLog.debug("inference", "blas.unavailable") { mapOf("model" to network.logId,
+                "failureType" to exception.javaClass.simpleName, "reason" to exception.message) }
             Optional.empty()
         } catch (exception: UnsatisfiedLinkError) {
             arena.close()
+            NeuroLog.debug("inference", "blas.unavailable") { mapOf("model" to network.logId,
+                "failureType" to exception.javaClass.simpleName, "reason" to exception.message) }
             Optional.empty()
         }
     }
 
     class Session internal constructor(network: Neuro, private val arena: Arena,
                                        private val handle: MethodHandle, private val libraryName: String) : AutoCloseable {
+        private val modelId = network.logId
+        private val inferenceId = NeuroLog.id("blas-inference")
         private val topology = network.topology()
         private val maxWidth = topology.max()
         private val beta = network.hyperParameters().beta
@@ -57,6 +68,12 @@ object NeuroNativeBlas {
         private var secondBuffer = MemorySegment.NULL
         private var capacity = 0
 
+        init {
+            NeuroLog.debug("inference", "blas.session.opened") { mapOf("model" to modelId,
+                "inference" to inferenceId, "library" to libraryName, "precision" to "FP64",
+                "topology" to topology.joinToString("x")) }
+        }
+
         fun libraryName(): String = libraryName
         fun predictBatch(inputs: DoubleArray, batchSize: Int, outputs: DoubleArray) {
             require(batchSize >= 0) { "batchSize must be >= 0" }
@@ -76,6 +93,8 @@ object NeuroNativeBlas {
                 next = swap
             }
             MemorySegment.copy(current, ValueLayout.JAVA_DOUBLE, 0L, outputs, 0, outputElements)
+            NeuroLog.trace("inference", "blas.inference.completed") { mapOf("model" to modelId,
+                "inference" to inferenceId, "batchSize" to batchSize, "library" to libraryName) }
         }
         private fun ensureCapacity(batchSize: Int) {
             if (batchSize <= capacity) return
@@ -83,6 +102,8 @@ object NeuroNativeBlas {
             val elements = Math.multiplyExact(capacity, maxWidth).toLong()
             firstBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, elements)
             secondBuffer = arena.allocate(ValueLayout.JAVA_DOUBLE, elements)
+            NeuroLog.debug("inference", "blas.capacity.changed") { mapOf("model" to modelId,
+                "inference" to inferenceId, "capacity" to capacity, "elementsPerBuffer" to elements) }
         }
         private fun dgemm(rows: Int, columns: Int, inner: Int, left: MemorySegment,
                           right: MemorySegment, destination: MemorySegment) {
@@ -90,6 +111,9 @@ object NeuroNativeBlas {
                 handle.invoke(ROW_MAJOR, NO_TRANS, NO_TRANS, rows, columns, inner,
                     1.0, left, inner, right, columns, 0.0, destination, columns)
             } catch (throwable: Throwable) {
+                NeuroLog.error("inference", "blas.inference.failed", throwable, "model" to modelId,
+                    "inference" to inferenceId, "library" to libraryName,
+                    "rows" to rows, "columns" to columns, "inner" to inner)
                 throw IllegalStateException("cblas_dgemm failed", throwable)
             }
         }
@@ -102,7 +126,11 @@ object NeuroNativeBlas {
                 }
             }
         }
-        override fun close() = arena.close()
+        override fun close() {
+            arena.close()
+            NeuroLog.debug("inference", "blas.session.closed") { mapOf("model" to modelId,
+                "inference" to inferenceId, "library" to libraryName) }
+        }
     }
 
     private fun resolveDgemm(arena: Arena): Pair<MethodHandle, String> {

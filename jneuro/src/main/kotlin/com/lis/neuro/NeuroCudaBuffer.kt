@@ -18,9 +18,12 @@ internal class NeuroCudaBuffer private constructor(
     val byteSize: Long
 ) : AutoCloseable {
     private var closed = false
+    private val logId = NeuroLog.id("buffer")
+    init { NeuroLog.debug("cuda", "buffer.allocated") { mapOf("buffer" to logId, "bytes" to byteSize) } }
 
     fun upload(values: DoubleArray) {
         ensureOpen()
+        NeuroLog.trace("cuda", "buffer.upload") { mapOf("buffer" to logId, "type" to "FP64", "elements" to values.size) }
         val bytes = Math.multiplyExact(values.size.toLong(), java.lang.Double.BYTES.toLong())
         require(bytes <= byteSize) { "double upload exceeds CUDA buffer capacity" }
         Arena.ofConfined().use { arena ->
@@ -32,6 +35,7 @@ internal class NeuroCudaBuffer private constructor(
 
     fun upload(values: FloatArray) {
         ensureOpen()
+        NeuroLog.trace("cuda", "buffer.upload") { mapOf("buffer" to logId, "type" to "FP32", "elements" to values.size) }
         val bytes = Math.multiplyExact(values.size.toLong(), java.lang.Float.BYTES.toLong())
         require(bytes <= byteSize) { "float upload exceeds CUDA buffer capacity" }
         Arena.ofConfined().use { arena ->
@@ -43,6 +47,7 @@ internal class NeuroCudaBuffer private constructor(
 
     fun upload(values: IntArray) {
         ensureOpen()
+        NeuroLog.trace("cuda", "buffer.upload") { mapOf("buffer" to logId, "type" to "INT32", "elements" to values.size) }
         val bytes = Math.multiplyExact(values.size.toLong(), Integer.BYTES.toLong())
         require(bytes <= byteSize) { "int upload exceeds CUDA buffer capacity" }
         Arena.ofConfined().use { arena ->
@@ -54,6 +59,7 @@ internal class NeuroCudaBuffer private constructor(
 
     fun downloadDoubles(elements: Int): DoubleArray {
         ensureOpen()
+        NeuroLog.trace("cuda", "buffer.download") { mapOf("buffer" to logId, "type" to "FP64", "elements" to elements) }
         require(elements >= 0)
         val bytes = Math.multiplyExact(elements.toLong(), java.lang.Double.BYTES.toLong())
         require(bytes <= byteSize) { "double download exceeds CUDA buffer capacity" }
@@ -68,6 +74,7 @@ internal class NeuroCudaBuffer private constructor(
 
     fun downloadFloats(elements: Int): FloatArray {
         ensureOpen()
+        NeuroLog.trace("cuda", "buffer.download") { mapOf("buffer" to logId, "type" to "FP32", "elements" to elements) }
         require(elements >= 0)
         val bytes = Math.multiplyExact(elements.toLong(), java.lang.Float.BYTES.toLong())
         require(bytes <= byteSize) { "float download exceeds CUDA buffer capacity" }
@@ -83,7 +90,13 @@ internal class NeuroCudaBuffer private constructor(
     override fun close() {
         if (closed) return
         closed = true
-        memory.release(pointer)
+        try {
+            memory.release(pointer)
+            NeuroLog.debug("cuda", "buffer.released") { mapOf("buffer" to logId, "bytes" to byteSize) }
+        } catch (failure: Throwable) {
+            NeuroLog.error("cuda", "buffer.release.failed", failure, "buffer" to logId, "bytes" to byteSize)
+            throw failure
+        }
     }
 
     private fun ensureOpen() = check(!closed) { "CUDA buffer is closed" }

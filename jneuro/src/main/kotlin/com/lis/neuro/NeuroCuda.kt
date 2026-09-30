@@ -26,6 +26,14 @@ object NeuroCuda {
     }
 
     internal fun detect(loader: NeuroLibraryLoader = NeuroNativeLibrary::open): Status {
+        NeuroLog.debug("cuda", "capability.detection.started") { emptyMap() }
+        val result = detectLibraries(loader)
+        if (result.available) NeuroLog.info("cuda", "capability.detected", "device" to result.description)
+        else NeuroLog.debug("cuda", "capability.unavailable") { mapOf("reason" to result.reason) }
+        return result
+    }
+
+    private fun detectLibraries(loader: NeuroLibraryLoader): Status {
         val runtime = NeuroCudaRuntime.tryCreate(loader) ?: return Status(false, "CUDA unavailable", "CUDA Runtime library not found")
         runtime.use {
             return try {
@@ -47,6 +55,7 @@ object NeuroCuda {
                     }
                 }
             } catch (exception: RuntimeException) {
+                NeuroLog.debug("cuda", "capability.detection.failed") { mapOf("reason" to exception.message) }
                 Status(false, "CUDA unavailable", exception.message ?: exception.javaClass.simpleName)
             }
         }

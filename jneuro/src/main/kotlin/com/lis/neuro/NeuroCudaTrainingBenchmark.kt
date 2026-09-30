@@ -1,53 +1,108 @@
 package com.lis.neuro
 
+import java.nio.file.Path
+
+/** Small repeatable comparison by default; opt into the larger matrix explicitly. */
 object NeuroCudaTrainingBenchmark {
-    @JvmStatic fun main(args: Array<String>) {
-        require(args.isEmpty() || args.contentEquals(arrayOf("--smoke"))) { "Usage: cudaBenchmark [--smoke]" }
-        check(NeuroCuda.isAvailable()) {
-            "CUDA unavailable: " + NeuroCuda.status().reason
+    @JvmStatic fun main(args: Array<String>) = NeuroLog.application("NeuroCudaTrainingBenchmark") {
+        if (args.contentEquals(arrayOf("--help")) || args.contentEquals(arrayOf("-h"))) {
+            println(NeuroCudaBenchmarkConfig.usage())
+            return@application
         }
-        val smoke = args.isNotEmpty()
-        val scenarios = if (smoke) listOf("smoke" to intArrayOf(32, 64, 32, 4)) else listOf(
-            "medium" to intArrayOf(128, 256, 128, 32),
-            "large" to intArrayOf(512, 1024, 512, 128),
-            "huge" to intArrayOf(1024, 2048, 2048, 512)
-        )
-        val batches = if (smoke) intArrayOf(16, 64) else intArrayOf(32, 128, 512, 2048)
-        for ((name, topology) in scenarios) {
-            for (batch in batches) {
-                val samples = if (smoke) 128 else maxOf(batch * 2, 2048)
-                val cpu = prepared(topology, samples)
-                val gpu64 = prepared(topology, samples)
-                val gpu32 = prepared(topology, samples)
-                val cpuNanos = measure {
-                    cpu.trainMiniBatch(2, batch, Runtime.getRuntime().availableProcessors().coerceAtMost(8),
-                        Neuro.BatchBackend.CPU)
-                }
-                val gpu64Nanos = measure {
-                    gpu64.trainMiniBatch(2, batch, 1, Neuro.BatchBackend.CUDA, Neuro.TrainingPrecision.FP64)
-                }
-                val gpu32Nanos = measure {
-                    gpu32.trainMiniBatch(2, batch, 1, Neuro.BatchBackend.CUDA, Neuro.TrainingPrecision.FP32)
-                }
-                println("%-7s batch=%4d params=%9d cpu=%9.3f ms fp64=%9.3f ms fp32=%9.3f ms fp64=%6.2fx fp32=%6.2fx diff64=%g diff32=%g".format(
-                    name, batch, cpu.parameterCount(), cpuNanos / 1_000_000.0, gpu64Nanos / 1_000_000.0,
-                    gpu32Nanos / 1_000_000.0, cpuNanos.toDouble() / gpu64Nanos, cpuNanos.toDouble() / gpu32Nanos,
-                    kotlin.math.abs(cpu.trainingError() - gpu64.trainingError()),
-                    kotlin.math.abs(cpu.trainingError() - gpu32.trainingError())))
+        val config = NeuroCudaBenchmarkConfig.parse(args)
+        println("Starting CPU/GPU benchmark: profile=${config.profile}, epochs=${config.epochs}, " +
+            "warmups=${config.warmups}, repeats=${config.repeats}, CPU parallelism=1, " +
+            "batches=${config.batches.joinToString(",")}, backends=${config.backends.joinToString(",")}, " +
+            "topology=${config.topology?.joinToString("x") ?: "profile-default"}, samples=${config.sampleCount}")
+        try {
+            val report = NeuroCudaBenchmarkHarness.run(config, onWorkloadCompleted = { workload, completed, total ->
+                println("Completed $completed/$total: ${workload.name}, topology=${workload.topology.joinToString("x")}, " +
+                    "samples=${workload.samples}, verified ${config.repeats * config.backends.size} measured rounds.")
+            })
+            NeuroCudaBenchmarkReports.write(report, config.output)
+            println(NeuroCudaBenchmarkReports.console(report))
+            println("Reports: ${config.output.toAbsolutePath()}.json and .csv")
+        } catch (failure: NeuroCudaBenchmarkFailure) {
+            if (NeuroCudaBenchmarkReports.writeFailure(failure, config.output)) {
+                System.err.println("Failure reports: ${config.output.toAbsolutePath()}.json and .csv")
             }
+            throw failure
         }
     }
-    private fun prepared(topology: IntArray, samples: Int): Neuro =
-        Neuro(topology, Neuro.HyperParameters(0.05, 0.1, 1.0, 1234, Neuro.Kernel.VECTOR)).also { model ->
-            repeat(samples) { sample ->
-                model.addTrainingSample(
-                    DoubleArray(topology[0]) { ((sample * 17 + it * 13) and 255) / 255.0 },
-                    DoubleArray(topology.last()) { ((sample + it) and 1).toDouble() })
+}
+
+internal enum class NeuroCudaBenchmarkBackend(val backend: TrainingBackend, val precision: Neuro.TrainingPrecision) {
+    CPU(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64),
+    CUDA(TrainingBackend.CUDA, Neuro.TrainingPrecision.FP64),
+    CUBLAS_FP64(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP64),
+    CUBLAS_FP32(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32)
+}
+
+internal data class NeuroCudaBenchmarkConfig(
+    val profile: String = "smoke", val epochs: Int = 2, val warmups: Int = 1, val repeats: Int = 3,
+    val batches: List<Int> = listOf(16, 64), val backends: List<NeuroCudaBenchmarkBackend> = NeuroCudaBenchmarkBackend.entries,
+    val output: Path = Path.of("build", "reports", "cuda-benchmark", "benchmark"),
+    val topology: List<Int>? = null, val samples: Int? = null
+) {
+    val sampleCount: Int get() = samples ?: if (profile == "smoke") 128 else 1024
+    init {
+        require(profile in listOf("smoke", "matrix")) { "profile must be smoke or matrix" }
+        if (topology != null) {
+            require(topology.size in 2..16 && topology.all { it in 1..2048 }) {
+                "topology must contain 2..16 layer widths in 1..2048, including input and output"
+            }
+            require(topology.zipWithNext { inputs, outputs -> (inputs.toLong() + 1) * outputs }.sum() <= 2_000_000) {
+                "benchmark topology must contain at most 2000000 parameters"
             }
         }
-    private inline fun measure(action: () -> Unit): Long {
-        val start = System.nanoTime()
-        action()
-        return System.nanoTime() - start
+        require(samples == null || samples in 1..8192) { "samples must be 1..8192" }
+        require(epochs in 1..1000 && warmups in 0..100 && repeats in 1..100) { "epochs must be 1..1000, warmups 0..100, repeats 1..100" }
+        require(batches.isNotEmpty() && batches.all { it in 1..4096 } && batches.distinct().size == batches.size) {
+            "batches must contain distinct sizes in 1..4096"
+        }
+        require(backends.isNotEmpty() && backends.distinct().size == backends.size) { "backends must be nonempty and distinct" }
+        require(output.fileName != null && output.toString().isNotBlank()) { "output must be a report file prefix" }
+    }
+    companion object {
+        fun usage() = """
+            Usage: cpuGpuBenchmark [options]
+              --profile smoke|matrix       Workload presets; default smoke
+              --topology 2,8,8,8,1         Override with input, hidden layer(s), output widths
+              --samples N                  Dataset size, 1..8192; default smoke=128, matrix=1024
+              --epochs N                   1..1000; default 2
+              --warmups N                  0..100; default 1, excluded from measurements
+              --repeats N                  1..100; default 3
+              --batches 16,64              Distinct sizes in 1..4096
+              --backends CPU,CUDA,CUBLAS_FP64,CUBLAS_FP32
+              --output PATH                Prefix for .json and .csv reports
+              --smoke                      Alias for --profile smoke
+              --help, -h                   Print this help without training
+            Custom topology: 2..16 layers, widths 1..2048, at most 2000000 parameters.
+            GPU selection is explicit: missing CUDA/cuBLAS fails without CPU fallback.
+        """.trimIndent()
+
+        fun parse(args: Array<String>): NeuroCudaBenchmarkConfig {
+            var result = NeuroCudaBenchmarkConfig()
+            var index = 0
+            while (index < args.size) {
+                val option = args[index++]
+                if (option == "--smoke") { result = result.copy(profile = "smoke"); continue }
+                require(index < args.size) { "Missing value for $option" }
+                val value = args[index++]
+                result = when (option) {
+                    "--profile" -> result.copy(profile = value)
+                    "--topology" -> result.copy(topology = value.split(',').map { it.trim().toInt() })
+                    "--samples" -> result.copy(samples = value.toInt())
+                    "--epochs" -> result.copy(epochs = value.toInt())
+                    "--warmups" -> result.copy(warmups = value.toInt())
+                    "--repeats" -> result.copy(repeats = value.toInt())
+                    "--batches" -> result.copy(batches = value.split(',').map { it.trim().toInt() })
+                    "--backends" -> result.copy(backends = value.split(',').map { NeuroCudaBenchmarkBackend.valueOf(it.trim().uppercase(java.util.Locale.ROOT)) })
+                    "--output" -> result.copy(output = Path.of(value))
+                    else -> throw IllegalArgumentException("Unknown option $option; use --help to list benchmark options")
+                }
+            }
+            return result
+        }
     }
 }

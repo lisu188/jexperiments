@@ -4,6 +4,48 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroStudioTest {
+    @Test fun logsRequestedAndEffectiveDeviceAndRunLifecycleWithoutTrainingData() {
+        NeuroApplicationLogCapture().use { capture ->
+            val sessions = RecordingTrainingSessions()
+            val config = StudioConfig(maxEpochs = 2, targetError = 0.0, backend = TrainingBackend.AUTO,
+                precision = Neuro.TrainingPrecision.FP32, batchSize = 3)
+            NeuroStudio(config, openSession = sessions::open).use { studio ->
+                studio.step(2)
+                assertEquals(2, studio.advance())
+                assertEquals(StudioState.LIMIT_REACHED, studio.state)
+            }
+            val created = capture.events("studio.run.created").single()
+            val runId = capture.fields(created)["runId"]
+            assertNotNull(runId)
+            val ready = capture.fields(capture.events("studio.backend.ready").single())
+            assertEquals(runId, ready["runId"])
+            assertNotNull(ready["model"])
+            assertNotNull(ready["session"])
+            assertEquals("AUTO", ready["requestedBackend"].toString())
+            assertEquals("FP32", ready["requestedPrecision"].toString())
+            assertEquals("CPU", ready["effectiveBackend"].toString())
+            assertEquals("FP64", ready["effectivePrecision"].toString())
+            assertEquals("3", ready["batchSize"].toString())
+            assertEquals(runId, capture.fields(capture.events("studio.training.completed").single())["runId"])
+            assertEquals(runId, capture.fields(capture.events("studio.session.released").single())["runId"])
+            assertTrue(capture.events("studio.training.progress").isNotEmpty())
+            assertTrue(capture.records.none { record -> capture.fields(record).keys.any { it in setOf("weights", "inputs", "targets", "predictions") } })
+        }
+    }
+
+
+    @Test fun failedStudyReportsItsCauseWithoutPublishingSeedResults() {
+        NeuroApplicationLogCapture().use { capture ->
+            val failure = IllegalStateException("seed backend unavailable")
+            NeuroStudio(openSession = { _, _, _, _ -> throw failure }).use { studio ->
+                assertSame(failure, assertThrows(IllegalStateException::class.java) { studio.compareSeeds(1) })
+                assertTrue(studio.frame().seeds.isEmpty())
+            }
+            assertSame(failure, capture.events("studio.study.failed").single().thrown)
+            assertTrue(capture.events("studio.study.completed").isEmpty())
+        }
+    }
+
     @Test fun selectedBackendSessionsAreReusedAndReleasedOnResetFailureAndClose() {
         val sessions = RecordingTrainingSessions()
         NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->

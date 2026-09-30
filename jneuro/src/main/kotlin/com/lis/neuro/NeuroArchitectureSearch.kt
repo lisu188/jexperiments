@@ -224,7 +224,8 @@ internal class ArchitectureTrial(
     history: List<ArchitectureCheckpoint>,
     val snapshot: NeuroXorDiagnostics.Snapshot?,
     val failure: String = "",
-    val deviceInfo: TrainingDeviceInfo? = null
+    val deviceInfo: TrainingDeviceInfo? = null,
+    val logId: String = NeuroLog.id("trial")
 ) {
     val history: List<ArchitectureCheckpoint> = java.util.List.copyOf(history)
 }
@@ -324,6 +325,7 @@ internal class ArchitectureSearchResult(
     val partial: Int get() = candidates.count { !it.fullyEvaluated }
     val numericalFailures: Int get() = candidates.sumOf { candidate -> candidate.trials.count { it.state == ArchitectureTrialState.FAILED } }
     val selection: ArchitectureSelection = ArchitectureRanking.select(this.candidates, config)
+    internal var logId: String? = null
     val environment: String = "Kotlin ${KotlinVersion.CURRENT}; JVM ${System.getProperty("java.version")}; ${System.getProperty("os.name")}/${System.getProperty("os.arch")}"
 }
 
@@ -338,12 +340,29 @@ internal class NeuroArchitectureSearch(
 ) : ArchitectureSearcher {
     override fun search(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
                         onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
-        return if (config.strategy == ArchitectureSearchStrategy.ADAPTIVE) searchAdaptive(data, config, onProgress, cancelled)
-        else searchExhaustive(data, config, onProgress, cancelled)
+        val searchId = NeuroLog.id("search")
+        NeuroLog.info("search", "search.started", "searchId" to searchId, "strategy" to config.strategy,
+            "backend" to config.backend, "precision" to config.precision, "batchSize" to config.batchSize,
+            "trainingSamples" to data.training.size, "validationSamples" to data.validation.size,
+            "datasetFingerprint" to data.fingerprint, "searchSeed" to config.searchSeed,
+            "parallelism" to config.parallelism, "maxTrials" to config.maxTrials, "maxEpochs" to config.maxEpochs)
+        try {
+            val report = if (config.strategy == ArchitectureSearchStrategy.ADAPTIVE) searchAdaptive(data, config, onProgress, cancelled, searchId)
+                else searchExhaustive(data, config, onProgress, cancelled, searchId)
+            report.logId = searchId
+            NeuroLog.info("search", "search.completed", "searchId" to searchId, "termination" to report.termination,
+                "generated" to report.generated, "evaluated" to report.evaluated, "partial" to report.partial,
+                "failedTrials" to report.numericalFailures, "peakParallelTrials" to report.peakParallelTrials,
+                "elapsedMs" to report.elapsedNanos / 1_000_000, "recommended" to report.selection.recommended?.architecture)
+            return report
+        } catch (exception: Exception) {
+            NeuroLog.error("search", "search.failed", exception, "searchId" to searchId)
+            throw exception
+        }
     }
 
     private fun searchExhaustive(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
-                                 onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
+                                 onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean, searchId: String): ArchitectureSearchResult {
         val architectures = config.architectures()
         val planned = architectures.take(config.maxTrials / config.seeds.size)
         val requests = planned.flatMap { architecture -> config.seeds.map { architecture to it } }
@@ -390,7 +409,7 @@ internal class NeuroArchitectureSearch(
                     completions.submit {
                         activity.track(index, architecture, seed) { progress ->
                             Finished(architecture, evaluate(data, config, architecture, seed,
-                                { stopping.get() || Thread.currentThread().isInterrupted }, progress))
+                                { stopping.get() || Thread.currentThread().isInterrupted }, progress, searchId))
                         }
                     }
                 }
@@ -416,15 +435,18 @@ internal class NeuroArchitectureSearch(
     }
 
     private fun searchAdaptive(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
-                               onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult =
-        AdaptiveTrialScheduler(data, config) { architecture, seed, stop, progress ->
-            evaluate(data, config, architecture, seed, stop, progress)
+                               onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean, searchId: String): ArchitectureSearchResult =
+        AdaptiveTrialScheduler(data, config, searchId) { architecture, seed, stop, progress ->
+            evaluate(data, config, architecture, seed, stop, progress, searchId)
         }.search(onProgress, cancelled)
 
     fun search(data: ArchitectureSearchData, config: ArchitectureSearchConfig): ArchitectureSearchResult = search(data, config, {}, { false })
 
     internal fun evaluate(data: ArchitectureSearchData, config: ArchitectureSearchConfig, architecture: NetworkArchitecture, seed: Long,
-                          cancelled: () -> Boolean, progress: (Int, Double) -> Unit): ArchitectureTrial {
+                          cancelled: () -> Boolean, progress: (Int, Double) -> Unit, searchId: String? = null): ArchitectureTrial {
+        val trialId = NeuroLog.id("trial")
+        NeuroLog.info("search", "search.trial.started", "searchId" to searchId, "trialId" to trialId,
+            "topology" to architecture, "seed" to seed, "requestedBackend" to config.backend, "requestedPrecision" to config.precision, "batchSize" to config.batchSize)
         val start = System.nanoTime()
         val history = ArrayList<ArchitectureCheckpoint>()
         var epoch = 0
@@ -436,9 +458,13 @@ internal class NeuroArchitectureSearch(
         var deviceInfo: TrainingDeviceInfo? = null
         var evaluatedModel: Neuro? = null
         fun result(state: ArchitectureTrialState, message: String = "") = ArchitectureTrial(seed, state, epoch, bestEpoch, best,
-            trainingAtBest, finalScore, epoch.toLong() * data.training.size, System.nanoTime() - start, history, bestSnapshot, message, deviceInfo)
-        if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
-        return try {
+            trainingAtBest, finalScore, epoch.toLong() * data.training.size, System.nanoTime() - start, history, bestSnapshot, message, deviceInfo, trialId)
+        fun finished(trial: ArchitectureTrial): ArchitectureTrial = trial.also {
+            NeuroLog.info("search", "search.trial.finished", "searchId" to searchId, "trialId" to trialId,
+                "state" to trial.state, "epochs" to epoch, "bestEpoch" to bestEpoch, "bestRmse" to best, "elapsedMs" to trial.elapsedNanos / 1_000_000)
+        }
+        if (cancelled()) return finished(result(ArchitectureTrialState.CANCELLED))
+        val trial = try {
             val model = data.newNetwork(architecture, config.hyperParameters, seed).also { evaluatedModel = it }
             fun checkPoint() {
                 val training = model.trainingError()
@@ -453,13 +479,19 @@ internal class NeuroArchitectureSearch(
                     val retained = history.filterIndexed { index, point -> index == 0 || index % 2 == 0 || index == history.lastIndex || point.epoch == bestEpoch }
                     history.clear(); history.addAll(retained)
                 }
+                NeuroLog.debug("search", "search.trial.checkpoint") { mapOf("searchId" to searchId, "trialId" to trialId,
+                    "epoch" to epoch, "trainingRmse" to training, "score" to finalScore, "bestRmse" to best) }
                 progress(epoch, best)
             }
             openSession(model, config.backend, config.precision, config.batchSize).use { session ->
                 deviceInfo = session.info
+                NeuroLog.info("search", "search.trial.backend.ready", "searchId" to searchId, "trialId" to trialId,
+                    "model" to model.logId, "session" to model.trainingSessionLogId,
+                    "effectiveBackend" to session.info.backend, "effectivePrecision" to session.info.precision,
+                    "device" to session.info.name, "deviceIdentity" to session.info.identity, "kernelVersion" to session.info.kernelVersion)
                 checkPoint()
                 while (epoch < config.maxEpochs) {
-                    if (cancelled()) return result(ArchitectureTrialState.CANCELLED)
+                    if (cancelled()) return@use result(ArchitectureTrialState.CANCELLED)
                     val training = trainConfiguredEpoch(model, session, config.batchSize)
                     epoch++
                     check(training.isFinite()) { "Training produced a non-finite RMSE." }
@@ -468,12 +500,16 @@ internal class NeuroArchitectureSearch(
                 result(ArchitectureTrialState.COMPLETED)
             }
         } catch (exception: Exception) {
+            if (exception is InterruptedException) NeuroLog.warn("search", "search.trial.interrupted", exception,
+                "searchId" to searchId, "trialId" to trialId, "epoch" to epoch)
+            else NeuroLog.error("search", "search.trial.failed", exception, "searchId" to searchId, "trialId" to trialId, "epoch" to epoch)
             // Count committed work even when cleanup throws after publishing the latest epoch.
             // Retain the last scored checkpoint; failed trials must remain disqualified.
             epoch = evaluatedModel?.statistics()?.epochsTrained?.toInt() ?: epoch
             if (exception is InterruptedException) { Thread.currentThread().interrupt(); result(ArchitectureTrialState.CANCELLED) }
             else result(ArchitectureTrialState.FAILED, exception.message ?: exception.javaClass.simpleName)
         }
+        return finished(trial)
     }
 }
 
@@ -483,9 +519,11 @@ internal class ArchitectureSearchSession {
     @Volatile private var active: Token? = null
     @Synchronized fun begin(): Token {
         active?.cancelled?.set(true)
-        return Token(++next).also { active = it }
+        return Token(++next).also { active = it; NeuroLog.debug("search", "search.token.started") { mapOf("token" to it.id) } }
     }
-    fun cancel() { active?.cancelled?.set(true) }
+    fun cancel() { active?.let {
+        if (it.cancelled.compareAndSet(false, true)) NeuroLog.info("search", "search.cancellation.requested", "token" to it.id)
+    } }
     @Synchronized fun invalidate() { cancel(); active = null }
     fun isCurrent(token: Token): Boolean = active === token
 }

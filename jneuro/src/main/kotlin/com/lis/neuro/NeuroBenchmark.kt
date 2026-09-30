@@ -3,7 +3,7 @@ package com.lis.neuro
 object NeuroBenchmark {
     @Volatile private var blackhole = 0.0
 
-    @JvmStatic fun main(args: Array<String>) {
+    @JvmStatic fun main(args: Array<String>) = NeuroLog.application("NeuroBenchmark") {
         val iterations = args.getOrNull(0)?.toInt() ?: 100_000
         val repetitions = args.getOrNull(1)?.toInt() ?: 5
         require(iterations > 0 && repetitions > 0)

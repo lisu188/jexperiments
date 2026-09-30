@@ -31,6 +31,7 @@ internal class TrialActivity {
 internal class AdaptiveTrialScheduler(
     private val data: ArchitectureSearchData,
     private val config: ArchitectureSearchConfig,
+    private val searchId: String? = null,
     private val evaluate: (NetworkArchitecture, Long, () -> Boolean, (Int, Double) -> Unit) -> ArchitectureTrial
 ) {
     fun search(onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
@@ -88,6 +89,9 @@ internal class AdaptiveTrialScheduler(
                 admissionEnd = ArchitectureTermination.MEMORY_LIMIT
                 return false
             }
+            NeuroLog.debug("search", "search.proposal.admitted") { mapOf("searchId" to searchId,
+                "topology" to architecture, "parent" to proposal.parent, "mutation" to proposal.mutation,
+                "generation" to proposal.generation, "fundedTrials" to fundedTrials + config.seeds.size) }
             retainedParameters += storage
             fundedTrials += config.seeds.size
             pending[architecture] = LinkedHashMap()
@@ -102,6 +106,9 @@ internal class AdaptiveTrialScheduler(
                 val candidate = candidate(finished.architecture, trials)
                 pending.remove(finished.architecture)
                 completed += candidate
+                NeuroLog.debug("search", "search.candidate.evaluated") { mapOf("searchId" to searchId,
+                    "topology" to candidate.architecture, "valid" to candidate.valid,
+                    "medianRmse" to candidate.medianRmse, "successfulSeeds" to candidate.successes) }
                 if (candidate.fullyEvaluated) planner.observe(candidate)
             }
         }
