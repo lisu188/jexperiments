@@ -134,5 +134,6 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-124 | SMALL search inherits precision and sigmoid, trains its full budget and replays the scored engine/device checkpoint | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
 | GUI-125 | Returning to REFERENCE CPU resets precision; incompatible SMALL/CUBLAS is rejected without changing the active run | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
 | GUI-126 | SMALL rejects unsupported hidden widths and search bounds before altering the run or starting trials | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
+| GUI-127 | Resize to a small window, reach lower advanced numeric editors, scroll them out of view and back with the mouse wheel, and apply their values | `lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow` |
 
 The CUDA/cuBLAS backend-routing GUI scenarios use an injected session provider with CPU execution and explicit fixture device metadata. They verify native controls, error recovery and resource lifecycle deterministically on CPU-only CI. The SMALL controls exercise actual CPU FP32 training, cohort search and replay. Actual CUDA execution and numerical parity are separate hardware checks in `gpuCheck`; a passing fixture scenario is not GPU acceptance.

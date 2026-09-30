@@ -377,6 +377,31 @@ class NeuroGuiTest {
         assertEquals(sessions.opened.get(), sessions.closed.get())
     }
 
+    @Test fun lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow() {
+        edt { window.setSize(1000, 700) }
+        advanced()
+        val editor = input("Batch size")
+        val scroll = edt { SwingUtilities.getAncestorOfClass(JScrollPane::class.java, editor) as JScrollPane }
+        wheel(scroll, -100)
+        await("sidebar scrolled to top") { scroll.verticalScrollBar.value == 0 }
+        assertTrue(edt { editor.visibleRect.isEmpty }, "The batch editor must begin below the smaller viewport")
+        number("Batch size", "3")
+        assertTrue(edt { scroll.verticalScrollBar.value > 0 && !editor.visibleRect.isEmpty })
+
+        wheel(scroll, -100)
+        await("native scroll hides lower settings") { scroll.verticalScrollBar.value == 0 && editor.visibleRect.isEmpty }
+        wheel(scroll, 100)
+        await("native scroll reveals batch editor") { !editor.visibleRect.isEmpty }
+        number("Batch size", "5")
+        number("Maximum epochs", "1")
+        number("Target RMSE", "0")
+        shortcut(KeyEvent.VK_ENTER)
+        await("lower editor value applied and trained") {
+            current.config.batchSize == 5 && current.diagnostics.epoch() == 1 && current.state == StudioState.LIMIT_REACHED
+        }
+        assertEquals(TrainingBackend.CPU, edt { current.deviceInfo!!.backend })
+    }
+
     @Test fun automaticBatchBackendAppliesPrecisionAndStepsOnce() {
         advanced()
         assertFalse(edt { combo("Training precision").isEnabled })
@@ -806,13 +831,27 @@ class NeuroGuiTest {
         robot.waitForIdle()
     }
     private fun text(component: JTextComponent, value: String) {
-        reveal(component); click(component)
+        click(component)
+        await("text editor visible and focused") { component.isFocusOwner && !component.visibleRect.isEmpty }
         edt { Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(value),null) }
         shortcut(KeyEvent.VK_A); shortcut(KeyEvent.VK_V)
         await("text input") { component.text == value }
     }
     private fun reveal(component: JComponent) {
-        edt { component.scrollRectToVisible(Rectangle(0,0,component.width,component.height)) }
+        edt {
+            val bounds = Rectangle(0, 0, component.width, component.height)
+            component.scrollRectToVisible(bounds)
+            // JTextField handles its own horizontal scrolling without revealing enclosing vertical views.
+            var ancestor = component.parent
+            while (ancestor != null) {
+                if (ancestor is JViewport) {
+                    (ancestor.view as? JComponent)?.let { view ->
+                        view.scrollRectToVisible(SwingUtilities.convertRectangle(component, bounds, view))
+                    }
+                }
+                ancestor = ancestor.parent
+            }
+        }
         robot.waitForIdle()
     }
     private fun click(component: Component) {
