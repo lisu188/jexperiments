@@ -152,7 +152,6 @@ internal class ArchitectureSearchPanel(
 
     fun setSource(config: StudioConfig, samples: Int) {
         if (source != config) {
-            checkEvery.value = minOf(25, config.maxEpochs)
             evaluation.selectedItem = if (config.dataset in BOOLEAN_SETS) ArchitectureEvaluation.TRAINING_FIT else ArchitectureEvaluation.VALIDATION
         }
         source = config; sourceSize = samples
