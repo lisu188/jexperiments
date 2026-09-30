@@ -18,8 +18,10 @@ class ArchitectureSearchPanelTest {
         val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
         EventQueue.invokeAndWait {
             val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
-            panel.setSource(StudioConfig(backend = TrainingBackend.CUDA), 4)
-            assertEquals(TrainingBackend.CUDA, panel.readConfig().backend)
+            panel.setSource(StudioConfig(backend = TrainingBackend.CUBLAS, precision = Neuro.TrainingPrecision.FP32, batchSize = 7), 4)
+            assertEquals(TrainingBackend.CUBLAS, panel.readConfig().backend)
+            assertEquals(Neuro.TrainingPrecision.FP32, panel.readConfig().precision)
+            assertEquals(7, panel.readConfig().batchSize)
             panel.complete(report)
             assertTrue((field(panel, "summary") as JLabel).text.contains("CUDA: CUDA fixture unavailable"))
             assertFalse(button(panel, "Replay selected run").isEnabled)

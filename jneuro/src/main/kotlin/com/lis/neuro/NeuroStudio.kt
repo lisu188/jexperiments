@@ -12,13 +12,19 @@ internal data class StudioConfig(
     val targetError: Double = 0.05,
     val learningRate: Double = 0.6,
     val momentum: Double = 0.2,
-    val backend: TrainingBackend = TrainingBackend.CPU
+    val backend: TrainingBackend = TrainingBackend.CPU,
+    val precision: Neuro.TrainingPrecision = Neuro.TrainingPrecision.FP64,
+    val batchSize: Int = 1
 ) {
     init {
         NeuroTopologyConfig.parseHidden(hidden)
         require(maxEpochs > 0) { "Epoch limit must be positive." }
         require(targetError.isFinite() && targetError >= 0.0) { "Target RMSE must be finite and non-negative." }
         Neuro.HyperParameters(learningRate, momentum, 1.0, seed)
+        require(batchSize > 0) { "Batch size must be positive." }
+        require(precision == Neuro.TrainingPrecision.FP64 || backend in setOf(TrainingBackend.CUBLAS, TrainingBackend.AUTO)) {
+            "FP32 requires CUBLAS or AUTO training."
+        }
     }
     fun topology(): IntArray = NeuroTopologyConfig.topology(NeuroTopologyConfig.parseHidden(hidden))
     fun description(): String = NeuroTopologyConfig.label(topology())
@@ -70,7 +76,8 @@ internal data class StudioFrame(
 
 internal class NeuroStudio(
     config: StudioConfig = StudioConfig(), custom: List<NeuroLearningSets.Sample> = emptyList(),
-    private val openSession: (Neuro, TrainingBackend) -> NeuroTrainingSession = { model, backend -> model.newTrainingSession(backend) }
+    private val openSession: (Neuro, TrainingBackend, Neuro.TrainingPrecision, Int) -> NeuroTrainingSession =
+        { model, backend, precision, batch -> model.newTrainingSession(backend, precision, batch) }
 ) : AutoCloseable {
     private var config = config
     private var custom = custom.toList()
@@ -193,7 +200,7 @@ internal class NeuroStudio(
         val requested = if (pendingEpochs > 0) minOf(speed, pendingEpochs) else speed
         var advanced = 0
         while (advanced < requested && canTrain() && !cancelled()) {
-            error = trainingSession().trainEpoch()
+            error = trainConfiguredEpoch(network, trainingSession(), config.batchSize)
             check(error.isFinite()) { "Training produced a non-finite RMSE. Reset with different settings." }
             epoch++
             advanced++
@@ -219,10 +226,10 @@ internal class NeuroStudio(
             val model = createNetwork(config, seed, samples)
             var trained = 0
             var rmse = model.trainingError()
-            openSession(model, config.backend).use { training ->
+            openSession(model, config.backend, config.precision, config.batchSize).use { training ->
                 while (trained < limit && rmse > config.targetError) {
                     if (cancelled()) return emptyList()
-                    rmse = training.trainEpoch()
+                    rmse = trainConfiguredEpoch(model, training, config.batchSize)
                     trained++
                 }
             }
@@ -242,7 +249,8 @@ internal class NeuroStudio(
         require(candidate.valid && report.candidates.any { it === candidate }) { "Choose a fully evaluated architecture from this search." }
         val hp = report.config.hyperParameters
         apply(config.copy(hidden = candidate.architecture.hidden.joinToString(","), maxEpochs = report.config.maxEpochs,
-            targetError = report.config.targetRmse, learningRate = hp.learningRate, momentum = hp.momentum, backend = report.config.backend))
+            targetError = report.config.targetRmse, learningRate = hp.learningRate, momentum = hp.momentum,
+            backend = report.config.backend, precision = report.config.precision, batchSize = report.config.batchSize))
     }
 
     fun replayArchitecture(report: ArchitectureSearchResult, candidate: ArchitectureCandidate, trial: ArchitectureTrial,
@@ -253,18 +261,19 @@ internal class NeuroStudio(
         close()
         val model = report.data.newNetwork(candidate.architecture, report.config.hyperParameters, trial.seed)
         val recordedDevice = requireNotNull(trial.deviceInfo) { "This trial has no recorded training backend; replay is unavailable." }
-        openSession(model, recordedDevice.backend).use { training ->
+        val recordedPrecision = Neuro.TrainingPrecision.valueOf(recordedDevice.precision)
+        openSession(model, recordedDevice.backend, recordedPrecision, report.config.batchSize).use { training ->
             check(training.info == recordedDevice) { "Replay requires the recorded training device, precision and kernel version: ${recordedDevice.name}." }
             repeat(trial.bestEpoch) {
                 if (cancelled()) return false
-                training.trainEpoch()
+                trainConfiguredEpoch(model, training, report.config.batchSize)
             }
         }
         val score = report.data.score(model)
         check(score.isFinite() && kotlin.math.abs(score - trial.bestRmse) <= 1e-10) { "Replay did not reproduce the scored checkpoint." }
         if (cancelled()) return false
         applyArchitecture(report, candidate)
-        config = config.copy(seed = trial.seed, backend = recordedDevice.backend)
+        config = config.copy(seed = trial.seed, backend = recordedDevice.backend, precision = recordedPrecision)
         deviceInfo = recordedDevice
         samples = report.data.training
         network = model
@@ -280,6 +289,9 @@ internal class NeuroStudio(
         automatic = false
         pendingEpochs = 0
         failure = message
+        // A backend may publish an epoch before reporting a native-resource cleanup failure.
+        epoch = network.statistics().epochsTrained.toInt()
+        error = network.trainingError()
         render = null
         layerImages = null
         difference = null
@@ -301,7 +313,7 @@ internal class NeuroStudio(
             history.toList(), checkpoints.toList(), seedResults, failure, replayNote, deviceInfo)
     }
 
-    private fun trainingSession(): NeuroTrainingSession = session ?: openSession(network, config.backend).also {
+    private fun trainingSession(): NeuroTrainingSession = session ?: openSession(network, config.backend, config.precision, config.batchSize).also {
         session = it
         deviceInfo = it.info
     }
@@ -370,3 +382,10 @@ internal class NeuroStudio(
         }
     }
 }
+
+/** Keep cancellation, diagnostics and momentum publication at complete-epoch boundaries for every backend. */
+internal fun trainConfiguredEpoch(model: Neuro, session: NeuroTrainingSession, batchSize: Int): Double =
+    if (batchSize == 1) session.trainEpoch() else {
+        session.trainMiniBatch(1, batchSize)
+        model.trainingError()
+    }

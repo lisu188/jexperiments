@@ -1,4 +1,5 @@
 # CUDA provenance hashes must survive Windows checkouts unchanged.
 jneuro/src/main/cuda/*.cu text eol=lf
 jneuro/src/main/resources/com/lis/neuro/cuda/* text eol=lf
+jneuro/src/main/resources/cuda/*.cu text eol=lf
 jneuro/tools/build_cuda.py text eol=lf

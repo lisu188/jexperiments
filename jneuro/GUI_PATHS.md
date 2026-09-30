@@ -118,5 +118,13 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-108 | Reject a replay on a different CUDA device while retaining scored results, selection and the paused main model | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
 | GUI-109 | Unavailable CUDA replay keeps completed search snapshots inspectable and permits retry | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
 | GUI-110 | Retry after CUDA recovers installs the recorded checkpoint and only then invalidates the completed search | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
+| GUI-111 | Select AUTO training backend and apply a custom batch size | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
+| GUI-112 | Reset after Apply and train exactly one epoch through the AUTO batch backend, reporting its resolved CPU device | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
+| GUI-113 | Select FP32 for AUTO and retain the requested precision while reporting actual CPU FP64 execution | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
+| GUI-114 | Changing to the FP64 CUDA backend resets and disables the precision editor without changing the active run | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
+| GUI-115 | Select CUBLAS with FP32 and train a configured mini-batch epoch | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-116 | Architecture search inherits CUBLAS, FP32 and batch size and records its resolved device | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-117 | Replay preserves the scored CUBLAS precision and batch size | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-118 | Reject zero batch size without changing the active model | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
 
 The backend-routing GUI scenarios use an injected session provider with CPU execution and explicit fixture device metadata. They verify native controls, error recovery and resource lifecycle deterministically on CPU-only CI. Actual CUDA execution and numerical parity are separate hardware checks in `gpuCheck`; a passing fixture scenario is not GPU acceptance.

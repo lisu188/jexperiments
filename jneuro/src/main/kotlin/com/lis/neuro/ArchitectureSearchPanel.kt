@@ -155,7 +155,7 @@ internal class ArchitectureSearchPanel(
             evaluation.selectedItem = if (config.dataset in BOOLEAN_SETS) ArchitectureEvaluation.TRAINING_FIT else ArchitectureEvaluation.VALIDATION
         }
         source = config; sourceSize = samples
-        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · ${source.backend}"
+        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · ${source.backend} · ${source.precision} · batch ${source.batchSize}"
         start.isEnabled = !running && samples > 0
     }
 
@@ -168,7 +168,7 @@ internal class ArchitectureSearchPanel(
             Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed), integer(threads), integer(trials), (seconds.value as Number).toLong(),
             strategy.selectedItem as ArchitectureSearchStrategy, NeuroTopologyConfig.parseHidden(source.hidden).toList(),
             searchSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Search seed must be an integer."),
-            integer(restartAfter), integer(restarts), source.backend)
+            integer(restartAfter), integer(restarts), source.backend, source.precision, source.batchSize)
     }
 
     private fun submit() {

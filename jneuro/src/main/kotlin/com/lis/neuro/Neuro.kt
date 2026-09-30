@@ -11,6 +11,8 @@ class Neuro @JvmOverloads constructor(
 ) {
     enum class Kernel { AUTO, SCALAR, VECTOR }
     enum class SigmoidMode { EXACT, FAST }
+    enum class BatchBackend { CPU, CUDA, AUTO }
+    enum class TrainingPrecision { FP64, FP32 }
 
     @JvmRecord
     data class HyperParameters @JvmOverloads constructor(
@@ -42,12 +44,12 @@ class Neuro @JvmOverloads constructor(
     @JvmRecord data class TrainingResult(val epochs: Int, val error: Double, val converged: Boolean)
     @JvmRecord data class Statistics(val epochsTrained: Long, val samplesSeen: Long, val lastTrainingError: Double)
 
-    private class Sample(input: DoubleArray, target: DoubleArray) {
+    internal class Sample(input: DoubleArray, target: DoubleArray) {
         val input = input.copyOf()
         val target = target.copyOf()
     }
 
-    private class PackedDataset(samples: List<Sample>, val inputSize: Int, val outputSize: Int) {
+    internal class PackedDataset(samples: List<Sample>, val inputSize: Int, val outputSize: Int) {
         val size = samples.size
         val inputs = DoubleArray(size * inputSize)
         val targets = DoubleArray(size * outputSize)
@@ -59,7 +61,7 @@ class Neuro @JvmOverloads constructor(
         }
     }
 
-    private class Layer(val inputs: Int, val outputs: Int, random: SplittableRandom) {
+    internal class Layer(val inputs: Int, val outputs: Int, random: SplittableRandom) {
         val weights = DoubleArray(inputs * outputs)
         val biases = DoubleArray(outputs)
         val weightVelocity = DoubleArray(weights.size)
@@ -256,8 +258,26 @@ class Neuro @JvmOverloads constructor(
     internal fun backendBiases(layer: Int) = layers[layer].biases.copyOf()
 
     @JvmOverloads
-    fun newTrainingSession(backend: TrainingBackend = TrainingBackend.CPU): NeuroTrainingSession =
-        openTrainingSession(this, backend)
+    fun newTrainingSession(backend: TrainingBackend = TrainingBackend.CPU,
+                           precision: TrainingPrecision = TrainingPrecision.FP64,
+                           batchSize: Int = 1): NeuroTrainingSession =
+        openConfiguredTrainingSession(this, backend, precision, batchSize)
+
+    internal fun backendWeightVelocity(layer: Int) = layers[layer].weightVelocity.copyOf()
+    internal fun backendBiasVelocity(layer: Int) = layers[layer].biasVelocity.copyOf()
+    internal fun backendLayers(): Array<Layer> = layers
+    internal fun backendTrainingData(): PackedDataset = trainingData()
+    internal fun backendNextTrainingOrder(size: Int): IntArray {
+        require(size == trainingSamples.size)
+        return deviceTrainingOrder()
+    }
+    internal fun backendCompleteEpoch(sampleCount: Int) {
+        checkTrainingAccess()
+        require(sampleCount == trainingSamples.size)
+        pendingDeviceOrder = null
+        samplesSeen += sampleCount
+        epochsTrained++
+    }
 
     internal fun exportTrainingState(): NeuroTrainingState {
         val data = trainingData()
@@ -375,6 +395,25 @@ class Neuro @JvmOverloads constructor(
             repeat(epochs) { trainMiniBatchEpoch(data, batchSize, parallelism, pool, workers) }
         } finally {
             pool?.shutdown()
+        }
+        lastTrainingError = error(data, trainingWorkspace)
+    }
+    /** Explicit matrix-training API. The original two/three-argument overload retains its CPU implementation. */
+    @Synchronized @JvmOverloads
+    fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int, backend: BatchBackend,
+                       precision: TrainingPrecision = TrainingPrecision.FP64) {
+        checkTrainingAccess()
+        require(epochs >= 0) { "epochs must be >= 0" }
+        require(batchSize > 0) { "batchSize must be > 0" }
+        require(parallelism > 0) { "parallelism must be > 0" }
+        if (epochs == 0) return
+        requireTrainingSamples()
+        val data = trainingData()
+        val effectiveBatch = minOf(batchSize, data.size)
+        when (NeuroCuda.resolveBackend(backend, topology, effectiveBatch)) {
+            BatchBackend.CPU -> NeuroCpuBatchTrainer.train(this, data, epochs, effectiveBatch, parallelism)
+            BatchBackend.CUDA -> NeuroCudaBatchBackend.train(this, data, epochs, effectiveBatch, precision)
+            BatchBackend.AUTO -> error("AUTO backend must resolve before training")
         }
         lastTrainingError = error(data, trainingWorkspace)
     }

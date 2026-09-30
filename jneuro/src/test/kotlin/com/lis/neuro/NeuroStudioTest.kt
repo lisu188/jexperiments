@@ -52,6 +52,37 @@ class NeuroStudioTest {
         }
     }
 
+    @Test fun failureAfterCommittedEpochReportsItsActualParametersErrorAndEpoch() {
+        for ((backend, batch) in listOf(TrainingBackend.CUDA to 1, TrainingBackend.CUBLAS to 3)) {
+            val sessions = RecordingTrainingSessions().apply { failAfterCommit = true }
+            lateinit var model: Neuro
+            val config = StudioConfig(backend = backend, batchSize = batch, targetError = 0.0)
+            NeuroStudio(config, openSession = { network, selected, precision, batchSize ->
+                model = network
+                sessions.open(network, selected, precision, batchSize)
+            }).use { studio ->
+                val initial = studio.frame()
+                studio.step(1)
+                val failure = assertThrows(IllegalStateException::class.java) { studio.advance() }
+                assertEquals(1L, model.statistics().epochsTrained)
+                assertEquals(4L, model.statistics().samplesSeen)
+                val committed = NeuroXorDiagnostics.capture(model, 1, model.trainingError())
+                studio.fail(failure.message!!)
+                val failed = studio.frame()
+                assertEquals(StudioState.FAILED, failed.state)
+                assertFalse(studio.hasWork)
+                assertEquals(1, studio.epochs)
+                assertEquals(1, failed.diagnostics.epoch())
+                assertEquals(committed.error(), failed.diagnostics.error(), 0.0)
+                assertArrayEquals(committed.parameters(), failed.diagnostics.parameters(), 0.0)
+                assertFalse(initial.diagnostics.parameters().contentEquals(failed.diagnostics.parameters()))
+                assertEquals(1, failed.history.last().epoch)
+                assertTrue(failed.message.contains("cleanup after committed epoch"))
+                assertEquals(1, sessions.closed.get())
+            }
+        }
+    }
+
     @Test fun failedBackendCleanupStillAllowsConfigurationRecovery() {
         val sessions = RecordingTrainingSessions()
         NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->
@@ -181,10 +212,60 @@ class NeuroStudioTest {
         assertEquals(1.0, history.parameter(0)); assertEquals(0.0, history.prediction(0)); assertEquals(2.0, history.norm(0))
     }
 
+    @Test fun configuredMiniBatchesKeepEpochBoundariesAndReachSeedStudies() {
+        val sessions = RecordingTrainingSessions()
+        val config = StudioConfig("2", maxEpochs = 8, targetError = 0.0,
+            backend = TrainingBackend.CUBLAS, precision = Neuro.TrainingPrecision.FP32, batchSize = 3)
+        val expected = Neuro(config.topology(), Neuro.HyperParameters(config.learningRate, config.momentum, 1.0, config.seed))
+        NeuroLearningSets.addTo(expected, NeuroLearningSets.create(config.dataset, 0xC0FFEE42L).toList())
+        NeuroStudio(config, openSession = sessions::open).use { studio ->
+            studio.step(4)
+            assertEquals(4, studio.advance(10))
+            expected.trainMiniBatch(4, 3)
+            assertEquals(4, studio.epochs)
+            assertEquals(expected.trainingError(), studio.currentError, 0.0)
+            assertArrayEquals(NeuroXorDiagnostics.capture(expected, 4, expected.trainingError()).parameters(),
+                studio.frame().diagnostics.parameters(), 0.0)
+            assertEquals(TrainingBackend.CUBLAS, studio.frame().deviceInfo!!.backend)
+            assertEquals("FP32", studio.frame().deviceInfo!!.precision)
+            studio.setRunning(true)
+            var checks = 0
+            assertEquals(1, studio.advance(4) { ++checks > 2 })
+            assertEquals(5, studio.epochs)
+            studio.setRunning(false)
+            assertEquals(0, studio.advance())
+            val before = studio.frame().diagnostics.parameters()
+            assertEquals(4, studio.compareSeeds(2).size)
+            assertArrayEquals(before, studio.frame().diagnostics.parameters())
+            assertEquals(13, sessions.miniBatches.size)
+            assertTrue(sessions.miniBatches.all { it == 3 })
+            assertTrue(sessions.configurations.all { it == Triple(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32, 3) })
+        }
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+    }
+
+    @Test fun configuredBatchBackendAdvancesThroughMatrixTrainer() {
+        val config = StudioConfig("6", maxEpochs = 20, targetError = 0.0,
+            backend = TrainingBackend.AUTO, batchSize = 7,
+            precision = Neuro.TrainingPrecision.FP32)
+        val studio = NeuroStudio(config)
+        val before = studio.currentError
+        studio.step(4)
+        assertEquals(4, studio.advance(10))
+        assertEquals(4, studio.epochs)
+        assertEquals(TrainingBackend.AUTO, studio.frame().config.backend)
+        assertEquals(7, studio.frame().config.batchSize)
+        assertEquals(Neuro.TrainingPrecision.FP32, studio.frame().config.precision)
+        assertTrue(studio.currentError.isFinite())
+        assertTrue(studio.currentError < before)
+    }
+
     @Test fun validatesConfigurationCommandsAndDiffRendering() {
         for (config in listOf<() -> StudioConfig>(
             { StudioConfig("2,") }, { StudioConfig(maxEpochs = 0) }, { StudioConfig(targetError = -1.0) },
-            { StudioConfig(targetError = Double.NaN) }, { StudioConfig(learningRate = 0.0) }, { StudioConfig(momentum = 1.0) }))
+            { StudioConfig(targetError = Double.NaN) }, { StudioConfig(learningRate = 0.0) }, { StudioConfig(momentum = 1.0) },
+            { StudioConfig(batchSize = 0) }, { StudioConfig(precision = Neuro.TrainingPrecision.FP32) },
+            { StudioConfig(backend = TrainingBackend.CUDA, precision = Neuro.TrainingPrecision.FP32) }))
             assertThrows(IllegalArgumentException::class.java) { config() }
         val studio = NeuroStudio()
         assertThrows(IllegalArgumentException::class.java) { studio.step(0) }

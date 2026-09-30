@@ -241,6 +241,79 @@ class NeuroGuiTest {
         }
     }
 
+    @Test fun cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize() {
+        val sessions = RecordingTrainingSessions()
+        edt { ui.trainingSessionFactory = sessions::open }
+        choose(combo("Training backend"), TrainingBackend.CUBLAS.ordinal)
+        advanced()
+        choose(combo("GPU precision"), Neuro.TrainingPrecision.FP32.ordinal)
+        number("Batch size", "3")
+        configure("2", 25, 0.0)
+        click(button("1 epoch"))
+        await("CUBLAS FP32 mini-batch epoch") {
+            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUBLAS
+        }
+        assertEquals("FP32", edt { current.deviceInfo!!.precision })
+        assertEquals(3, sessions.miniBatches.last())
+        number("Batch size", "0")
+        shortcut(KeyEvent.VK_ENTER)
+        await("invalid batch size rejected") { errorText().contains("Batch size must be positive") }
+        assertEquals(3, edt { current.config.batchSize })
+        assertEquals(1, edt { current.diagnostics.epoch() })
+        number("Batch size", "3")
+        tab("Architecture search"); searchSettings(25)
+        number("Target RMSE", "0", panel)
+        val searchConfig = edt { panel.readConfig() }
+        assertEquals(TrainingBackend.CUBLAS, searchConfig.backend)
+        assertEquals(Neuro.TrainingPrecision.FP32, searchConfig.precision)
+        assertEquals(3, searchConfig.batchSize)
+        click(button("Start search")); await("CUBLAS batch search completed") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertTrue(report.candidates.all { candidate -> candidate.valid && candidate.trials.all {
+            it.deviceInfo?.backend == TrainingBackend.CUBLAS && it.deviceInfo.precision == "FP32"
+        } })
+        val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
+        click(button("Replay selected run"))
+        await("CUBLAS batch replay installed") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
+        assertEquals(TrainingBackend.CUBLAS, edt { current.config.backend })
+        assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
+        assertEquals(3, edt { current.config.batchSize })
+        assertEquals(trial.deviceInfo, edt { current.deviceInfo })
+        assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
+        assertTrue(sessions.configurations.all { it == Triple(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32, 3) })
+        assertTrue(sessions.miniBatches.all { it == 3 })
+        assertEquals(sessions.opened.get(), sessions.closed.get())
+    }
+
+    @Test fun automaticBatchBackendAppliesPrecisionAndStepsOnce() {
+        advanced()
+        assertFalse(edt { combo("GPU precision").isEnabled })
+        choose(combo("Training backend"), TrainingBackend.AUTO.ordinal)
+        assertTrue(edt { combo("GPU precision").isEnabled })
+        choose(combo("GPU precision"), Neuro.TrainingPrecision.FP32.ordinal)
+        number("Batch size", "7")
+        number("Maximum epochs", "20")
+        number("Target RMSE", "0")
+        shortcut(KeyEvent.VK_ENTER)
+        await("training backend applied") {
+            current.config.backend == TrainingBackend.AUTO &&
+                current.config.precision == Neuro.TrainingPrecision.FP32 && current.config.batchSize == 7
+        }
+        // Apply starts training; reset explicitly before the one-epoch assertion.
+        click(button("Reset"))
+        await("AUTO batch model reset") { current.state == StudioState.READY && current.diagnostics.epoch() == 0 }
+        click(button("1 epoch"))
+        await("auto backend training") { current.diagnostics.epoch() == 1 && current.diagnostics.error().isFinite() }
+        assertEquals(TrainingBackend.CPU, edt { current.deviceInfo!!.backend })
+        assertEquals("FP64", edt { current.deviceInfo!!.precision })
+        assertEquals(7, edt { current.config.batchSize })
+        assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
+        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        assertFalse(edt { combo("GPU precision").isEnabled })
+        assertEquals(Neuro.TrainingPrecision.FP64, edt { combo("GPU precision").selectedItem })
+        assertEquals(TrainingBackend.AUTO, edt { current.config.backend })
+    }
+
     @Test fun searchInputsAcceptValuesBeyondOldCaps() {
         tab("Architecture search")
         click(button("Advanced search settings"))
