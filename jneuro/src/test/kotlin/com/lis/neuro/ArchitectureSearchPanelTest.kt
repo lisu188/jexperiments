@@ -61,8 +61,10 @@ class ArchitectureSearchPanelTest {
             (field(panel, "evaluation") as JComboBox<*>).selectedItem = ArchitectureEvaluation.VALIDATION
             button(panel, "Start search").doClick()
             assertTrue((field(panel, "summary") as JLabel).text.contains("Truth tables"))
-            panel.setSource(StudioConfig(dataset = NeuroLearningSets.Kind.CIRCLE, maxEpochs = 100), 180)
+            panel.setSource(StudioConfig(dataset = NeuroLearningSets.Kind.CIRCLE, maxEpochs = 1), 180)
             assertEquals(100_000, panel.readConfig().maxEpochs)
+            assertEquals(25, panel.readConfig().checkEvery)
+            assertEquals(0.001, panel.readConfig().targetRmse)
             val advanced = descendants(panel).filterIsInstance<JCheckBox>().single()
             advanced.doClick(); render(panel, 1020, 1100); advanced.doClick()
             panel.invalidateResults(); render(panel, 800, 650)
