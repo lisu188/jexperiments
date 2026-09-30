@@ -37,6 +37,7 @@ internal class NeuroCudaDriver private constructor(
             if (closed) return
             closed = true
             checkStatus(NeuroNativeLibrary.invokeInt(moduleUnloadHandle, handle), "cuModuleUnload")
+            NeuroLog.debug("cuda", "module.unloaded") { mapOf("library" to libraryName) }
         }
     }
 
@@ -55,6 +56,7 @@ internal class NeuroCudaDriver private constructor(
         MemorySegment.copy(ptx, 0, image, ValueLayout.JAVA_BYTE, 0L, ptx.size)
         val out = local.allocate(ValueLayout.ADDRESS)
         checkStatus(NeuroNativeLibrary.invokeInt(moduleLoadHandle, out, image), "cuModuleLoadData")
+        NeuroLog.debug("cuda", "module.loaded") { mapOf("library" to libraryName, "ptxBytes" to ptx.size) }
         Module(out.get(ValueLayout.ADDRESS, 0L))
     }
 
@@ -63,6 +65,8 @@ internal class NeuroCudaDriver private constructor(
         if (elements == 0) return
         val block = 256
         val grid = ((elements.toLong() + block - 1) / block).toInt()
+        NeuroLog.trace("cuda", "kernel.grid.submitted") { mapOf("workItems" to elements, "grid" to grid,
+            "block" to block, "arguments" to arguments.size, "stream" to "default") }
         Arena.ofConfined().use { local ->
             val params = local.allocate(ValueLayout.ADDRESS, arguments.size.toLong())
             for (index in arguments.indices) {
@@ -86,7 +90,7 @@ internal class NeuroCudaDriver private constructor(
     }
 
     private fun checkStatus(status: Int, operation: String) {
-        check(status == 0) { operation + " failed with CUDA driver status " + status }
+        NeuroNativeLibrary.checkStatus(status, operation, "cuda") { operation + " failed with CUDA driver status " + status }
     }
 
     companion object {
@@ -104,7 +108,7 @@ internal class NeuroCudaDriver private constructor(
                 val init = NeuroNativeLibrary.downcall(loaded, "cuInit",
                     FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT))
                 val initStatus = NeuroNativeLibrary.invokeInt(init, 0)
-                check(initStatus == 0) { "cuInit failed with status " + initStatus }
+                NeuroNativeLibrary.checkStatus(initStatus, "cuInit", "cuda") { "cuInit failed with status " + initStatus }
                 NeuroCudaDriver(
                     arena, loaded.name,
                     NeuroNativeLibrary.downcall(loaded, "cuDeviceGet",
@@ -124,9 +128,11 @@ internal class NeuroCudaDriver private constructor(
                             ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.ADDRESS))
                 )
             } catch (exception: RuntimeException) {
+                NeuroLog.debug("cuda", "adapter.unavailable") { mapOf("adapter" to "NeuroCudaDriver", "reason" to exception.message) }
                 arena.close()
                 null
             } catch (exception: UnsatisfiedLinkError) {
+                NeuroLog.debug("cuda", "adapter.unavailable") { mapOf("adapter" to "NeuroCudaDriver", "reason" to exception.message) }
                 arena.close()
                 null
             }

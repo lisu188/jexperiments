@@ -20,6 +20,7 @@ internal object NeuroCpuBatchTrainer {
         val pool = if (parallelism > 1) ForkJoinPool(parallelism) else null
         try {
             repeat(epochs) {
+                val started = System.nanoTime()
                 val order = network.backendNextTrainingOrder(data.size)
                 var start = 0
                 while (start < data.size) {
@@ -31,6 +32,7 @@ internal object NeuroCpuBatchTrainer {
                     start += count
                 }
                 network.backendCompleteEpoch(data.size)
+                network.logCpuEpochCompleted(started, batchSize)
             }
         } finally {
             pool?.shutdown()

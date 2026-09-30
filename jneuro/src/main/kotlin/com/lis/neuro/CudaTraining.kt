@@ -15,6 +15,7 @@ internal interface CudaDriver : AutoCloseable {
 
 internal class CudaTraining(private val network: Neuro, private val state: NeuroTrainingState, private val driver: CudaDriver) : AutoCloseable {
     val info: TrainingDeviceInfo get() = driver.info
+    private val logId = NeuroLog.id("cuda")
     private val shape = state.topology
     private val hp = network.hyperParameters()
     private val allocations = ArrayList<Long>()
@@ -49,6 +50,7 @@ internal class CudaTraining(private val network: Neuro, private val state: Neuro
                 biasVelocities[layer] = doubles(state.biasVelocity[layer])
             }
         } catch (failure: Throwable) {
+            NeuroLog.error("cuda", "training.initialization.failed", failure, "training" to logId, "model" to network.logId)
             try { close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
             throw failure
         }
@@ -57,6 +59,8 @@ internal class CudaTraining(private val network: Neuro, private val state: Neuro
     private fun reserve(bytes: Long) {
         CudaMemoryBudget.acquire(info.identity, bytes, driver.availableMemory())
         reservation += bytes
+        NeuroLog.debug("cuda", "memory.reserved") { mapOf("training" to logId, "model" to network.logId,
+            "session" to network.trainingSessionLogId, "bytes" to bytes, "reservedBytes" to reservation) }
     }
 
     private fun allocate(bytes: Long, temporary: Boolean = false): Long =
@@ -68,6 +72,7 @@ internal class CudaTraining(private val network: Neuro, private val state: Neuro
 
     private fun ensureCapacity(requested: Int) {
         if (requested <= capacity) return
+        NeuroLog.debug("cuda", "workspace.growing") { mapOf("training" to logId, "oldCapacity" to capacity, "newCapacity" to requested) }
         driver.synchronize()
         // Reserve only the growth; free the old workspace before allocating its replacement.
         val elements = shape.sumOf { it.toLong() } + shape.drop(1).sumOf { it.toLong() } + shape.last()
@@ -80,10 +85,14 @@ internal class CudaTraining(private val network: Neuro, private val state: Neuro
         deltas = LongArray(weights.size) { allocate(requested.toLong() * shape[it + 1] * 8L, true) }
         batchTargets = allocate(requested.toLong() * shape.last() * 8L, true)
         capacity = requested
+        NeuroLog.debug("cuda", "workspace.ready") { mapOf("training" to logId, "capacity" to capacity, "allocations" to workspace.size) }
     }
 
     fun epoch(batchSize: Int, online: Boolean): Double {
         check(state.samples > 0) { "no training samples" }
+        NeuroLog.trace("cuda", "epoch.submitted") { mapOf("training" to logId, "model" to network.logId,
+            "session" to network.trainingSessionLogId, "samples" to state.samples, "batchSize" to batchSize, "online" to online,
+            "topology" to shape.joinToString("x")) }
         ensureCapacity(minOf(batchSize, state.samples))
         driver.upload(order, network.deviceTrainingOrder())
         var start = 0
@@ -115,7 +124,10 @@ internal class CudaTraining(private val network: Neuro, private val state: Neuro
             driver.download(velocities[layer], state.weightVelocity[layer])
             driver.download(biasVelocities[layer], state.biasVelocity[layer])
         }
-        return network.commitDeviceEpoch(state)
+        val error = network.commitDeviceEpoch(state)
+        NeuroLog.debug("cuda", "epoch.published") { mapOf("training" to logId, "model" to network.logId,
+            "session" to network.trainingSessionLogId, "error" to error, "samples" to state.samples) }
+        return error
     }
 
     override fun close() {
@@ -124,6 +136,7 @@ internal class CudaTraining(private val network: Neuro, private val state: Neuro
         var failure: Throwable? = null
         fun cleanup(action: () -> Unit) {
             try { action() } catch (exception: Throwable) {
+                NeuroLog.error("cuda", "training.cleanup.failed", exception, "training" to logId, "model" to network.logId)
                 if (failure == null) failure = exception else failure.addSuppressed(exception)
             }
         }
@@ -131,6 +144,7 @@ internal class CudaTraining(private val network: Neuro, private val state: Neuro
         for (pointer in (allocations + workspace).reversed()) cleanup { driver.free(pointer) }
         cleanup { driver.close() }
         CudaMemoryBudget.release(info.identity, reservation)
+        NeuroLog.debug("cuda", "memory.released") { mapOf("training" to logId, "bytes" to reservation) }
         failure?.let { throw it }
     }
 }
@@ -143,7 +157,14 @@ internal object CudaMemoryBudget {
         require(bytes >= 0) { "Negative CUDA allocation." }
         val held = reserved[device] ?: 0L
         val limit = limits.getOrPut(device) { free - free / 5 }
-        check(bytes <= free - free / 5 && bytes <= limit - held) { "Insufficient CUDA memory; reduce batch size, topology, or search parallelism." }
+        if (bytes > free - free / 5 || bytes > limit - held) {
+            val failure = IllegalStateException("Insufficient CUDA memory; reduce batch size, topology, or search parallelism.")
+            NeuroLog.error("cuda", "memory.admission.failed", failure, "device" to device, "requestedBytes" to bytes,
+                "freeBytes" to free, "heldBytes" to held, "limitBytes" to limit)
+            throw failure
+        }
+        NeuroLog.debug("cuda", "memory.admitted") { mapOf("device" to device, "requestedBytes" to bytes,
+            "freeBytes" to free, "heldBytes" to held, "limitBytes" to limit) }
         reserved[device] = Math.addExact(held, bytes)
     }
     @Synchronized fun release(device: String, bytes: Long) {

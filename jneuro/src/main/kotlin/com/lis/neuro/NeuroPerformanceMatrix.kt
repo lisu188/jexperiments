@@ -1,7 +1,7 @@
 package com.lis.neuro
 
 object NeuroPerformanceMatrix {
-    @JvmStatic fun main(args: Array<String>) {
+    @JvmStatic fun main(args: Array<String>) = NeuroLog.application("NeuroPerformanceMatrix") {
         val iterations = args.getOrNull(0)?.toInt() ?: 20_000
         val trainingEpochs = args.getOrNull(1)?.toInt() ?: 20
         require(iterations > 0 && trainingEpochs > 0)

@@ -102,16 +102,25 @@ class Neuro @JvmOverloads constructor(
     }
 
     inner class InferenceSession internal constructor() {
+        private val inferenceId = NeuroLog.id("inference")
         private val workspace = Workspace(this@Neuro.topology)
         private val batchWorkspace = BatchWorkspace(this@Neuro.topology)
+        init {
+            NeuroLog.debug("inference", "inference.session.opened") { mapOf("model" to logId,
+                "inference" to inferenceId, "backend" to "CPU", "precision" to "FP64") }
+        }
         fun predictInto(input: DoubleArray, output: DoubleArray) {
             validatePrediction(input, output)
             forward(input, 0, workspace, output, 0)
+            NeuroLog.trace("inference", "inference.completed") { mapOf("model" to logId,
+                "inference" to inferenceId, "batchSize" to 1, "outputs" to output.size) }
         }
         fun predictBatch(inputs: DoubleArray, batchSize: Int, outputs: DoubleArray) {
             validateBatch(inputs, batchSize, outputs)
             batchWorkspace.ensureCapacity(batchSize)
             forwardBatch(inputs, batchSize, outputs, batchWorkspace)
+            NeuroLog.trace("inference", "inference.completed") { mapOf("model" to logId,
+                "inference" to inferenceId, "batchSize" to batchSize, "outputWidth" to topology.last()) }
         }
         internal fun predictSlice(inputs: DoubleArray, start: Int, end: Int, outputs: DoubleArray) {
             for (sample in start until end) {
@@ -121,12 +130,15 @@ class Neuro @JvmOverloads constructor(
     }
 
     inner class ParallelInferenceSession internal constructor(private val parallelism: Int) : AutoCloseable {
+        private val inferenceId = NeuroLog.id("parallel-inference")
         private val pool: ForkJoinPool
         private val sessions: Array<InferenceSession>
         init {
             require(parallelism > 0) { "parallelism must be > 0" }
             pool = ForkJoinPool(parallelism)
             sessions = Array(parallelism) { newInferenceSession() }
+            NeuroLog.debug("inference", "inference.parallel.opened") { mapOf("model" to logId,
+                "inference" to inferenceId, "parallelism" to parallelism) }
         }
         fun predictBatch(inputs: DoubleArray, batchSize: Int, outputs: DoubleArray) {
             validateBatch(inputs, batchSize, outputs)
@@ -138,8 +150,14 @@ class Neuro @JvmOverloads constructor(
                 pool.submit { sessions[worker].predictSlice(inputs, start, end, outputs) }
             }
             await(futures)
+            NeuroLog.trace("inference", "inference.parallel.completed") { mapOf("model" to logId,
+                "inference" to inferenceId, "batchSize" to batchSize, "workers" to workerCount) }
         }
-        override fun close() = pool.shutdown()
+        override fun close() {
+            pool.shutdown()
+            NeuroLog.debug("inference", "inference.parallel.closed") { mapOf("model" to logId,
+                "inference" to inferenceId) }
+        }
     }
 
     class FloatModel internal constructor(source: Neuro) {
@@ -196,6 +214,7 @@ class Neuro @JvmOverloads constructor(
         }
     }
 
+    internal val logId = NeuroLog.id("model")
     private val topology = validateTopology(topology)
     private val initializationRandom = SplittableRandom(hyperParameters.seed)
     private val layers = Array(this.topology.size - 1) {
@@ -217,8 +236,18 @@ class Neuro @JvmOverloads constructor(
     private var samplesSeen = 0L
     private var lastTrainingError = Double.NaN
     private var trainingOwner: Any? = null
+    internal var trainingSessionLogId: String? = null
+        private set
     private var ownerAccess = false
     private var pendingDeviceOrder: IntArray? = null
+
+    init {
+        NeuroLog.debug("model", "model.created") { mapOf("model" to logId,
+            "topology" to this.topology.joinToString("x"), "parameters" to parameterCount(),
+            "learningRate" to learningRate, "momentum" to momentum, "beta" to beta,
+            "seed" to hyperParameters.seed, "kernel" to hyperParameters.kernel,
+            "sigmoid" to hyperParameters.sigmoidMode) }
+    }
 
     constructor(topology: IntArray, momentum: Double, beta: Double, learningRate: Double) :
         this(topology, HyperParameters(learningRate, momentum, beta, DEFAULT_SEED))
@@ -235,6 +264,8 @@ class Neuro @JvmOverloads constructor(
         trainingSamples.add(Sample(input, target))
         packedTraining = null
         pendingDeviceOrder = null
+        NeuroLog.trace("model", "dataset.sample.added") { mapOf("model" to logId,
+            "dataset" to "training", "samples" to trainingSamples.size) }
         return this
     }
     @Synchronized fun addTestSample(input: DoubleArray, target: DoubleArray): Neuro {
@@ -242,6 +273,8 @@ class Neuro @JvmOverloads constructor(
         validateSample(input, target)
         testSamples.add(Sample(input, target))
         packedTests = null
+        NeuroLog.trace("model", "dataset.sample.added") { mapOf("model" to logId,
+            "dataset" to "test", "samples" to testSamples.size) }
         return this
     }
     fun predict(input: DoubleArray): DoubleArray = DoubleArray(topology.last()).also { predictInto(input, it) }
@@ -253,7 +286,10 @@ class Neuro @JvmOverloads constructor(
         newParallelInferenceSession(parallelism).use { it.predictBatch(inputs, batchSize, outputs) }
     }
     fun newParallelInferenceSession(parallelism: Int) = ParallelInferenceSession(parallelism)
-    fun toFloatModel() = FloatModel(this)
+    fun toFloatModel() = FloatModel(this).also {
+        NeuroLog.debug("inference", "inference.float.exported") { mapOf("model" to logId,
+            "precision" to "FP32", "parameters" to parameterCount(), "epoch" to epochsTrained) }
+    }
     internal fun backendWeights(layer: Int) = layers[layer].weights.copyOf()
     internal fun backendBiases(layer: Int) = layers[layer].biases.copyOf()
 
@@ -286,32 +322,53 @@ class Neuro @JvmOverloads constructor(
             Array(layers.size) { layers[it].biasVelocity.copyOf() }, data.inputs.copyOf(), data.targets.copyOf())
     }
 
-    @Synchronized internal fun acquireTraining(owner: Any) {
-        check(trainingOwner == null) { "This model already has a training session. Close it before opening another." }
+    @Synchronized internal fun acquireTraining(owner: Any, sessionId: String? = null) {
+        check(trainingOwner == null) {
+            logOwnershipRejection("acquire", sessionId)
+            "This model already has a training session. Close it before opening another."
+        }
         trainingOwner = owner
+        trainingSessionLogId = sessionId
     }
 
     @Synchronized internal fun releaseTraining(owner: Any) {
-        check(trainingOwner === owner) { "Training session does not own this model." }
+        check(trainingOwner === owner) {
+            logOwnershipRejection("release")
+            "Training session does not own this model."
+        }
         trainingOwner = null
+        trainingSessionLogId = null
     }
 
     @Synchronized internal fun <T> withTraining(owner: Any, action: () -> T): T {
-        check(trainingOwner === owner) { "Training session does not own this model." }
+        check(trainingOwner === owner) {
+            logOwnershipRejection("use")
+            "Training session does not own this model."
+        }
         ownerAccess = true
         try { return action() } finally { ownerAccess = false }
     }
 
     private fun checkTrainingAccess() {
         check(trainingOwner == null || ownerAccess && Thread.holdsLock(this)) {
+            logOwnershipRejection("mutate")
             "This model belongs to a training session. Use or close that session before modifying it."
         }
+    }
+
+    private fun logOwnershipRejection(operation: String, requestedSession: String? = null) {
+        NeuroLog.warn("training", "training.ownership.rejected", null, "model" to logId,
+            "session" to trainingSessionLogId, "requestedSession" to requestedSession, "operation" to operation)
     }
 
     internal fun deviceTrainingOrder(): IntArray {
         checkTrainingAccess()
         requireTrainingSamples()
-        pendingDeviceOrder?.let { return it.copyOf() }
+        pendingDeviceOrder?.let {
+            NeuroLog.debug("training", "training.shuffle.resumed") { mapOf("model" to logId,
+                "session" to trainingSessionLogId, "samples" to it.size, "completedEpochs" to epochsTrained) }
+            return it.copyOf()
+        }
         ensureTrainingOrder(trainingSamples.size)
         shuffleTrainingOrder()
         pendingDeviceOrder = trainingOrder.copyOf()
@@ -341,21 +398,22 @@ class Neuro @JvmOverloads constructor(
         return lastTrainingError
     }
 
-    @Synchronized fun trainEpoch(): Double {
+    @Synchronized fun trainEpoch(): Double = logDirectTraining("trainEpoch", 1) {
         checkTrainingAccess()
         requireTrainingSamples()
-        return trainOnlineEpoch(trainingData(), true)
+        trainOnlineEpoch(trainingData(), true)
     }
-    @Synchronized fun train(epochs: Int) {
+    @Synchronized fun train(epochs: Int): Unit = logDirectTraining("train", epochs) {
         checkTrainingAccess()
         require(epochs >= 0) { "epochs must be >= 0" }
-        if (epochs == 0) return
+        if (epochs == 0) return@logDirectTraining
         requireTrainingSamples()
         val data = trainingData()
         repeat(epochs - 1) { trainOnlineEpoch(data, false) }
         trainOnlineEpoch(data, true)
     }
-    @Synchronized @JvmOverloads fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int = 1): TrainingResult {
+    @Synchronized @JvmOverloads fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int = 1): TrainingResult = logDirectTraining("trainUntil", maxEpochs,
+        details = mapOf("targetError" to targetError, "checkEvery" to checkEvery)) {
         checkTrainingAccess()
         require(targetError >= 0.0 && targetError.isFinite()) { "targetError must be finite and >= 0" }
         require(maxEpochs >= 0) { "maxEpochs must be >= 0" }
@@ -365,7 +423,7 @@ class Neuro @JvmOverloads constructor(
         var error = error(data, trainingWorkspace)
         if (error <= targetError) {
             lastTrainingError = error
-            return TrainingResult(0, error, true)
+            return@logDirectTraining TrainingResult(0, error, true)
         }
         val event = NeuroJfr.trainingRun(targetError, maxEpochs)
         var epochs = 0
@@ -379,14 +437,15 @@ class Neuro @JvmOverloads constructor(
         }
         val converged = error <= targetError
         NeuroJfr.commitTrainingRun(event, epochs, error, converged)
-        return TrainingResult(epochs, error, converged)
+        return@logDirectTraining TrainingResult(epochs, error, converged)
     }
-    @Synchronized @JvmOverloads fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int = 1) {
+    @Synchronized @JvmOverloads fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int = 1): Unit =
+        logDirectTraining("trainMiniBatch", epochs, batchSize, parallelism) {
         checkTrainingAccess()
         require(epochs >= 0) { "epochs must be >= 0" }
         require(batchSize > 0) { "batchSize must be > 0" }
         require(parallelism > 0) { "parallelism must be > 0" }
-        if (epochs == 0) return
+        if (epochs == 0) return@logDirectTraining
         requireTrainingSamples()
         val data = trainingData()
         val pool = if (parallelism > 1) ForkJoinPool(parallelism) else null
@@ -410,19 +469,38 @@ class Neuro @JvmOverloads constructor(
         requireTrainingSamples()
         val data = trainingData()
         val effectiveBatch = minOf(batchSize, data.size)
-        when (NeuroCuda.resolveBackend(backend, topology, effectiveBatch)) {
-            BatchBackend.CPU -> NeuroCpuBatchTrainer.train(this, data, epochs, effectiveBatch, parallelism)
-            BatchBackend.CUDA -> NeuroCudaBatchBackend.train(this, data, epochs, effectiveBatch, precision)
-            BatchBackend.AUTO -> error("AUTO backend must resolve before training")
+        val resolved = NeuroCuda.resolveBackend(backend, topology, effectiveBatch)
+        NeuroLog.debug("training", "training.batch.resolved") { mapOf("model" to logId,
+            "session" to trainingSessionLogId, "requestedBackend" to backend, "backend" to resolved,
+            "requestedPrecision" to precision, "precision" to if (resolved == BatchBackend.CPU) "FP64" else precision.name,
+            "requestedBatchSize" to batchSize, "batchSize" to effectiveBatch, "parallelism" to parallelism) }
+        val info = if (resolved == BatchBackend.CPU) TrainingDeviceInfo(TrainingBackend.CPU, "CPU", "jvm-cpu",
+            kernelVersion = "cpu-matrix-v1") else TrainingDeviceInfo(TrainingBackend.CUBLAS,
+            "CUDA/cuBLAS", "unavailable-for-direct-batch-api", precision.name, "runtime-compiled")
+        logDirectTraining("trainMiniBatch", epochs, effectiveBatch, parallelism, info) {
+            when (resolved) {
+                BatchBackend.CPU -> NeuroCpuBatchTrainer.train(this, data, epochs, effectiveBatch, parallelism)
+                BatchBackend.CUDA -> NeuroCudaBatchBackend.train(this, data, epochs, effectiveBatch, precision)
+                BatchBackend.AUTO -> error("AUTO backend must resolve before training")
+            }
+            lastTrainingError = error(data, trainingWorkspace)
         }
-        lastTrainingError = error(data, trainingWorkspace)
     }
+    private fun <T> logDirectTraining(operation: String, epochs: Int, batchSize: Int = 1,
+                                      parallelism: Int = 1,
+                                      info: TrainingDeviceInfo = TrainingDeviceInfo(TrainingBackend.CPU, "CPU", "jvm-cpu"),
+                                      details: Map<String, Any?> = emptyMap(),
+                                      action: () -> T): T =
+        if (trainingOwner != null) action() else
+            loggedTraining(this, null, info, operation, epochs, batchSize, parallelism, details, action = action)
+
     fun trainingError(): Double = if (trainingSamples.isEmpty()) Double.NaN else error(trainingData(), trainingWorkspace)
     fun testError(): Double = if (testSamples.isEmpty()) Double.NaN else error(testData(), trainingWorkspace)
 
     private fun trainOnlineEpoch(data: PackedDataset, evaluateError: Boolean): Double {
         ensureTrainingOrder(data.size)
         if (pendingDeviceOrder != null) pendingDeviceOrder = null else shuffleTrainingOrder()
+        val started = System.nanoTime()
         val event = NeuroJfr.trainingEpoch(epochsTrained + 1, data.size)
         for (sample in trainingOrder) {
             val inputOffset = sample * data.inputSize
@@ -435,11 +513,13 @@ class Neuro @JvmOverloads constructor(
         val error = if (evaluateError) error(data, trainingWorkspace) else Double.NaN
         if (evaluateError) lastTrainingError = error
         NeuroJfr.commitTrainingEpoch(event, error)
+        logCpuEpochCompleted(started, 1, error)
         return error
     }
 
     private fun trainMiniBatchEpoch(data: PackedDataset, batchSize: Int, parallelism: Int,
                                     pool: ForkJoinPool?, workers: Array<WorkerState>) {
+        val started = System.nanoTime()
         ensureTrainingOrder(data.size)
         if (pendingDeviceOrder != null) pendingDeviceOrder = null else shuffleTrainingOrder()
         var start = 0
@@ -470,6 +550,14 @@ class Neuro @JvmOverloads constructor(
         }
         samplesSeen += data.size
         epochsTrained++
+        logCpuEpochCompleted(started, batchSize)
+    }
+
+    internal fun logCpuEpochCompleted(started: Long, batchSize: Int, rmse: Double = Double.NaN) {
+        NeuroLog.debug("training", "training.cpu.epoch.completed") { mapOf("model" to logId,
+            "session" to trainingSessionLogId, "backend" to TrainingBackend.CPU, "precision" to "FP64",
+            "batchSize" to batchSize, "epoch" to epochsTrained, "samplesSeen" to samplesSeen,
+            "rmse" to rmse, "durationMs" to ((System.nanoTime() - started) / 1_000_000.0)) }
     }
 
     private fun accumulateSampleGradient(data: PackedDataset, sample: Int, workspace: Workspace, gradient: GradientBuffer) {

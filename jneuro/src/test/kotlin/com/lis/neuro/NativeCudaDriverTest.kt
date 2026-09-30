@@ -16,6 +16,29 @@ import org.junit.jupiter.api.Test
 
 /** Exercises the production downcalls against native upcall stubs, without a GPU or compiler. */
 class NativeCudaDriverTest {
+    @Test fun logsDeviceProvenanceAndBoundedTransferMetadataThroughFfm() {
+        NativeLogCapture().use { logs ->
+            Runtime().use { runtime ->
+                runtime.driver().use { driver ->
+                    val buffer = driver.allocate(16)
+                    driver.upload(buffer, doubleArrayOf(9876543.25, -1234567.75))
+                    driver.download(buffer, DoubleArray(2))
+                    driver.synchronize()
+                    driver.free(buffer)
+                }
+                val ready = logs.events("driver.ready").single()
+                assertEquals("FFM test GPU", logs.fields(ready)["device"])
+                assertEquals("retained-primary", logs.fields(ready)["context"])
+                assertEquals(2, logs.events("transfer.submitted").size)
+                assertTrue(logs.events("transfer.submitted").all { logs.fields(it)["bytes"] == 16L })
+                assertTrue(logs.events("stream.synchronized").isNotEmpty())
+                assertEquals(1, logs.events("driver.closed").size)
+                assertFalse(logs.records.any { logs.fields(it).toString().contains("9876543.25") })
+                runtime.assertCallbacksSucceeded()
+            }
+        }
+    }
+
     @Test fun discoversDeviceAndRoundTripsNativeBuffers() {
         Runtime().use { runtime ->
             runtime.driver().use { driver ->

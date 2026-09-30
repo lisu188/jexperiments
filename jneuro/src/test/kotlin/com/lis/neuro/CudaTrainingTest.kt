@@ -8,6 +8,32 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class CudaTrainingTest {
+    @Test fun logsReservationAndCommittedEpochWithoutClaimingFailedDownloads() {
+        NativeLogCapture().use { logs ->
+            val model = NeuroTest.prepared(intArrayOf(3, 5, 2))
+            val driver = RecordingCudaDriver()
+            openTrainingSession(model, TrainingBackend.CUDA) { driver }.use { session ->
+                session.trainMiniBatch(1, 7)
+                assertEquals(1, logs.events("epoch.published").size)
+                assertEquals(model.logId, logs.fields(logs.events("epoch.published").single())["model"])
+                assertTrue(logs.events("memory.admitted").isNotEmpty())
+                assertTrue(logs.events("workspace.ready").isNotEmpty())
+                driver.nonfiniteDownloads = true
+                assertThrows(IllegalStateException::class.java) { session.trainEpoch() }
+                assertEquals(1, logs.events("epoch.published").size)
+            }
+            assertTrue(logs.events("memory.released").isNotEmpty())
+            assertTrue(driver.memory.isEmpty())
+            val unavailable = RecordingCudaDriver().apply { freeMemory = 1 }
+            assertThrows(IllegalStateException::class.java) {
+                openTrainingSession(NeuroTest.prepared(intArrayOf(3, 2)), TrainingBackend.CUDA) { unavailable }
+            }
+            val rejected = logs.events("memory.admission.failed").single()
+            assertInstanceOf(IllegalStateException::class.java, rejected.thrown)
+            assertEquals(1L, logs.fields(rejected)["freeBytes"])
+        }
+    }
+
     @Test fun dispatchesOrderedKernelsAndReusesOrGrowsBoundedWorkspace() {
         val model = NeuroTest.prepared(intArrayOf(3, 5, 2))
         val driver = RecordingCudaDriver()

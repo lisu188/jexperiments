@@ -24,6 +24,10 @@ internal object NeuroCudaBatchBackend {
         require(epochs >= 0 && batchSize > 0)
         if (epochs == 0) return
         check(data.size > 0) { "no training samples" }
+        val training = NeuroLog.id("cublas")
+        NeuroLog.debug("cublas", "batch.training.started") { mapOf("training" to training, "model" to network.logId,
+            "session" to network.trainingSessionLogId, "epochs" to epochs, "batchSize" to batchSize, "samples" to data.size,
+            "precision" to precision, "allocationLifetime" to "call") }
         val resources = ArrayList<AutoCloseable>()
         var failure: Throwable? = null
         try {
@@ -40,6 +44,8 @@ internal object NeuroCudaBatchBackend {
                 Neuro.TrainingPrecision.FP32 -> trainResidentFloat(network, data, epochs, batch, runtime, cublas, kernels)
             }
         } catch (problem: Throwable) {
+            NeuroLog.error("cublas", "batch.training.failed", problem, "training" to training, "model" to network.logId,
+                "session" to network.trainingSessionLogId, "precision" to precision)
             failure = problem
             throw problem
         } finally {
@@ -51,6 +57,7 @@ internal object NeuroCudaBatchBackend {
         var failure = original
         for (resource in resources) {
             try { resource.close() } catch (problem: Throwable) {
+                NeuroLog.error("cublas", "resource.cleanup.failed", problem, "resourceType" to resource.javaClass.simpleName)
                 if (failure == null) failure = problem else failure.addSuppressed(problem)
             }
         }
@@ -137,7 +144,9 @@ internal object NeuroCudaBatchBackend {
                     doubles(buffers.weightVelocity.downloadFloats(layer.weightVelocity.size)).copyInto(state.weightVelocity[index])
                     doubles(buffers.biasVelocity.downloadFloats(layer.biasVelocity.size)).copyInto(state.biasVelocity[index])
                 }
-                network.commitDeviceEpoch(state)
+                val error = network.commitDeviceEpoch(state)
+                NeuroLog.debug("cublas", "epoch.published") { mapOf("model" to network.logId,
+                    "session" to network.trainingSessionLogId, "error" to error, "samples" to data.size) }
             }
         }
     }
@@ -219,7 +228,9 @@ internal object NeuroCudaBatchBackend {
                     buffers.weightVelocity.downloadDoubles(layer.weightVelocity.size).copyInto(state.weightVelocity[index])
                     buffers.biasVelocity.downloadDoubles(layer.biasVelocity.size).copyInto(state.biasVelocity[index])
                 }
-                network.commitDeviceEpoch(state)
+                val error = network.commitDeviceEpoch(state)
+                NeuroLog.debug("cublas", "epoch.published") { mapOf("model" to network.logId,
+                    "session" to network.trainingSessionLogId, "error" to error, "samples" to data.size) }
             }
         }
     }

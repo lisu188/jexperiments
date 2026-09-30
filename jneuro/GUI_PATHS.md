@@ -126,5 +126,8 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-116 | Architecture search inherits CUBLAS, FP32 and batch size and records its resolved device | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
 | GUI-117 | Replay preserves the scored CUBLAS precision and batch size | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
 | GUI-118 | Reject zero batch size without changing the active model | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-119 | Applying settings and stepping through native controls writes correlated configuration, run and effective-device events | `detailedLogsFollowNativeControlsExportAndShutdown` |
+| GUI-120 | Native tab navigation and PNG file-dialog export log the selected view, destination and completed artifact | `detailedLogsFollowNativeControlsExportAndShutdown` |
+| GUI-121 | Native window close logs shutdown and worker completion after releasing the active training session | `detailedLogsFollowNativeControlsExportAndShutdown` |
 
 The backend-routing GUI scenarios use an injected session provider with CPU execution and explicit fixture device metadata. They verify native controls, error recovery and resource lifecycle deterministically on CPU-only CI. Actual CUDA execution and numerical parity are separate hardware checks in `gpuCheck`; a passing fixture scenario is not GPU acceptance.

@@ -630,11 +630,19 @@ project(':jneuro') {
 
     tasks.withType(JavaExec).configureEach {
         jvmArgs '--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED'
+        def interactive = name in ['runXorCanvas', 'runExperiment']
+        systemProperty 'jneuro.log.level', providers.gradleProperty('neuroLogLevel').orElse(providers.environmentVariable('JNEURO_LOG_LEVEL')).orElse(interactive ? 'INFO' : 'WARN').get()
+        systemProperty 'jneuro.log.file', providers.gradleProperty('neuroLogFile').orElse(providers.environmentVariable('JNEURO_LOG_FILE')).orElse(interactive ? 'true' : 'false').get()
+        ['neuroLogDir': 'dir', 'neuroLogLimitBytes': 'limit_bytes', 'neuroLogCount': 'count'].each { key, suffix ->
+            if (providers.gradleProperty(key).isPresent()) systemProperty "jneuro.log.${suffix}", providers.gradleProperty(key).get()
+        }
     }
 
     tasks.withType(Test).configureEach {
         jvmArgs '--add-modules', 'jdk.incubator.vector', '--enable-native-access=ALL-UNNAMED'
         systemProperty 'java.awt.headless', 'true'
+        systemProperty 'jneuro.log.level', providers.gradleProperty('neuroLogLevel').orElse('WARN').get()
+        systemProperty 'jneuro.log.file', 'false'
         javaLauncher = java27
     }
 
@@ -1242,13 +1250,16 @@ project(':jneuro') {
         description = 'Compatibility alias for hardware-required CUDA and cuBLAS acceptance.'
         dependsOn tasks.named('gpuCheck')
     }
-    tasks.register('cudaBenchmark', JavaExec) {
-        group = 'verification'
-        description = 'Compares CPU matrix training with CUDA/cuBLAS FP64 and FP32.'
-        classpath = sourceSets.main.runtimeClasspath
-        mainClass = 'com.lis.neuro.NeuroCudaTrainingBenchmark'
-        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
-        jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms128m', '-Xmx2g'
+    ['cudaBenchmark', 'cpuGpuBenchmark'].each { benchmarkTask ->
+        tasks.register(benchmarkTask, JavaExec) {
+            group = 'verification'
+            description = 'Compares CPU matrix training with CUDA/cuBLAS FP64 and FP32.'
+            classpath = sourceSets.main.runtimeClasspath
+            mainClass = 'com.lis.neuro.NeuroCudaTrainingBenchmark'
+            javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
+            jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms128m', '-Xmx2g'
+            systemProperty 'jneuro.benchmark.sourceRevision', providers.gradleProperty('neuroBenchmarkRevision').orElse('unspecified').get()
+        }
     }
     def guiTest = tasks.register('guiTest', Test) {
         group = 'verification'

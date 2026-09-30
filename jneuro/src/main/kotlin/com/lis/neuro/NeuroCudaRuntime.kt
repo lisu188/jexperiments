@@ -28,6 +28,7 @@ internal class NeuroCudaRuntime private constructor(
     fun setDevice(device: Int) {
         require(device >= 0)
         checkStatus(NeuroNativeLibrary.invokeInt(setDeviceHandle, device), "cudaSetDevice")
+        NeuroLog.debug("cuda", "runtime.device.selected") { mapOf("deviceIndex" to device, "library" to libraryName) }
     }
 
     fun currentDevice(): Int = Arena.ofConfined().use { local ->
@@ -44,6 +45,7 @@ internal class NeuroCudaRuntime private constructor(
         return Arena.ofConfined().use { local ->
             val out = local.allocate(ValueLayout.ADDRESS)
             checkStatus(NeuroNativeLibrary.invokeInt(mallocHandle, out, byteSize), "cudaMalloc")
+            NeuroLog.debug("cuda", "allocation.created") { mapOf("bytes" to byteSize, "api" to "runtime") }
             out.get(ValueLayout.ADDRESS, 0L)
         }
     }
@@ -51,22 +53,26 @@ internal class NeuroCudaRuntime private constructor(
     override fun release(pointer: MemorySegment) {
         if (pointer == MemorySegment.NULL) return
         checkStatus(NeuroNativeLibrary.invokeInt(freeHandle, pointer), "cudaFree")
+        NeuroLog.debug("cuda", "allocation.released") { mapOf("api" to "runtime") }
     }
 
     override fun copyHostToDevice(device: MemorySegment, host: MemorySegment, byteSize: Long) {
         require(byteSize >= 0L && byteSize <= host.byteSize())
         if (byteSize == 0L) return
+        NeuroLog.trace("cuda", "transfer.submitted") { mapOf("direction" to "host-to-device", "bytes" to byteSize, "api" to "runtime") }
         checkStatus(NeuroNativeLibrary.invokeInt(memcpyHandle, device, host, byteSize, HOST_TO_DEVICE), "cudaMemcpy H2D")
     }
 
     override fun copyDeviceToHost(host: MemorySegment, device: MemorySegment, byteSize: Long) {
         require(byteSize >= 0L && byteSize <= host.byteSize())
         if (byteSize == 0L) return
+        NeuroLog.trace("cuda", "transfer.submitted") { mapOf("direction" to "device-to-host", "bytes" to byteSize, "api" to "runtime") }
         checkStatus(NeuroNativeLibrary.invokeInt(memcpyHandle, host, device, byteSize, DEVICE_TO_HOST), "cudaMemcpy D2H")
     }
 
     override fun synchronize() {
         checkStatus(NeuroNativeLibrary.invokeInt(synchronizeHandle), "cudaDeviceSynchronize")
+        NeuroLog.trace("cuda", "device.synchronized") { mapOf("api" to "runtime") }
     }
 
     override fun close() {
@@ -82,7 +88,7 @@ internal class NeuroCudaRuntime private constructor(
     }
 
     private fun checkStatus(status: Int, operation: String) {
-        check(status == 0) { operation + " failed with CUDA status " + status }
+        NeuroNativeLibrary.checkStatus(status, operation, "cuda") { operation + " failed with CUDA status " + status }
     }
 
     companion object {
@@ -122,9 +128,11 @@ internal class NeuroCudaRuntime private constructor(
                         FunctionDescriptor.of(ValueLayout.JAVA_INT))
                 )
             } catch (exception: RuntimeException) {
+                NeuroLog.debug("cuda", "adapter.unavailable") { mapOf("adapter" to "NeuroCudaRuntime", "reason" to exception.message) }
                 arena.close()
                 null
             } catch (exception: UnsatisfiedLinkError) {
+                NeuroLog.debug("cuda", "adapter.unavailable") { mapOf("adapter" to "NeuroCudaRuntime", "reason" to exception.message) }
                 arena.close()
                 null
             }

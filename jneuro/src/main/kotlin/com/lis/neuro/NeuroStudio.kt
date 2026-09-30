@@ -76,9 +76,11 @@ internal data class StudioFrame(
 
 internal class NeuroStudio(
     config: StudioConfig = StudioConfig(), custom: List<NeuroLearningSets.Sample> = emptyList(),
+    private val windowId: String? = null,
     private val openSession: (Neuro, TrainingBackend, Neuro.TrainingPrecision, Int) -> NeuroTrainingSession =
         { model, backend, precision, batch -> model.newTrainingSession(backend, precision, batch) }
 ) : AutoCloseable {
+    private var runId = NeuroLog.id("run")
     private var config = config
     private var custom = custom.toList()
     private var samples = samplesFor(config, custom)
@@ -121,11 +123,21 @@ internal class NeuroStudio(
         else -> StudioState.READY
     }
 
+    init { logRun("studio.run.created") }
+
+    private fun logRun(event: String) {
+        NeuroLog.info("studio", event, "windowId" to windowId, "runId" to runId, "model" to network.logId, "topology" to config.description(),
+            "dataset" to config.dataset, "samples" to samples.size, "seed" to config.seed,
+            "requestedBackend" to config.backend, "requestedPrecision" to config.precision,
+            "batchSize" to config.batchSize, "maxEpochs" to config.maxEpochs, "targetRmse" to config.targetError, "automatic" to automatic)
+    }
+
     fun apply(next: StudioConfig, run: Boolean = false) {
         val nextSamples = samplesFor(next, custom)
         val nextNetwork = createNetwork(next, next.seed, nextSamples)
         close()
         deviceInfo = null
+        runId = NeuroLog.id("run")
         config = next
         samples = nextSamples
         network = nextNetwork
@@ -147,11 +159,14 @@ internal class NeuroStudio(
         previousValues = null
         difference = null
         layerImages = null
+        logRun("studio.configuration.applied")
     }
 
     fun setRunning(value: Boolean) {
         automatic = value && canTrain()
         if (!value) pendingEpochs = 0
+        NeuroLog.info("studio", if (automatic) "studio.training.started" else "studio.training.paused",
+            "runId" to runId, "epoch" to epoch, "state" to state)
     }
 
     fun step(count: Int) {
@@ -160,23 +175,27 @@ internal class NeuroStudio(
         if (!canTrain()) { pendingEpochs = 0; return }
         pendingEpochs = minOf((config.maxEpochs - epoch).toLong(), pendingEpochs.toLong() + count).toInt()
         stepped = true
+        NeuroLog.info("studio", "studio.step.requested", "runId" to runId, "epochs" to count, "pendingEpochs" to pendingEpochs)
     }
 
     fun addSample(x: Double, y: Double, target: Double) {
         require(config.dataset == NeuroLearningSets.Kind.CUSTOM) { "Select Custom before editing training points." }
         require(custom.size < 4096) { "Custom datasets support at most 4096 points." }
         custom = custom + NeuroLearningSets.Sample(x, y, target)
+        NeuroLog.info("studio", "studio.sample.added", "runId" to runId, "samples" to custom.size)
         apply(config, false)
     }
 
     fun undoSample() {
         require(config.dataset == NeuroLearningSets.Kind.CUSTOM) { "Select Custom before editing training points." }
         custom = custom.dropLast(1)
+        NeuroLog.info("studio", "studio.sample.undone", "runId" to runId, "samples" to custom.size)
         apply(config, false)
     }
 
     fun clearSamples() {
         custom = emptyList()
+        NeuroLog.info("studio", "studio.samples.cleared", "runId" to runId)
         apply(config.copy(dataset = NeuroLearningSets.Kind.CUSTOM), false)
     }
 
@@ -200,8 +219,13 @@ internal class NeuroStudio(
         val requested = if (pendingEpochs > 0) minOf(speed, pendingEpochs) else speed
         var advanced = 0
         while (advanced < requested && canTrain() && !cancelled()) {
-            error = trainConfiguredEpoch(network, trainingSession(), config.batchSize)
-            check(error.isFinite()) { "Training produced a non-finite RMSE. Reset with different settings." }
+            try {
+                error = trainConfiguredEpoch(network, trainingSession(), config.batchSize)
+                check(error.isFinite()) { "Training produced a non-finite RMSE. Reset with different settings." }
+            } catch (exception: Exception) {
+                NeuroLog.error("studio", "studio.epoch.failed", exception, "runId" to runId, "epoch" to epoch)
+                throw exception
+            }
             epoch++
             advanced++
             if (pendingEpochs > 0) pendingEpochs--
@@ -212,7 +236,11 @@ internal class NeuroStudio(
             layerImages = null
             difference = null
         }
-        if (!canTrain()) { automatic = false; pendingEpochs = 0 }
+        if (!canTrain()) {
+            automatic = false; pendingEpochs = 0
+            NeuroLog.info("studio", "studio.training.completed", "runId" to runId, "epoch" to epoch, "rmse" to error, "state" to state)
+        }
+        NeuroLog.debug("studio", "studio.training.progress") { mapOf("runId" to runId, "epoch" to epoch, "advanced" to advanced, "rmse" to error) }
         return advanced
     }
 
@@ -220,25 +248,41 @@ internal class NeuroStudio(
         require(limit > 0) { "Seed study epoch limit must be positive." }
         if (samples.isEmpty()) return emptyList()
         close()
-        val results = ArrayList<StudioSeed>()
-        for (seed in STUDY_SEEDS) {
-            if (cancelled()) return emptyList()
-            val model = createNetwork(config, seed, samples)
-            var trained = 0
-            var rmse = model.trainingError()
-            openSession(model, config.backend, config.precision, config.batchSize).use { training ->
-                while (trained < limit && rmse > config.targetError) {
-                    if (cancelled()) return emptyList()
-                    rmse = trainConfiguredEpoch(model, training, config.batchSize)
-                    trained++
-                }
-            }
-            val diagnostics = NeuroXorDiagnostics.capture(model, trained, rmse)
-            results += StudioSeed(seed, trained, rmse, rmse <= config.targetError,
-                NeuroXorDiagnostics.renderOutputMap(diagnostics, resolution(model.parameterCount(), 160)))
+        val studyId = NeuroLog.id("study")
+        NeuroLog.info("studio", "studio.study.started", "runId" to runId, "studyId" to studyId, "maxEpochs" to limit, "backend" to config.backend)
+        fun isCancelled(): Boolean = cancelled().also { stopped ->
+            if (stopped) NeuroLog.info("studio", "studio.study.cancelled", "runId" to runId, "studyId" to studyId)
         }
-        seedResults = results.toList()
-        return seedResults
+        try {
+            val results = ArrayList<StudioSeed>()
+            for (seed in STUDY_SEEDS) {
+                if (isCancelled()) return emptyList()
+                val model = createNetwork(config, seed, samples)
+                var trained = 0
+                var rmse = model.trainingError()
+                openSession(model, config.backend, config.precision, config.batchSize).use { training ->
+                    NeuroLog.info("studio", "studio.study.seed.started", "runId" to runId, "studyId" to studyId,
+                        "seed" to seed, "model" to model.logId, "session" to model.trainingSessionLogId,
+                        "effectiveBackend" to training.info.backend, "effectivePrecision" to training.info.precision)
+                    while (trained < limit && rmse > config.targetError) {
+                        if (isCancelled()) return emptyList()
+                        rmse = trainConfiguredEpoch(model, training, config.batchSize)
+                        trained++
+                    }
+                }
+                NeuroLog.info("studio", "studio.study.seed.completed", "runId" to runId, "studyId" to studyId,
+                    "seed" to seed, "epochs" to trained, "rmse" to rmse)
+                val diagnostics = NeuroXorDiagnostics.capture(model, trained, rmse)
+                results += StudioSeed(seed, trained, rmse, rmse <= config.targetError,
+                    NeuroXorDiagnostics.renderOutputMap(diagnostics, resolution(model.parameterCount(), 160)))
+            }
+            NeuroLog.info("studio", "studio.study.completed", "runId" to runId, "studyId" to studyId, "seeds" to results.size)
+            seedResults = results.toList()
+            return seedResults
+        } catch (exception: Exception) {
+            NeuroLog.error("studio", "studio.study.failed", exception, "runId" to runId, "studyId" to studyId)
+            throw exception
+        }
     }
 
     fun searchData(evaluation: ArchitectureEvaluation, fraction: Double = 0.2, splitSeed: Long = 42): ArchitectureSearchData =
@@ -251,37 +295,58 @@ internal class NeuroStudio(
         apply(config.copy(hidden = candidate.architecture.hidden.joinToString(","), maxEpochs = report.config.maxEpochs,
             targetError = report.config.targetRmse, learningRate = hp.learningRate, momentum = hp.momentum,
             backend = report.config.backend, precision = report.config.precision, batchSize = report.config.batchSize))
+        NeuroLog.info("studio", "studio.architecture.applied", "runId" to runId, "searchId" to report.logId, "topology" to candidate.architecture)
     }
 
     fun replayArchitecture(report: ArchitectureSearchResult, candidate: ArchitectureCandidate, trial: ArchitectureTrial,
                            cancelled: () -> Boolean = { false }): Boolean {
         require(candidate.valid && report.candidates.any { it === candidate } && candidate.trials.any { it === trial } &&
             trial.state == ArchitectureTrialState.COMPLETED) { "Choose a completed seed run from this search." }
-        if (cancelled()) return false
-        close()
-        val model = report.data.newNetwork(candidate.architecture, report.config.hyperParameters, trial.seed)
-        val recordedDevice = requireNotNull(trial.deviceInfo) { "This trial has no recorded training backend; replay is unavailable." }
-        val recordedPrecision = Neuro.TrainingPrecision.valueOf(recordedDevice.precision)
-        openSession(model, recordedDevice.backend, recordedPrecision, report.config.batchSize).use { training ->
-            check(training.info == recordedDevice) { "Replay requires the recorded training device, precision and kernel version: ${recordedDevice.name}." }
-            repeat(trial.bestEpoch) {
-                if (cancelled()) return false
-                trainConfiguredEpoch(model, training, report.config.batchSize)
-            }
+        val replayId = NeuroLog.id("replay")
+        NeuroLog.info("studio", "studio.replay.started", "runId" to runId, "replayId" to replayId,
+            "searchId" to report.logId, "trialId" to trial.logId, "seed" to trial.seed, "bestEpoch" to trial.bestEpoch)
+        fun isCancelled(): Boolean = cancelled().also { stopped ->
+            if (stopped) NeuroLog.info("studio", "studio.replay.cancelled", "runId" to runId, "replayId" to replayId)
         }
-        val score = report.data.score(model)
-        check(score.isFinite() && kotlin.math.abs(score - trial.bestRmse) <= 1e-10) { "Replay did not reproduce the scored checkpoint." }
-        if (cancelled()) return false
-        applyArchitecture(report, candidate)
-        config = config.copy(seed = trial.seed, backend = recordedDevice.backend, precision = recordedPrecision)
-        deviceInfo = recordedDevice
-        samples = report.data.training
-        network = model
-        epoch = trial.bestEpoch
-        error = model.trainingError()
-        stepped = true
-        replayNote = "Search replay · ${report.data.evaluation.label} %.5f · %d held-out samples".format(java.util.Locale.ROOT, score, report.data.validation.size)
-        return true
+        try {
+            if (isCancelled()) return false
+            close()
+            val model = report.data.newNetwork(candidate.architecture, report.config.hyperParameters, trial.seed)
+            val recordedDevice = requireNotNull(trial.deviceInfo) { "This trial has no recorded training backend; replay is unavailable." }
+            val recordedPrecision = Neuro.TrainingPrecision.valueOf(recordedDevice.precision)
+            openSession(model, recordedDevice.backend, recordedPrecision, report.config.batchSize).use { training ->
+                if (training.info != recordedDevice) NeuroLog.warn("studio", "studio.replay.provenance.rejected", null,
+                    "runId" to runId, "replayId" to replayId, "recordedDevice" to recordedDevice, "actualDevice" to training.info)
+                check(training.info == recordedDevice) { "Replay requires the recorded training device, precision and kernel version: ${recordedDevice.name}." }
+                NeuroLog.info("studio", "studio.replay.provenance.accepted", "runId" to runId, "replayId" to replayId,
+                    "model" to model.logId, "session" to model.trainingSessionLogId,
+                    "backend" to recordedDevice.backend, "device" to recordedDevice.name, "precision" to recordedDevice.precision,
+                    "deviceIdentity" to recordedDevice.identity, "kernelVersion" to recordedDevice.kernelVersion)
+                repeat(trial.bestEpoch) {
+                    if (isCancelled()) return false
+                    trainConfiguredEpoch(model, training, report.config.batchSize)
+                }
+            }
+            val score = report.data.score(model)
+            check(score.isFinite() && kotlin.math.abs(score - trial.bestRmse) <= 1e-10) { "Replay did not reproduce the scored checkpoint." }
+            if (isCancelled()) return false
+            applyArchitecture(report, candidate)
+            config = config.copy(seed = trial.seed, backend = recordedDevice.backend, precision = recordedPrecision)
+            deviceInfo = recordedDevice
+            samples = report.data.training
+            network = model
+            epoch = trial.bestEpoch
+            error = model.trainingError()
+            stepped = true
+            replayNote = "Search replay · ${report.data.evaluation.label} %.5f · %d held-out samples".format(java.util.Locale.ROOT, score, report.data.validation.size)
+            NeuroLog.info("studio", "studio.replay.completed", "runId" to runId, "replayId" to replayId,
+                "searchId" to report.logId, "trialId" to trial.logId, "epoch" to epoch, "score" to score)
+            return true
+        } catch (exception: Exception) {
+            NeuroLog.error("studio", "studio.replay.failed", exception, "runId" to runId, "replayId" to replayId,
+                "searchId" to report.logId, "trialId" to trial.logId)
+            throw exception
+        }
     }
 
     fun fail(message: String) {
@@ -289,6 +354,7 @@ internal class NeuroStudio(
         automatic = false
         pendingEpochs = 0
         failure = message
+        NeuroLog.warn("studio", "studio.training.failed", null, "runId" to runId, "epoch" to epoch, "reason" to message)
         // A backend may publish an epoch before reporting a native-resource cleanup failure.
         epoch = network.statistics().epochsTrained.toInt()
         error = network.trainingError()
@@ -296,6 +362,7 @@ internal class NeuroStudio(
         layerImages = null
         difference = null
         try { close() } catch (exception: Exception) {
+            NeuroLog.error("studio", "studio.cleanup.failed", exception, "runId" to runId)
             failure += " Resource cleanup: ${exception.message ?: exception.javaClass.simpleName}"
         }
     }
@@ -316,12 +383,22 @@ internal class NeuroStudio(
     private fun trainingSession(): NeuroTrainingSession = session ?: openSession(network, config.backend, config.precision, config.batchSize).also {
         session = it
         deviceInfo = it.info
+        NeuroLog.info("studio", "studio.backend.ready", "runId" to runId, "model" to network.logId,
+            "session" to network.trainingSessionLogId, "requestedBackend" to config.backend,
+            "requestedPrecision" to config.precision, "effectiveBackend" to it.info.backend, "effectivePrecision" to it.info.precision,
+            "batchSize" to config.batchSize, "device" to it.info.name, "deviceIdentity" to it.info.identity, "kernelVersion" to it.info.kernelVersion)
     }
 
     override fun close() {
         val current = session
         session = null
-        current?.close()
+        if (current != null) {
+            try { current.close() } catch (exception: Exception) {
+                NeuroLog.error("studio", "studio.session.release.failed", exception, "runId" to runId, "epoch" to epoch)
+                throw exception
+            }
+            NeuroLog.info("studio", "studio.session.released", "runId" to runId, "epoch" to epoch)
+        }
     }
 
     private fun canTrain(): Boolean = samples.isNotEmpty() && epoch < config.maxEpochs &&
@@ -357,6 +434,7 @@ internal class NeuroStudio(
         val diagnostics = NeuroXorDiagnostics.capture(network, epoch, error)
         checkpoints += StudioCheckpoint(epoch, error,
             NeuroXorDiagnostics.renderOutputMap(diagnostics, resolution(network.parameterCount(), 128)))
+        NeuroLog.info("studio", "studio.checkpoint.created", "runId" to runId, "epoch" to epoch, "rmse" to error)
     }
 
     companion object {

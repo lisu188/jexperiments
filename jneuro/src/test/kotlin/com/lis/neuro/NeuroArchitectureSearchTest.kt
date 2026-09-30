@@ -6,6 +6,78 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroArchitectureSearchTest {
+    @Test fun searchLogsCorrelateParallelTrialsAndReplayProvenance() {
+        NeuroApplicationLogCapture().use { capture ->
+            val sessions = RecordingTrainingSessions()
+            val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+                maxLayers = 1, maxWidth = 1, seeds = listOf(42, 43), requiredSuccesses = 1,
+                maxEpochs = 3, checkEvery = 1, parallelism = 2, backend = TrainingBackend.CUDA)
+            val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
+            val candidate = report.candidates.single()
+            val trial = candidate.trials.first()
+            assertEquals(report.logId, capture.fields(capture.events("search.started").single())["searchId"])
+            assertEquals(report.logId, capture.fields(capture.events("search.completed").single())["searchId"])
+            val started = capture.events("search.trial.started")
+            val finished = capture.events("search.trial.finished")
+            assertEquals(2, started.size)
+            assertEquals(2, finished.size)
+            assertEquals(candidate.trials.map { it.logId }.toSet(), finished.map { capture.fields(it)["trialId"] }.toSet())
+            assertTrue((started + finished).all { capture.fields(it)["searchId"] == report.logId })
+            NeuroStudio(openSession = sessions::open).use { studio ->
+                sessions.identity = "changed-device"
+                assertThrows(IllegalStateException::class.java) { studio.replayArchitecture(report, candidate, trial) }
+                assertEquals(1, capture.events("studio.replay.provenance.rejected").size)
+                assertTrue(capture.events("studio.replay.completed").isEmpty())
+                sessions.identity = trial.deviceInfo!!.identity
+                assertTrue(studio.replayArchitecture(report, candidate, trial))
+                assertEquals(trial.logId, capture.fields(capture.events("studio.replay.completed").single())["trialId"])
+                assertEquals(1, capture.events("studio.replay.provenance.accepted").size)
+            }
+        }
+    }
+
+    @Test fun failedTrialLogsOriginalExceptionAndNeverReportsSuccessfulCompletion() {
+        NeuroApplicationLogCapture().use { capture ->
+            val failure = IllegalStateException("fixture backend startup failure")
+            val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+                maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1, maxEpochs = 1, checkEvery = 1)
+            val report = NeuroArchitectureSearch { _, _, _, _ -> throw failure }
+                .search(ArchitectureSearchData.fitting(xor()), config)
+            val trial = report.candidates.single().trials.single()
+            assertEquals(ArchitectureTrialState.FAILED, trial.state)
+            assertSame(failure, capture.events("search.trial.failed").single().thrown)
+            val terminal = capture.events("search.trial.finished").single()
+            assertEquals("FAILED", capture.fields(terminal)["state"].toString())
+        }
+    }
+
+    @Test fun adaptiveLoggingMatchesTheAdmittedProposalAndCompletedCandidate() {
+        NeuroApplicationLogCapture().use { capture ->
+            val config = ArchitectureSearchConfig(maxLayers = 1, maxWidth = 1, seeds = listOf(42),
+                requiredSuccesses = 1, maxTrials = 1, maxEpochs = 1, checkEvery = 1)
+            val report = NeuroArchitectureSearch().search(ArchitectureSearchData.fitting(xor()), config)
+            val proposal = capture.fields(capture.events("search.proposal.admitted").single())
+            assertEquals(report.logId, proposal["searchId"])
+            assertEquals(report.lineage.single().architecture.toString(), proposal["topology"].toString())
+            assertEquals(report.lineage.single().mutation, proposal["mutation"])
+            val candidate = capture.fields(capture.events("search.candidate.evaluated").single())
+            assertEquals(report.logId, candidate["searchId"])
+            assertEquals(report.candidates.single().medianRmse, candidate["medianRmse"])
+        }
+    }
+
+    @Test fun trialCleanupFailureProducesOnlyOneFailedTerminalEvent() {
+        NeuroApplicationLogCapture().use { capture ->
+            val sessions = RecordingTrainingSessions().apply { failClose = true }
+            val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
+                maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1, maxEpochs = 1, checkEvery = 1)
+            val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
+            assertEquals(ArchitectureTrialState.FAILED, report.candidates.single().trials.single().state)
+            assertEquals("FAILED", capture.fields(capture.events("search.trial.finished").single())["state"].toString())
+            assertEquals(1, capture.events("search.trial.failed").size)
+        }
+    }
+
     @Test fun configuredBatchSearchReplaysTheResolvedBackendAndPrecision() {
         for (backend in listOf(TrainingBackend.AUTO, TrainingBackend.CUBLAS)) {
             val sessions = RecordingTrainingSessions()

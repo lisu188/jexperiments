@@ -21,6 +21,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         PARAMETERS("Parameters"), SEEDS("Seeds"), TIMELINE("Timeline"), SEARCH("Architecture search")
     }
 
+    private val windowId = NeuroLog.id("window")
     private val root = JPanel(BorderLayout(0, 0))
     private val sidebar = JPanel()
     private val tabs = JTabbedPane()
@@ -260,7 +261,10 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             border = EmptyBorder(0, 0, 0, 0)
             verticalScrollBar.unitIncrement = 28
         })
-        tabs.addChangeListener { updateContextBar(); charts.values.forEach { it.revalidate(); it.repaint() } }
+        tabs.addChangeListener {
+            NeuroLog.info("ui", "ui.view.selected", "windowId" to windowId, "view" to View.entries[tabs.selectedIndex].name)
+            updateContextBar(); charts.values.forEach { it.revalidate(); it.repaint() }
+        }
         tabs.font = uiFont(13)
         tabs.tabLayoutPolicy = JTabbedPane.SCROLL_TAB_LAYOUT
         center.add(tabs, BorderLayout.CENTER)
@@ -333,8 +337,13 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
                 backend.selectedItem as TrainingBackend, trainingPrecision.selectedItem as Neuro.TrainingPrecision,
                 (batchSize.value as Number).toInt())
             configError.text = " "
+            NeuroLog.info("ui", "ui.configuration.submitted", "windowId" to windowId, "backend" to config.backend,
+                "precision" to config.precision, "batchSize" to config.batchSize, "topology" to config.description())
             post { it.apply(config, true) }
-        } catch (exception: Exception) { showConfigError(exception.message ?: "Check the configuration values.") }
+        } catch (exception: Exception) {
+            NeuroLog.warn("ui", "ui.configuration.rejected", exception, "windowId" to windowId)
+            showConfigError(exception.message ?: "Check the configuration values.")
+        }
     }
 
     private fun showConfigError(message: String?) {
@@ -363,7 +372,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     }
 
     private fun workerLoop() {
-        val studio = NeuroStudio(openSession = { model, selected, precision, batch -> trainingSessionFactory(model, selected, precision, batch) })
+        NeuroLog.info("ui", "ui.worker.started", "windowId" to windowId)
+        val studio = NeuroStudio(windowId = windowId, openSession = { model, selected, precision, batch -> trainingSessionFactory(model, selected, precision, batch) })
         try {
             while (!closing) {
                 val action = if (studio.hasWork) commands.poll(24, TimeUnit.MILLISECONDS) else commands.take()
@@ -374,15 +384,23 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
                     if (!closing) published = studio.frame()
                 } catch (exception: Exception) {
                     if (closing || exception is InterruptedException) break
+                    NeuroLog.error("ui", "ui.worker.failed", exception, "windowId" to windowId)
                     studio.fail(exception.message ?: exception.javaClass.simpleName)
                     published = studio.frame()
                 }
             }
         } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
-        finally { studio.close() }
+        finally {
+            try { studio.close() } catch (exception: Exception) {
+                NeuroLog.error("ui", "ui.worker.cleanup.failed", exception, "windowId" to windowId)
+                throw exception
+            } finally { NeuroLog.info("ui", "ui.worker.stopped", "windowId" to windowId) }
+        }
     }
 
     private fun startArchitectureSearch(config: ArchitectureSearchConfig, evaluation: ArchitectureEvaluation, fraction: Double, splitSeed: Long) {
+        NeuroLog.info("ui", "ui.search.requested", "windowId" to windowId, "backend" to config.backend,
+            "precision" to config.precision, "batchSize" to config.batchSize, "evaluation" to evaluation)
         val expectedConfig = frame?.config
         val expectedSamples = frame?.samples
         val token = searchSession.begin()
@@ -409,6 +427,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
                     }
                 }
             } catch (exception: Exception) {
+                NeuroLog.error("ui", "ui.search.failed", exception, "windowId" to windowId, "token" to token.id)
                 EventQueue.invokeLater {
                     if (!closing && searchSession.isCurrent(token)) {
                         searchRunning = false; architectureSearch.failed(exception.message ?: "Search failed"); refresh()
@@ -420,6 +439,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     }
 
     private fun replayArchitecture(report: ArchitectureSearchResult, candidate: ArchitectureCandidate, trial: ArchitectureTrial) {
+        NeuroLog.info("ui", "ui.replay.requested", "windowId" to windowId, "searchId" to report.logId, "trialId" to trial.logId)
         revision.incrementAndGet()
         val token = searchSession.begin()
         searchRunning = true
@@ -432,6 +452,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
                 replayed = studio.replayArchitecture(report, candidate, trial) { closing || token.cancelled.get() || !searchSession.isCurrent(token) }
             } catch (exception: Exception) {
                 if (exception is InterruptedException) Thread.currentThread().interrupt()
+                NeuroLog.error("ui", "ui.replay.failed", exception, "windowId" to windowId, "searchId" to report.logId, "trialId" to trial.logId)
                 replayFailure = exception.message ?: "Replay failed"
             } finally {
                 if (!closing) published = studio.frame()
@@ -458,6 +479,10 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             studio.setRunning(false)
             published = studio.frame()
             try { studio.compareSeeds { closing || expected != revision.get() } }
+            catch (exception: Exception) {
+                NeuroLog.error("ui", "ui.study.failed", exception, "windowId" to windowId)
+                throw exception
+            }
             finally { studyRunning = false }
         }
         updateContextBar()
@@ -544,8 +569,11 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private fun exportImage() {
         val chooser = JFileChooser().apply { selectedFile = File("jneuro-${View.entries[tabs.selectedIndex].name.lowercase()}.png") }
         if (chooser.showSaveDialog(root) == JFileChooser.APPROVE_OPTION) {
-            try { savePanel(chooser.selectedFile) } catch (exception: Exception) { showConfigError(exception.message) }
-        }
+            try { savePanel(chooser.selectedFile) } catch (exception: Exception) {
+                NeuroLog.error("ui", "ui.export.failed", exception, "windowId" to windowId, "path" to chooser.selectedFile.absolutePath)
+                showConfigError(exception.message)
+            }
+        } else NeuroLog.info("ui", "ui.export.cancelled", "windowId" to windowId)
     }
 
     private fun savePanel(file: File) {
@@ -553,6 +581,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         val graphics = image.createGraphics()
         try { root.printAll(graphics) } finally { graphics.dispose() }
         check(ImageIO.write(image, "png", file)) { "PNG writer is not available." }
+        NeuroLog.info("ui", "ui.export.completed", "windowId" to windowId, "path" to file.absolutePath,
+            "view" to View.entries[tabs.selectedIndex].name, "width" to image.width, "height" to image.height, "bytes" to file.length())
     }
 
     private inner class Chart(private val view: View) : JPanel(), Scrollable {
@@ -905,9 +935,12 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             addWindowListener(object : WindowAdapter() { override fun windowClosed(event: WindowEvent) = close() })
         }
         window.isVisible = true
+        NeuroLog.info("ui", "ui.window.opened", "windowId" to windowId, "width" to window.width, "height" to window.height)
     }
 
     override fun close() {
+        if (!closing) NeuroLog.info("ui", "ui.window.close.requested", "windowId" to windowId,
+            "trainingState" to frame?.state, "searchRunning" to searchRunning, "studyRunning" to studyRunning)
         closing = true; searchSession.invalidate(); revision.incrementAndGet(); timer.stop(); neuronGallery.close(); thread?.interrupt()
     }
 
@@ -973,6 +1006,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             for (child in component.components) if (child is Container) layoutAll(child)
         }
         @JvmStatic fun main(args: Array<String>) {
+            NeuroLog.info("ui", "application.started", "entrypoint" to "NeuroXorCanvas", "headless" to GraphicsEnvironment.isHeadless())
             val export = args.firstOrNull { it.startsWith("--screenshots=") }?.substringAfter('=')
             if (export != null) {
                 val directory = File(export).apply { mkdirs() }

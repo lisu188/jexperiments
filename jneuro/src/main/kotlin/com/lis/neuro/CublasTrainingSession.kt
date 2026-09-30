@@ -12,30 +12,39 @@ internal class CublasTrainingSession(
         NeuroCudaBatchBackend.train(model, model.backendTrainingData(), epochs, batch, format)
     }
 ) : NeuroTrainingSession {
+    private val sessionId = NeuroLog.id("session")
+    private val openedNanos = System.nanoTime()
+    private val initialEpoch: Long
     private var closed = false
     private var failed = false
     override val info: TrainingDeviceInfo
 
     init {
         require(batchSize > 0) { "batchSize must be > 0" }
-        network.acquireTraining(this)
+        network.acquireTraining(this, sessionId)
+        initialEpoch = network.statistics().epochsTrained
         try {
             info = infoFactory(precision)
             check(info.backend == TrainingBackend.CUBLAS && info.precision == precision.name) {
                 "cuBLAS device information does not match the requested backend and precision."
             }
+            logSessionOpened(network, sessionId, info, batchSize)
         } catch (failure: Throwable) {
             network.releaseTraining(this)
             throw failure
         }
     }
 
-    private fun <T> run(action: () -> T): T = network.withTraining(this) {
-        check(!closed) { "Training session is closed." }
-        check(!failed) { "cuBLAS training failed. Close the session before resuming from the last completed epoch." }
-        try { action() } catch (failure: Throwable) {
-            if (failure !is IllegalArgumentException) failed = true
-            throw failure
+    private fun <T> run(operation: String, epochs: Int, batch: Int = batchSize,
+                        parallelism: Int = 1, details: Map<String, Any?> = emptyMap(),
+                        action: () -> T): T = network.withTraining(this) {
+        loggedTraining(network, sessionId, info, operation, epochs, batch, parallelism, details, initialEpoch) {
+            check(!closed) { "Training session is closed." }
+            check(!failed) { "cuBLAS training failed. Close the session before resuming from the last completed epoch." }
+            try { action() } catch (failure: Throwable) {
+                if (failure !is IllegalArgumentException) failed = true
+                throw failure
+            }
         }
     }
 
@@ -45,12 +54,13 @@ internal class CublasTrainingSession(
         batchTrain(network, epochs, minOf(batch, network.trainingSampleCount()), precision)
     }
 
-    override fun trainEpoch(): Double = run { trainBatches(1, batchSize); network.trainingError() }
-    override fun train(epochs: Int) = run {
+    override fun trainEpoch(): Double = run("trainEpoch", 1) { trainBatches(1, batchSize); network.trainingError() }
+    override fun train(epochs: Int) = run("train", epochs) {
         require(epochs >= 0) { "epochs must be >= 0" }
         trainBatches(epochs, batchSize)
     }
-    override fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int): Neuro.TrainingResult = run {
+    override fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int): Neuro.TrainingResult = run("trainUntil", maxEpochs,
+        details = mapOf("targetError" to targetError, "checkEvery" to checkEvery)) {
         require(targetError.isFinite() && targetError >= 0.0) { "targetError must be finite and >= 0" }
         require(maxEpochs >= 0) { "maxEpochs must be >= 0" }
         require(checkEvery > 0) { "checkEvery must be > 0" }
@@ -66,7 +76,7 @@ internal class CublasTrainingSession(
         }
         Neuro.TrainingResult(epochs, error, error <= targetError)
     }
-    override fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int) = run {
+    override fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int) = run("trainMiniBatch", epochs, batchSize, parallelism) {
         require(epochs >= 0) { "epochs must be >= 0" }
         require(batchSize > 0) { "batchSize must be > 0" }
         require(parallelism > 0) { "parallelism must be > 0" }
@@ -77,6 +87,7 @@ internal class CublasTrainingSession(
         network.withTraining(this) {
             closed = true
             network.releaseTraining(this)
+            logSessionClosed(network, sessionId, info, openedNanos, failed)
         }
     }
 }

@@ -14,6 +14,7 @@ internal class NeuroCudaKernels(
             "outputDeltaFloat", "applySigmoidDerivativeFloat", "reduceBiasGradientFloat", "momentumUpdateFloat")
             .associateWith(module::function)
     } catch (failure: Throwable) {
+        NeuroLog.error("cuda", "kernel.lookup.failed", failure)
         try { module.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
         throw failure
     }
@@ -32,57 +33,63 @@ internal class NeuroCudaKernels(
 
     fun gatherRows(source: MemorySegment, width: Int, order: MemorySegment, start: Int, count: Int,
                    destination: MemorySegment) {
-        driver.launch(gatherRows, Math.multiplyExact(count, width),
+        launch("gatherRows", gatherRows, Math.multiplyExact(count, width),
             pointer(source), int(width), pointer(order), int(start), int(count), pointer(destination))
     }
     fun activate(values: MemorySegment, biases: MemorySegment, batch: Int, width: Int, beta: Double,
                  mode: Neuro.SigmoidMode) {
-        driver.launch(activate, Math.multiplyExact(batch, width),
+        launch("addBiasAndSigmoid", activate, Math.multiplyExact(batch, width),
             pointer(values), pointer(biases), int(batch), int(width), double(beta),
             int(if (mode == Neuro.SigmoidMode.FAST) 1 else 0))
     }
     fun outputDelta(targets: MemorySegment, activations: MemorySegment, deltas: MemorySegment,
                     elements: Int, beta: Double) {
-        driver.launch(outputDelta, elements, pointer(targets), pointer(activations), pointer(deltas),
+        launch("outputDelta", outputDelta, elements, pointer(targets), pointer(activations), pointer(deltas),
             int(elements), double(beta))
     }
     fun applyDerivative(deltas: MemorySegment, activations: MemorySegment, elements: Int, beta: Double) {
-        driver.launch(applyDerivative, elements, pointer(deltas), pointer(activations), int(elements), double(beta))
+        launch("applySigmoidDerivative", applyDerivative, elements, pointer(deltas), pointer(activations), int(elements), double(beta))
     }
     fun reduceBiasGradient(deltas: MemorySegment, gradient: MemorySegment, batch: Int, width: Int) {
-        driver.launch(reduceBias, width, pointer(deltas), pointer(gradient), int(batch), int(width))
+        launch("reduceBiasGradient", reduceBias, width, pointer(deltas), pointer(gradient), int(batch), int(width))
     }
     fun momentumUpdate(values: MemorySegment, velocity: MemorySegment, gradient: MemorySegment,
                        elements: Int, momentum: Double, scale: Double) {
-        driver.launch(momentumUpdate, elements, pointer(values), pointer(velocity), pointer(gradient),
+        launch("momentumUpdate", momentumUpdate, elements, pointer(values), pointer(velocity), pointer(gradient),
             int(elements), double(momentum), double(scale))
     }
     fun gatherRowsFloat(source: MemorySegment, width: Int, order: MemorySegment, start: Int, count: Int,
                         destination: MemorySegment) {
-        driver.launch(gatherRowsFloat, Math.multiplyExact(count, width),
+        launch("gatherRowsFloat", gatherRowsFloat, Math.multiplyExact(count, width),
             pointer(source), int(width), pointer(order), int(start), int(count), pointer(destination))
     }
     fun activateFloat(values: MemorySegment, biases: MemorySegment, batch: Int, width: Int, beta: Float,
                       mode: Neuro.SigmoidMode) {
-        driver.launch(activateFloat, Math.multiplyExact(batch, width),
+        launch("addBiasAndSigmoidFloat", activateFloat, Math.multiplyExact(batch, width),
             pointer(values), pointer(biases), int(batch), int(width), float(beta),
             int(if (mode == Neuro.SigmoidMode.FAST) 1 else 0))
     }
     fun outputDeltaFloat(targets: MemorySegment, activations: MemorySegment, deltas: MemorySegment,
                          elements: Int, beta: Float) {
-        driver.launch(outputDeltaFloat, elements, pointer(targets), pointer(activations), pointer(deltas),
+        launch("outputDeltaFloat", outputDeltaFloat, elements, pointer(targets), pointer(activations), pointer(deltas),
             int(elements), float(beta))
     }
     fun applyDerivativeFloat(deltas: MemorySegment, activations: MemorySegment, elements: Int, beta: Float) {
-        driver.launch(applyDerivativeFloat, elements, pointer(deltas), pointer(activations), int(elements), float(beta))
+        launch("applySigmoidDerivativeFloat", applyDerivativeFloat, elements, pointer(deltas), pointer(activations), int(elements), float(beta))
     }
     fun reduceBiasGradientFloat(deltas: MemorySegment, gradient: MemorySegment, batch: Int, width: Int) {
-        driver.launch(reduceBiasFloat, width, pointer(deltas), pointer(gradient), int(batch), int(width))
+        launch("reduceBiasGradientFloat", reduceBiasFloat, width, pointer(deltas), pointer(gradient), int(batch), int(width))
     }
     fun momentumUpdateFloat(values: MemorySegment, velocity: MemorySegment, gradient: MemorySegment,
                             elements: Int, momentum: Float, scale: Float) {
-        driver.launch(momentumUpdateFloat, elements, pointer(values), pointer(velocity), pointer(gradient),
+        launch("momentumUpdateFloat", momentumUpdateFloat, elements, pointer(values), pointer(velocity), pointer(gradient),
             int(elements), float(momentum), float(scale))
+    }
+
+    private fun launch(name: String, function: MemorySegment, elements: Int, vararg arguments: NeuroCudaDriver.Argument) {
+        NeuroLog.trace("cuda", "kernel.submitted") { mapOf("kernel" to name, "workItems" to elements,
+            "stream" to "default", "arguments" to arguments.size) }
+        driver.launch(function, elements, *arguments)
     }
 
     override fun close() = module.close()

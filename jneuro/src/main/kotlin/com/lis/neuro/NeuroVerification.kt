@@ -3,7 +3,7 @@ package com.lis.neuro
 import kotlin.math.abs
 
 object NeuroVerification {
-    @JvmStatic fun main(args: Array<String>) {
+    @JvmStatic fun main(args: Array<String>) = NeuroLog.application("NeuroVerification") {
         for (topology in listOf(intArrayOf(2), intArrayOf(2, 0, 1), intArrayOf(-1, 1))) {
             expect<IllegalArgumentException> { Neuro(topology) }
         }

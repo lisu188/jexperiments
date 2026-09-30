@@ -130,8 +130,11 @@ internal class ArchitectureSearchPanel(
         minimumSize = Dimension(640, 600)
         start.isEnabled = false; cancel.isEnabled = false; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false
         start.addActionListener { submit() }
-        cancel.addActionListener { cancelSearch(); cancel.isEnabled = false; summary.text = "Stopping between epochs; completed results will be retained." }
-        policy.addActionListener { if (!changing) { updateSummary(); plot.repaint() } }
+        cancel.addActionListener { NeuroLog.info("ui", "ui.search.cancel.requested"); cancelSearch(); cancel.isEnabled = false; summary.text = "Stopping between epochs; completed results will be retained." }
+        policy.addActionListener { if (!changing) {
+            NeuroLog.info("ui", "ui.search.policy.selected", "policy" to policy.selectedItem)
+            updateSummary(); plot.repaint()
+        } }
         strategy.addActionListener {
             if (!running) lineageStatus.text = if (strategy.selectedItem == ArchitectureSearchStrategy.ADAPTIVE)
                 "Parents are selected by fitness from current elites; restarts also mutate elites."
@@ -145,7 +148,10 @@ internal class ArchitectureSearchPanel(
         }
         selectedSeed.addActionListener { if (!changing) inspectSelectedSeed() }
         inspect.addActionListener { inspectSelectedSeed() }
-        apply.addActionListener { selectedCandidate()?.let { candidate -> result?.let { applyArchitecture(it, candidate) } } }
+        apply.addActionListener { selectedCandidate()?.let { candidate -> result?.let {
+            NeuroLog.info("ui", "ui.search.architecture.apply.requested", "searchId" to it.logId, "topology" to candidate.architecture)
+            applyArchitecture(it, candidate)
+        } } }
         replay.addActionListener { selectedCandidate()?.let { candidate -> result?.let { report -> chosenTrial?.let { replayRun(report, candidate, it) } } } }
         progressBar.getAccessibleContext().accessibleName = "Search progress"
     }
@@ -184,7 +190,10 @@ internal class ArchitectureSearchPanel(
                 "Starting from ${next.startingArchitecture()}; fitness tournaments select current elite parents, including for restarts."
             else "Reference mode: all candidates are enumerated in advance."
             startSearch(next, mode, decimal(fraction), split)
-        } catch (exception: Exception) { failed(exception.message ?: "Check search settings.") }
+        } catch (exception: Exception) {
+            NeuroLog.warn("ui", "ui.search.configuration.rejected", exception)
+            failed(exception.message ?: "Check search settings.")
+        }
     }
 
     fun started(next: ArchitectureSearchConfig, mode: ArchitectureEvaluation) {
@@ -223,6 +232,7 @@ internal class ArchitectureSearchPanel(
     }
 
     fun complete(report: ArchitectureSearchResult) {
+        NeuroLog.info("ui", "ui.search.results.published", "searchId" to report.logId, "termination" to report.termination, "evaluated" to report.evaluated)
         if (config !== report.config) started(report.config, report.data.evaluation)
         strategy.isEnabled = true; policy.isEnabled = true
         running = false; result = report; config = report.config; scoreMode = report.data.evaluation
@@ -251,6 +261,7 @@ internal class ArchitectureSearchPanel(
     }
 
     fun invalidateResults() {
+        if (result != null) NeuroLog.info("ui", "ui.search.results.invalidated", "searchId" to result?.logId)
         strategy.isEnabled = true; policy.isEnabled = true; lineage = emptyMap()
         running = false; result = null; config = null; results = emptyList(); selected = null
         chosenTrial = null; surface = null; tableModel.fireTableDataChanged()
@@ -262,6 +273,7 @@ internal class ArchitectureSearchPanel(
     }
 
     internal fun selectArchitecture(architecture: NetworkArchitecture?) {
+        if (selected != architecture) NeuroLog.debug("ui", "ui.search.architecture.selected") { mapOf("searchId" to result?.logId, "topology" to architecture) }
         selected = architecture
         val index = results.indexOfFirst { it.architecture == architecture }
         changing = true
@@ -309,6 +321,7 @@ internal class ArchitectureSearchPanel(
         val candidate = selectedCandidate()
         val trial = candidate?.trials?.getOrNull(selectedSeed.selectedIndex)
         if (chosenTrial !== trial) {
+            NeuroLog.debug("ui", "ui.search.trial.inspected") { mapOf("searchId" to result?.logId, "trialId" to trial?.logId, "seed" to trial?.seed) }
             chosenTrial = trial
             surface = trial?.snapshot?.let { NeuroXorDiagnostics.renderOutputMap(it, NeuroStudio.resolution(it.parameterCount(), 160)) }
         }

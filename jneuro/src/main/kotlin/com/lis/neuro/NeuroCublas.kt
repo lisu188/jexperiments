@@ -21,7 +21,7 @@ internal class NeuroCublas private constructor(
         Arena.ofConfined().use { local ->
             val out = local.allocate(ValueLayout.JAVA_INT)
             val status = NeuroNativeLibrary.invokeInt(function, handle, out)
-            check(status == 0) { "cublasGetVersion_v2 failed with status " + status }
+            NeuroNativeLibrary.checkStatus(status, "cublasGetVersion_v2", "cublas") { "cublasGetVersion_v2 failed with status " + status }
             out.get(ValueLayout.JAVA_INT, 0L)
         }
     }
@@ -61,24 +61,28 @@ internal class NeuroCublas private constructor(
     private fun gemmDouble(transA: Int, transB: Int, m: Int, n: Int, k: Int,
                      a: MemorySegment, lda: Int, b: MemorySegment, ldb: Int,
                      c: MemorySegment, ldc: Int) {
+        NeuroLog.trace("cublas", "gemm.submitted") { mapOf("precision" to "FP64", "m" to m, "n" to n, "k" to k,
+            "transposeA" to transA, "transposeB" to transB, "lda" to lda, "ldb" to ldb, "ldc" to ldc, "stream" to "default") }
         Arena.ofConfined().use { local ->
             val alpha = local.allocateFrom(ValueLayout.JAVA_DOUBLE, 1.0)
             val beta = local.allocateFrom(ValueLayout.JAVA_DOUBLE, 0.0)
             val status = NeuroNativeLibrary.invokeInt(dgemmHandle, handle, transA, transB, m, n, k,
                 alpha, a, lda, b, ldb, beta, c, ldc)
-            check(status == 0) { "cublasDgemm_v2 failed with status " + status }
+            NeuroNativeLibrary.checkStatus(status, "cublasDgemm_v2", "cublas") { "cublasDgemm_v2 failed with status " + status }
         }
     }
 
     private fun gemmFloat(transA: Int, transB: Int, m: Int, n: Int, k: Int,
                           a: MemorySegment, lda: Int, b: MemorySegment, ldb: Int,
                           c: MemorySegment, ldc: Int) {
+        NeuroLog.trace("cublas", "gemm.submitted") { mapOf("precision" to "FP32", "m" to m, "n" to n, "k" to k,
+            "transposeA" to transA, "transposeB" to transB, "lda" to lda, "ldb" to ldb, "ldc" to ldc, "stream" to "default") }
         Arena.ofConfined().use { local ->
             val alpha = local.allocateFrom(ValueLayout.JAVA_FLOAT, 1.0f)
             val beta = local.allocateFrom(ValueLayout.JAVA_FLOAT, 0.0f)
             val status = NeuroNativeLibrary.invokeInt(sgemmHandle, handle, transA, transB, m, n, k,
                 alpha, a, lda, b, ldb, beta, c, ldc)
-            check(status == 0) { "cublasSgemm_v2 failed with status " + status }
+            NeuroNativeLibrary.checkStatus(status, "cublasSgemm_v2", "cublas") { "cublasSgemm_v2 failed with status " + status }
         }
     }
 
@@ -87,9 +91,10 @@ internal class NeuroCublas private constructor(
         closed = true
         try {
             val status = NeuroNativeLibrary.invokeInt(destroyHandle, handle)
-            check(status == 0) { "cublasDestroy_v2 failed with status " + status }
+            NeuroNativeLibrary.checkStatus(status, "cublasDestroy_v2", "cublas") { "cublasDestroy_v2 failed with status " + status }
         } finally {
             arena.close()
+            NeuroLog.debug("cublas", "adapter.closed") { mapOf("library" to libraryName) }
         }
     }
 
@@ -125,14 +130,16 @@ internal class NeuroCublas private constructor(
                 val handle = Arena.ofConfined().use { local ->
                     val out = local.allocate(ValueLayout.ADDRESS)
                     val status = NeuroNativeLibrary.invokeInt(create, out)
-                    check(status == 0) { "cublasCreate_v2 failed with status " + status }
+                    NeuroNativeLibrary.checkStatus(status, "cublasCreate_v2", "cublas") { "cublasCreate_v2 failed with status " + status }
                     out.get(ValueLayout.ADDRESS, 0L)
                 }
                 NeuroCublas(arena, loaded.name, handle, destroy, dgemm, sgemm, version)
             } catch (exception: RuntimeException) {
+                NeuroLog.debug("cublas", "adapter.unavailable") { mapOf("adapter" to "NeuroCublas", "reason" to exception.message) }
                 arena.close()
                 null
             } catch (exception: UnsatisfiedLinkError) {
+                NeuroLog.debug("cublas", "adapter.unavailable") { mapOf("adapter" to "NeuroCublas", "reason" to exception.message) }
                 arena.close()
                 null
             }

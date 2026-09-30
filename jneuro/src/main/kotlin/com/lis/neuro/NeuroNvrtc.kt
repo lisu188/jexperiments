@@ -28,6 +28,10 @@ internal class NeuroNvrtc private constructor(
     }
 
     fun compile(source: String, name: String, computeCapability: Pair<Int, Int>): ByteArray = Arena.ofConfined().use { local ->
+        val compilation = NeuroLog.id("nvrtc")
+        val started = System.nanoTime()
+        NeuroLog.debug("cuda", "compilation.started") { mapOf("compilation" to compilation, "source" to name,
+            "sourceCharacters" to source.length, "options" to compilerOptions(computeCapability).joinToString(","), "library" to libraryName) }
         val programOut = local.allocate(ValueLayout.ADDRESS)
         val sourceSegment = local.allocateFrom(source)
         val nameSegment = local.allocateFrom(name)
@@ -53,14 +57,19 @@ internal class NeuroNvrtc private constructor(
             checkStatus(NeuroNativeLibrary.invokeInt(getPtxHandle, program, ptx), "nvrtcGetPTX")
             ByteArray(size.toInt()).also {
                 MemorySegment.copy(ptx, ValueLayout.JAVA_BYTE, 0L, it, 0, it.size)
+                NeuroLog.debug("cuda", "compilation.completed") { mapOf("compilation" to compilation,
+                    "ptxBytes" to size, "elapsedMs" to (System.nanoTime() - started) / 1_000_000.0) }
             }
         } catch (exception: Throwable) {
+            NeuroLog.error("cuda", "compilation.failed", exception, "compilation" to compilation, "source" to name,
+                "hint" to "Check NVRTC compatibility with the selected compute capability and the compiler diagnostic.")
             failure = exception
             throw exception
         } finally {
             try {
                 checkStatus(NeuroNativeLibrary.invokeInt(destroyProgramHandle, programOut), "nvrtcDestroyProgram")
             } catch (cleanup: Throwable) {
+                NeuroLog.error("cuda", "compilation.cleanup.failed", cleanup, "compilation" to compilation)
                 if (failure != null) failure.addSuppressed(cleanup) else throw cleanup
             }
         }
@@ -84,7 +93,7 @@ internal class NeuroNvrtc private constructor(
     }
 
     private fun checkStatus(status: Int, operation: String) {
-        check(status == 0) { operation + " failed with status " + status }
+        NeuroNativeLibrary.checkStatus(status, operation, "cuda") { operation + " failed with status " + status }
     }
 
     companion object {
@@ -123,9 +132,11 @@ internal class NeuroNvrtc private constructor(
                         FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS))
                 )
             } catch (exception: RuntimeException) {
+                NeuroLog.debug("cuda", "adapter.unavailable") { mapOf("adapter" to "NeuroNvrtc", "reason" to exception.message) }
                 arena.close()
                 null
             } catch (exception: UnsatisfiedLinkError) {
+                NeuroLog.debug("cuda", "adapter.unavailable") { mapOf("adapter" to "NeuroNvrtc", "reason" to exception.message) }
                 arena.close()
                 null
             }

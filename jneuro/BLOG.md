@@ -224,10 +224,63 @@ The native adapters and orchestration remain inside the ordinary 90% JaCoCo gate
 
 ```text
 ./gradlew :jneuro:gpuCheck
-./gradlew :jneuro:cudaBenchmark --args=--smoke
+./gradlew :jneuro:cpuGpuBenchmark
+./gradlew :jneuro:cpuGpuBenchmark --args="--profile matrix --epochs 5 --warmups 2 --repeats 5 --batches 64,256 --output build/reports/cuda-benchmark/matrix"
+./gradlew :jneuro:cpuGpuBenchmark --args="--topology 2,8,8,8,1 --samples 128 --epochs 5 --warmups 2 --repeats 5 --batches 16,64 --output build/reports/cuda-benchmark/2-8-8-8-1"
 ```
 
-The bounded benchmark uses 128 samples, a 32/64/32/4 network, two epochs and batch sizes 16 and 64. It includes native initialization, transfers and final CPU diagnostics. The default benchmark expands to networks as large as 1024/2048/2048/512 and batches of 2048; run that only with suitable host/device memory and time. These end-to-end smoke timings are not controlled throughput measurements.
+`cpuGpuBenchmark` and the retained `cudaBenchmark` task run the same command-line harness. The default `smoke` profile uses 128 samples, a 32/64/32/4 network, two epochs, batches 16 and 64, one warmup and three measured repetitions. The explicit `matrix` profile uses 1024 samples with 128/256/128/32 and 256/512/256/32 networks. Both profiles compare CPU FP64, driver CUDA FP64, cuBLAS FP64 and cuBLAS FP32. These are hardware-bound entrypoints: explicitly requested GPU engines fail if unavailable; the harness never substitutes CPU silently.
+
+Every round starts with the same seed, weights, momentum, dataset and shuffle state. The harness calls `session.trainMiniBatch(epochs, batchSize, 1)` for every engine, with one CPU worker, and rotates the measured backend order each repetition. Warmups exercise the complete path but are excluded from the reported samples. A separate CPU reference runs outside timing, including when `--backends` selects only GPU engines.
+
+The console prints median training-call and total times alongside speedups against the measured CPU median. A speedup above 1 means faster than CPU for that workload. Both JSON and CSV reports retain every measured round, separate session-open/training/close timings, device identity and precision. JSON additionally records complete minimum/median/p95 summaries, JVM/OS, logging level, seed, CUDA resource hashes and benchmark class hash. CSV includes training minimum/median/p95, total median and speedups beside each round. Pass `-PneuroBenchmarkRevision=<revision>` to record source provenance; otherwise that field says `unspecified`. The default report prefix is `build/reports/cuda-benchmark/benchmark`, resolved from the JNeuro module directory when launched by Gradle.
+
+The total interval includes session open, training and close, including native initialization, transfers and diagnostics. Both GPU engines publish and compute RMSE on the CPU after every epoch; the matrix CPU engine computes RMSE once at the end of the multi-epoch call. These timings therefore compare the current application execution paths, including their different diagnostic costs. It excludes model/dataset construction and post-run comparison. The cuBLAS implementation creates handles, compiles kernels and allocates buffers inside the training call, so its training column includes those costs. The driver backend performs its retained setup during session open. Comparing both columns makes that difference visible; neither column is an isolated GEMM or kernel throughput measurement.
+
+Each warmup and measured round verifies every weight, bias and momentum value, RMSE, and completed epoch/sample counters against the CPU reference. FP64 uses absolute tolerance `1e-10` plus relative tolerance `1e-8`; FP32 uses `5e-5` plus `2e-3`. Non-finite results or mismatches fail the run. Partial JSON reports carry a failure status and the failing stage/backend. CSV marks any retained rows as failed; a failure before the first measured round produces a header-only CSV. The original error is preserved if writing the report also fails. Tolerances account for precision and reduction ordering; this verifies the tested trajectory, not arbitrary long-run convergence equivalence.
+
+Options accept separate name/value tokens: `--profile smoke|matrix`, `--topology 2,8,8,8,1`, `--samples 128`, `--epochs`, `--warmups`, `--repeats`, `--batches 16,64`, `--backends CPU,CUDA,CUBLAS_FP64,CUBLAS_FP32`, and `--output <prefix>`. `--smoke` remains a compatibility alias. Custom topology lists every layer, including inputs and outputs: `2,8,8,8,1` means two inputs, three hidden layers of eight neurons each and one output. It replaces the profile's shapes; the profile still supplies the sample-count default unless `--samples` overrides it. Custom cases allow 2 through 16 layers, widths 1 through 2048, at most 2,000,000 parameters and 1 through 8192 samples. The console prints startup settings and progress after each verified workload, outside timed intervals.
+
+Larger epoch counts amortize setup differently, and batch size changes the training algorithm's update frequency. Compare engines within the same case, keep other GPU work idle, and retain the report before drawing performance conclusions. Tiny networks often favor CPU because launch, transfer and compilation overhead dominate arithmetic.
+
+A local Windows 11 run on September 30, 2026 used an Intel Core i5-14400F with one CPU worker, an NVIDIA RTX 4060 Ti, driver 616.92 and OpenJDK 27+35. With two warmups and five measured repetitions per engine, median total session times were:
+
+| Network | Samples / epochs / batch | CPU FP64 | CUDA FP64 | cuBLAS FP64 | cuBLAS FP32 |
+| --- | --- | --- | --- | --- | --- |
+| 2/8/8/8/1 | 128 / 5 / 64 | 0.52 ms | 69.25 ms | 722.91 ms | 735.56 ms |
+| 32/64/32/4 | 128 / 2 / 64 | 2.58 ms | 63.37 ms | 626.54 ms | 647.50 ms |
+| 128/256/128/32 | 1024 / 5 / 256 | 1535.14 ms | 154.93 ms | 825.81 ms | 843.11 ms |
+| 256/512/256/32 | 1024 / 5 / 256 | 7042.04 ms | 683.85 ms | 1350.08 ms | 1367.02 ms |
+
+Across both batches in both profiles and the custom 2/8/8/8/1 case, all 160 measured rounds passed full-state numerical validation. The largest listed case was 10.30 times faster through the driver CUDA backend including setup/cleanup; the tiny cases favored CPU. For 2/8/8/8/1 at batch 64, training alone took 0.495 ms on CPU versus 3.348 ms on CUDA, so even excluding session setup did not favor GPU. This is a bounded local application benchmark with one CPU worker, not a claim about every CPU configuration, sustained kernel throughput, or a general GPU speedup. Repeat the command on the target machine and inspect the distributions rather than treating these medians as a release performance guarantee.
+
+## Structured application logging
+
+JNeuro uses the JDK logging API without a new logging dependency. Application entrypoints configure the `com.lis.neuro` namespace and emit JSON lines to the console and rotating UTF-8 files. They do not reconfigure the JVM's global root logger. Interactive launches default to INFO and file output under `${user.home}/.jneuro/logs`; files use `jneuro-%u-%g.log`, where JUL selects a process-safe unique index and rotation generation. The default is three files with an approximate 2 MiB limit each; a final record can cross the rotation threshold. File initialization failure emits `logging.file.unavailable` to the console and leaves the application usable.
+
+Configuration must be set before the first JNeuro operation initializes logging. Java callers can use normal system properties:
+
+```java
+System.setProperty("jneuro.log.level", "DEBUG");
+System.setProperty("jneuro.log.dir", "./logs");
+System.setProperty("jneuro.log.limit_bytes", "2097152");
+System.setProperty("jneuro.log.count", "3");
+```
+
+Equivalent environment variables are `JNEURO_LOG_LEVEL`, `JNEURO_LOG_DIR`, `JNEURO_LOG_LIMIT_BYTES`, `JNEURO_LOG_COUNT` and `JNEURO_LOG_FILE`. System properties take precedence. Supported levels are INFO, DEBUG, TRACE, WARN, ERROR and OFF; `jneuro.log.file=false` disables the file sink. Limits accept 1024 through 16777216 bytes and counts 1 through 10. Invalid configuration emits a warning and uses the default for that field.
+
+Gradle forwards `-PneuroLogLevel`, `-PneuroLogDir`, `-PneuroLogLimitBytes`, `-PneuroLogCount` and `-PneuroLogFile` to the child JVM. Explicit Gradle properties take precedence over environment variables. Benchmark and verification tasks default to WARN with file logging disabled to reduce measurement noise and disk writes; tests also disable file output. An explicit DEBUG/TRACE benchmark run measures the cost of that logging as well as training, and the report records the selected level.
+
+```text
+./gradlew :jneuro:runXorCanvas -PneuroLogLevel=DEBUG
+./gradlew :jneuro:cpuGpuBenchmark -PneuroLogLevel=WARN -PneuroLogFile=false
+```
+
+Every record includes UTC time, severity, component, event, process run identifier and thread. Structured fields connect model/session IDs with window, run, architecture-search and trial IDs. INFO covers application/window lifecycle, user actions, configuration changes, resolved engines, session ownership and training summaries. Training summaries include epochs, samples, batch size, configured CPU parallelism, precision, device, elapsed time and RMSE. Single-epoch training summaries are sampled at the first session epoch and each hundred-epoch boundary; bulk calls and UI/search terminal states have separate completion events. DEBUG exposes intermediate progress, search scheduling, native library discovery, memory admission, allocations and cleanup. TRACE adds prediction, kernel/GEMM dimensions, transfers and synchronization events. Native addresses and tensor contents are not logged.
+
+Device selection and completed GPU work are distinct events. `session.resolved` reports the requested versus actual backend and precision, while `training.completed` sets `gpuWorkCompleted=true` only after GPU execution has returned and the host model's completed epoch counter has advanced. Native publication follows synchronization and staging validation. A loaded CUDA library alone is therefore insufficient evidence that an epoch ran on the GPU. Failures retain the original exception and stack trace, report retained host progress and do not emit a false completion. Logging failures cannot replace training failures or stop training.
+
+The desktop emits actions such as start, pause, single step, restart, configuration rejection, navigation, replay, export, seed studies and shutdown. Search logs retain trial metadata and terminal success/failure/cancellation. Lazy DEBUG/TRACE fields avoid building detailed payloads when disabled; strings, field counts and serialized exceptions are bounded. TRACE is intentionally verbose and should be used for bounded investigations. Coverage tests exercise rotation, configuration, sink failures, correlation and original-cause preservation; real-window tests assert representative logging paths through ordinary UI input.
 
 ## The desktop redesign
 
