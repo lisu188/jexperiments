@@ -125,7 +125,7 @@ foreach ($workload in $report.workloads.PSObject.Properties.Value) {
         }
     }
 }
-$jmhResults = @(Get-Content $jmhReport -Raw | ConvertFrom-Json)
+$jmhResults = Get-Content $jmhReport -Raw | ConvertFrom-Json
 if ($jmhResults.Count -ne 8 -or ($jmhResults.params.engine | Sort-Object -Unique).Count -ne 8) { throw 'Missing JMH engines.' }
 foreach ($result in $jmhResults) {
     if ($result.forks -ne 3 -or $result.warmupIterations -ne 5 -or $result.measurementIterations -ne 5 -or
@@ -141,3 +141,7 @@ foreach ($result in $jmhResults) {
 }
 if ($env:GITHUB_STEP_SUMMARY) { Get-Content "$summary.md" | Add-Content $env:GITHUB_STEP_SUMMARY }
 Write-Host "Completed CPU/native evidence. Native retention gate passed: $($report.nativeGatePassed)."
+# GitHub's PowerShell wrapper propagates the last native process exit code.
+# All evidence checks passed; a valid negative promotion decision is successful
+# experiment completion. Earlier command failures and validation throws stay fatal.
+exit 0
