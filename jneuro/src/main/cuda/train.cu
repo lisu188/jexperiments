@@ -131,3 +131,165 @@ extern "C" __global__ void gather(
         batch_targets[index] = all_targets[sample * outputs + index % outputs];
     }
 }
+
+// SMALL ABI 2: one cooperative block owns one complete tiny network. Host
+// eligibility is 2 inputs, 1..4 hidden layers of 4/8/16, and one output.
+// A tile of eight samples bounds FP64 shared storage below 32 KiB. Gradient
+// owners visit samples in exactly the reference order, including across tiles.
+namespace {
+constexpr int SMALL_PARAMETERS = 881;
+constexpr int SMALL_ACTIVATIONS = 67;
+constexpr int SMALL_DELTAS = 65;
+constexpr int SMALL_TILE = 8;
+
+template <typename Real> __device__ Real small_fma(Real a, Real b, Real c);
+template <> __device__ double small_fma(double a, double b, double c) { return fma(a, b, c); }
+template <> __device__ float small_fma(float a, float b, float c) { return fmaf(a, b, c); }
+template <typename Real> __device__ Real small_exp(Real value);
+template <> __device__ double small_exp(double value) { return exp(value); }
+template <> __device__ float small_exp(float value) { return expf(value); }
+template <typename Real> __device__ Real small_ldexp(Real value, int exponent);
+template <> __device__ double small_ldexp(double value, int exponent) { return ldexp(value, exponent); }
+template <> __device__ float small_ldexp(float value, int exponent) { return ldexpf(value, exponent); }
+
+template <typename Real> __device__ Real small_exp_negative(Real value) {
+    if (value <= Real(sizeof(Real) == sizeof(double) ? -745.0 : -103.0)) return Real(0);
+    const int exponent = static_cast<int>(value * Real(1.4426950408889634));
+    const Real remainder = value - Real(exponent) * Real(0.6931471805599453);
+    const Real square = remainder * remainder;
+    const Real polynomial = Real(1) + remainder + square * (Real(0.5) + remainder *
+        (Real(0.16666666666666666) + remainder *
+        (Real(0.041666666666666664) + remainder * Real(0.008333333333333333))));
+    return small_ldexp(polynomial, exponent);
+}
+
+template <typename Real> __device__ Real small_activate(Real value, int mode) {
+    if (mode == 0) return Real(1) / (Real(1) + small_exp(-value));
+    if (value >= Real(0)) return Real(1) / (Real(1) + small_exp_negative(-value));
+    const Real exponential = small_exp_negative(value);
+    return exponential / (Real(1) + exponential);
+}
+
+template <typename Real> __device__ void small_train(
+    double* packed, const double* inputs, const double* targets, const int* orders,
+    const int* topology, const int* active, int models, int layers, int samples,
+    int epochs, int batch_size, double learning_rate_double, double momentum_double,
+    double beta_double, int mode, int online) {
+    const int model = blockIdx.x;
+    if (model >= models || !active[model]) return;
+    const int thread = threadIdx.x;
+    __shared__ Real state[2 * SMALL_PARAMETERS];
+    __shared__ Real activation[SMALL_TILE * SMALL_ACTIVATIONS];
+    __shared__ Real delta[SMALL_TILE * SMALL_DELTAS];
+    __shared__ Real gradient[SMALL_PARAMETERS];
+    __shared__ int invalid;
+    int parameter_offset[5], activation_offset[6], delta_offset[5];
+    int parameters = 0, activation_count = topology[0], delta_count = 0;
+    activation_offset[0] = 0;
+    for (int layer = 0; layer < layers; ++layer) {
+        parameter_offset[layer] = parameters;
+        parameters += topology[layer + 1] * (topology[layer] + 1);
+        activation_offset[layer + 1] = activation_count;
+        activation_count += topology[layer + 1];
+        delta_offset[layer] = delta_count;
+        delta_count += topology[layer + 1];
+    }
+    const std::size_t base = static_cast<std::size_t>(model) * parameters * 2;
+    for (int index = thread; index < parameters * 2; index += blockDim.x)
+        state[index] = Real(packed[base + index]);
+    if (thread == 0) invalid = 0;
+    __syncthreads();
+    const Real learning_rate = Real(learning_rate_double);
+    const Real momentum = Real(momentum_double);
+    const Real beta = Real(beta_double);
+    for (int epoch = 0; epoch < epochs; ++epoch) {
+        for (int start = 0; start < samples; start += batch_size) {
+            const int count = min(batch_size, samples - start);
+            for (int index = thread; index < parameters; index += blockDim.x) gradient[index] = Real(0);
+            __syncthreads();
+            for (int tile = 0; tile < count; tile += SMALL_TILE) {
+                const int tile_count = min(SMALL_TILE, count - tile);
+                for (int index = thread; index < tile_count * topology[0]; index += blockDim.x) {
+                    const int row = index / topology[0];
+                    const int sample = orders[(static_cast<std::size_t>(model) * epochs + epoch) * samples + start + tile + row];
+                    activation[row * activation_count + index % topology[0]] = Real(inputs[static_cast<std::size_t>(sample) * topology[0] + index % topology[0]]);
+                }
+                __syncthreads();
+                for (int layer = 0; layer < layers; ++layer) {
+                    const int in = topology[layer], out = topology[layer + 1];
+                    for (int index = thread; index < tile_count * out; index += blockDim.x) {
+                        const int row = index / out, neuron = index % out;
+                        Real sum = state[parameter_offset[layer] + in * out + neuron];
+                        for (int input = 0; input < in; ++input)
+                            sum = small_fma(activation[row * activation_count + activation_offset[layer] + input],
+                                state[parameter_offset[layer] + neuron * in + input], sum);
+                        activation[row * activation_count + activation_offset[layer + 1] + neuron] = small_activate(sum * beta, mode);
+                    }
+                    __syncthreads();
+                }
+                for (int row = thread; row < tile_count; row += blockDim.x) {
+                    const int sample = orders[(static_cast<std::size_t>(model) * epochs + epoch) * samples + start + tile + row];
+                    const Real value = activation[row * activation_count + activation_offset[layers]];
+                    delta[row * delta_count + delta_offset[layers - 1]] = (Real(targets[sample]) - value) * beta * value * (Real(1) - value);
+                }
+                __syncthreads();
+                for (int layer = layers - 2; layer >= 0; --layer) {
+                    const int width = topology[layer + 1], next_width = topology[layer + 2];
+                    for (int index = thread; index < tile_count * width; index += blockDim.x) {
+                        const int row = index / width, neuron = index % width;
+                        Real sum = online ? delta[row * delta_count + delta_offset[layer + 1]] * state[parameter_offset[layer + 1] + neuron] : Real(0);
+                        for (int next = online ? 1 : 0; next < next_width; ++next)
+                            sum = small_fma(delta[row * delta_count + delta_offset[layer + 1] + next],
+                                state[parameter_offset[layer + 1] + next * width + neuron], sum);
+                        const Real value = activation[row * activation_count + activation_offset[layer + 1] + neuron];
+                        delta[row * delta_count + delta_offset[layer] + neuron] = online
+                            ? sum * (beta * value * (Real(1) - value)) : sum * beta * value * (Real(1) - value);
+                    }
+                    __syncthreads();
+                }
+                for (int layer = 0; layer < layers; ++layer) {
+                    const int in = topology[layer], out = topology[layer + 1];
+                    for (int index = thread; index < in * out + out; index += blockDim.x) {
+                        const bool weight = index < in * out;
+                        const int neuron = weight ? index / in : index - in * out;
+                        Real sum = gradient[parameter_offset[layer] + index];
+                        for (int row = 0; row < tile_count; ++row) {
+                            const Real change = delta[row * delta_count + delta_offset[layer] + neuron];
+                            if (online) sum = weight ? (learning_rate * change) * activation[row * activation_count + activation_offset[layer] + index % in] : learning_rate * change;
+                            else if (weight) sum = small_fma(activation[row * activation_count + activation_offset[layer] + index % in], change, sum);
+                            else sum += change;
+                        }
+                        gradient[parameter_offset[layer] + index] = sum;
+                    }
+                }
+                __syncthreads();
+            }
+            for (int index = thread; index < parameters; index += blockDim.x) {
+                const Real scaled = online ? gradient[index] : (learning_rate / Real(count)) * gradient[index];
+                const Real velocity = small_fma(momentum, state[parameters + index], scaled);
+                state[parameters + index] = velocity;
+                state[index] += velocity;
+                if (!isfinite(state[index]) || !isfinite(velocity)) atomicExch(&invalid, 1);
+            }
+            __syncthreads();
+            if (invalid) break;
+        }
+        if (invalid) break;
+    }
+    for (int index = thread; index < parameters * 2; index += blockDim.x)
+        packed[base + index] = invalid ? NAN : double(state[index]);
+}
+} // namespace
+
+extern "C" __global__ void small_train_fp64(double* packed, const double* inputs, const double* targets,
+    const int* orders, const int* topology, const int* active, int models, int layers, int samples,
+    int epochs, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) {
+    small_train<double>(packed, inputs, targets, orders, topology, active, models, layers, samples,
+        epochs, batch_size, learning_rate, momentum, beta, mode, online);
+}
+extern "C" __global__ void small_train_fp32(double* packed, const double* inputs, const double* targets,
+    const int* orders, const int* topology, const int* active, int models, int layers, int samples,
+    int epochs, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) {
+    small_train<float>(packed, inputs, targets, orders, topology, active, models, layers, samples,
+        epochs, batch_size, learning_rate, momentum, beta, mode, online);
+}

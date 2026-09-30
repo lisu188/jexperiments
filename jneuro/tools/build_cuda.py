@@ -24,7 +24,7 @@ NVCC_VERSION = "Cuda compilation tools, release 13.0, V13.0.88"
 ARCHITECTURE = "compute_75"
 FLAGS = ("--ptx", "--std=c++17", f"--gpu-architecture={ARCHITECTURE}",
          "--fmad=false", "--prec-div=true", "--prec-sqrt=true", "--ftz=false")
-KERNELS = ("forward", "output_delta", "hidden_delta", "update", "gather")
+KERNELS = ("forward", "output_delta", "hidden_delta", "update", "gather", "small_train_fp64", "small_train_fp32")
 
 
 def sha256(path):
@@ -33,7 +33,7 @@ def sha256(path):
 
 def source_metadata():
     return {
-        "kernel.abi": "1",
+        "kernel.abi": "2",
         "source.sha256": sha256(SOURCE),
         "builder.sha256": sha256(Path(__file__).resolve()),
         "cuda.toolkit": TOOLKIT,
