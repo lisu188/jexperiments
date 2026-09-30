@@ -15,7 +15,7 @@ class ArchitectureSearchPanelTest {
         EventQueue.invokeAndWait {
             val panel = ArchitectureSearchPanel({ config, evaluation, fraction, split ->
                 assertEquals(ArchitectureEvaluation.TRAINING_FIT, evaluation)
-                assertEquals(0.2, fraction); assertEquals(42L, split); assertEquals(ArchitectureSearchStrategy.ADAPTIVE, config.strategy); assertEquals(listOf(6), config.initialHidden); assertEquals(10_000, config.plannedTrials()); starts++
+                assertEquals(0.2, fraction); assertEquals(42L, split); assertEquals(ArchitectureSearchStrategy.ADAPTIVE, config.strategy); assertEquals(listOf(6), config.initialHidden); assertEquals(1_000_000, config.plannedTrials()); starts++
             }, { cancels++ }, { _, _ -> }, { _, _, _ -> })
             panel.setSource(StudioConfig(), 4)
             val defaults = panel.readConfig()
