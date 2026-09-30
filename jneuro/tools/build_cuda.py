@@ -7,7 +7,6 @@ only Python; ordinary Java/Kotlin builds and end users do not need a CUDA toolki
 
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import re
@@ -76,10 +75,8 @@ def compiler(nvcc):
     executable = shutil.which(nvcc)
     if executable is None:
         raise ValueError(f"Cannot find {nvcc}; build in nvidia/cuda:{TOOLKIT}-devel-ubuntu24.04")
-    version_file = Path(executable).resolve().parents[1] / "version.json"
-    version = json.loads(version_file.read_text(encoding="utf-8"))
-    if version.get("cuda", {}).get("version") != TOOLKIT:
-        raise ValueError(f"CUDA toolkit {TOOLKIT} required; inspect {version_file}")
+    # The pinned official container does not ship version.json. Validate the
+    # compiler executable itself; the workflow pins the complete toolkit image.
     details = subprocess.run([executable, "--version"], check=True, text=True, capture_output=True).stdout
     if NVCC_VERSION not in details.splitlines():
         raise ValueError("nvcc does not report the expected CUDA 13.0.88 compiler")

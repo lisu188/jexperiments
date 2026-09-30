@@ -1,10 +1,48 @@
 """Negative checks for the resource verifier; no CUDA toolkit or device needed."""
 
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import build_cuda
+
+
+class CompilerValidationTest(unittest.TestCase):
+    def test_pinned_compiler_needs_no_installation_metadata(self):
+        executable = "/missing-installation-metadata/bin/nvcc"
+        output = subprocess.CompletedProcess([executable, "--version"], 0,
+            "nvcc: NVIDIA (R) Cuda compiler driver\n" + build_cuda.NVCC_VERSION + "\n")
+        with patch.object(build_cuda.shutil, "which", return_value=executable), \
+                patch.object(build_cuda.subprocess, "run", return_value=output) as run:
+            self.assertEqual((executable, build_cuda.NVCC_VERSION), build_cuda.compiler("nvcc"))
+            run.assert_called_once_with([executable, "--version"], check=True, text=True, capture_output=True)
+
+    def test_missing_compiler_is_rejected_without_running_a_command(self):
+        with patch.object(build_cuda.shutil, "which", return_value=None), \
+                patch.object(build_cuda.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "Cannot find nvcc"):
+                build_cuda.compiler("nvcc")
+            run.assert_not_called()
+
+    def test_unexpected_versions_are_rejected(self):
+        for version in ("Cuda compilation tools, release 13.0, V13.0.48",
+                        "Cuda compilation tools, release 13.1, V13.1.88",
+                        "unrecognized compiler output",
+                        build_cuda.NVCC_VERSION + " unexpected suffix"):
+            with self.subTest(version=version), \
+                    patch.object(build_cuda.shutil, "which", return_value="/usr/local/cuda/bin/nvcc"), \
+                    patch.object(build_cuda.subprocess, "run",
+                                 return_value=subprocess.CompletedProcess([], 0, version + "\n")):
+                with self.assertRaisesRegex(ValueError, "expected CUDA 13.0.88"):
+                    build_cuda.compiler("nvcc")
+
+    def test_failed_compiler_probe_is_not_accepted(self):
+        with patch.object(build_cuda.shutil, "which", return_value="/usr/local/cuda/bin/nvcc"), \
+                patch.object(build_cuda.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "nvcc")):
+            with self.assertRaises(subprocess.CalledProcessError):
+                build_cuda.compiler("nvcc")
 
 
 class ResourceVerificationTest(unittest.TestCase):
