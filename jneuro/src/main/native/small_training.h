@@ -32,6 +32,7 @@ struct Scalar {
     static Value fma(Value a, Value b, Value c) { return std::fma(a, b, c); }
     static Value activate(Value value, int mode) {
         auto negative_exp = [](double input) {
+            if (std::isnan(input)) return input;
             if (input <= -745.0) return 0.0;
             const int exponent = static_cast<int>(input * 1.4426950408889634);
             const double remainder = input - exponent * 0.6931471805599453;
