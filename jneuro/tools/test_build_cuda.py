@@ -70,6 +70,15 @@ class ResourceVerificationTest(unittest.TestCase):
     def test_valid_matching_bundle(self):
         build_cuda.verify(self.directory)
 
+    def test_heterogeneous_search_requires_new_abi_and_both_precisions(self):
+        self.assertEqual("3", build_cuda.source_metadata()["kernel.abi"])
+        self.assertIn("search_train_fp64", build_cuda.KERNELS)
+        self.assertIn("search_train_fp32", build_cuda.KERNELS)
+        self.metadata["kernel.abi"] = "2"
+        self.write_metadata()
+        with self.assertRaisesRegex(ValueError, r"kernel\.abi"):
+            build_cuda.verify(self.directory)
+
     def test_build_normalizes_compiler_whitespace_before_hashing(self):
         expected = self.ptx.read_text(encoding="utf-8")
         compiler_output = expected.replace("\n", " \t\r\n") + "\r\n \t\r\n"
