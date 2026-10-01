@@ -683,7 +683,12 @@ class NeuroGuiTest {
         assertEquals(3, resetReport.evaluated)
         assertRankingCacheContains(resetReport)
         click(button("Reset"))
-        await("completed search reset") { field(panel,"result") == null && current.state == StudioState.READY }
+        await("completed search reset") {
+            field(panel,"result") == null && current.state == StudioState.CONVERGED &&
+                current.diagnostics.epoch() == 0 && current.replayNote.isEmpty()
+        }
+        assertTrue(edt { current.diagnostics.error() <= current.config.targetError },
+            "The fresh model already meets this search's 0.9 target before any training")
         assertSearchResultsReleased()
     }
 
