@@ -87,7 +87,9 @@ class NeuroGuiTest {
         assertEquals("FAST", device.sigmoid)
         assertEquals(0, device.simdBits)
         assertTrue(device.name.contains("TensorFlow"))
-        assertTrue(edt { (field(ui, "deviceStatus") as JLabel).toolTipText.contains("TensorFlow") })
+        assertEquals("TensorFlow CPU · ${device.name} · FP32", edt { (field(ui, "deviceStatus") as JLabel).text })
+        assertEquals("${device.identity} · Compact topology · FAST · kernel ${device.kernelVersion}",
+            edt { (field(ui, "deviceStatus") as JLabel).toolTipText })
         click(button("10 epochs"))
         await("Compact ten epoch command") { current.diagnostics.epoch() == 11 }
         assertTrue(edt { current.checkpoints.any { it.epoch == 10 } })
@@ -204,7 +206,7 @@ class NeuroGuiTest {
             current.state == StudioState.LIMIT_REACHED && current.deviceInfo?.backend == TrainingBackend.CPU
         }
         assertEquals(1, edt { current.diagnostics.epoch() })
-        assertTrue(edt { (field(ui, "deviceStatus") as JLabel).text.contains("CPU") })
+        assertTrue(edt { (field(ui, "deviceStatus") as JLabel).text.startsWith("TensorFlow CPU ·") })
         assertEquals(TrainingBackend.CPU, sessions.requested.last())
         assertTrue(sessions.requested.dropLast(1).all { it == TrainingBackend.GPU })
     }
@@ -266,7 +268,7 @@ class NeuroGuiTest {
         await("GPU selected for epoch stepping") {
             current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.GPU
         }
-        assertEquals("GPU · GPU test fixture · FP64", edt { (field(ui, "deviceStatus") as JLabel).text })
+        assertEquals("TensorFlow GPU · GPU test fixture · FP64", edt { (field(ui, "deviceStatus") as JLabel).text })
         click(button("10 epochs")); await("GPU ten epoch step") { current.diagnostics.epoch() == 11 }
         click(button("Train")); await("GPU training") { current.state == StudioState.RUNNING }
         click(button("Pause")); await("GPU pause") { current.state == StudioState.PAUSED }
