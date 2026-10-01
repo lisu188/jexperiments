@@ -982,7 +982,7 @@ The handwritten Java benchmark drivers still use their existing training-state h
 
 ### Measured search throughput on Spiral
 
-The retained [local measurement report](benchmarks/2026-10-01-search/LOCAL.md) separates execution speed from learning quality. Nine sequential JVMs at compute revision `529e7a9` supplied three warmed forks for each CPU engine and CUDA, with nine measured calls per execution mode and configuration. Every call completed the same eight architectures and five seeds: 40 trials, 80,000 epochs and 14,080,000 sample updates. The machine was an Intel Core i5-14400F with 16 logical processors, an RTX 4060 Ti and OpenJDK 27. The existing Studio stayed open; logs were disabled in benchmark JVMs.
+The retained [local measurement report](https://github.com/lisu188/jexperiments/blob/192058a18036c69fae81d43e69a4024b3721ddd3/jneuro/benchmarks/2026-10-01-search/LOCAL.md) separates execution speed from learning quality. Nine sequential JVMs at compute revision `529e7a9` supplied three warmed forks for each CPU engine and CUDA, with nine measured calls per execution mode and configuration. Every call completed the same eight architectures and five seeds: 40 trials, 80,000 epochs and 14,080,000 sample updates. The machine was an Intel Core i5-14400F with 16 logical processors, an RTX 4060 Ti and OpenJDK 27. The existing Studio stayed open; logs were disabled in benchmark JVMs.
 
 | Same-engine comparison | Reference median | Optimized median | Speedup | Reference p95 | Optimized p95 |
 |---|---:|---:|---:|---:|---:|
@@ -997,4 +997,23 @@ All measured best-parameter snapshots, best/final RMSE values and best epochs ma
 
 The third SMALL JVM had substantial late slowdowns, retained in every statistic. Their cause remains unknown; the available point sample does not establish contention, throttling or a JIT failure. Allocation totals also require qualification: SMALL CPU at 32 workers decreased from 148.3 to 20.6 MiB per search, while the faster CUDA queue increased JVM allocation from 168.4 to 226.2 MiB, about 34.3%. These are cumulative JVM allocations, not retained heap or device memory.
 
-The [CI report](benchmarks/2026-10-01-search/CI.md) is deliberately inconclusive for throughput qualification: its three initial jobs landed on different CPU models. Their results cannot be pooled into three compatible forks. The workflow now runs the three forks sequentially on one host. The local report retains full reconstructible numerical outcomes and provenance; final-source smoke tests and later full-budget quality runs carry their own revisions and must not be substituted for the measured matrix.
+The [CI report](https://github.com/lisu188/jexperiments/blob/192058a18036c69fae81d43e69a4024b3721ddd3/jneuro/benchmarks/2026-10-01-search/CI.md) is deliberately inconclusive for throughput qualification: its three initial jobs landed on different CPU models. Their results cannot be pooled into three compatible forks. The workflow now runs the three forks sequentially on one host. The local report retains full reconstructible numerical outcomes and provenance; final-source smoke tests and later full-budget quality runs carry their own revisions and must not be substituted for the measured matrix.
+
+
+### Full-budget Spiral result: no reliable winner in the bounded run
+
+The two-hour measurement window ended after the fixed-work matrix and separate long-budget searches. These quality invocations used compute revision `7a0a1ab`, SMALL, FP64, exact sigmoid, one million epochs per training seed, and a 60-trial budget. All five seeds must complete before a candidate can qualify; at least four saved best-checkpoint validation RMSE values must be at most 0.01. The implementation never shortened a trial after its first threshold crossing.
+
+| Quality invocation | Full million-epoch trials | Cancelled partial trials | Complete five-seed candidates | Reliable candidates |
+|---|---:|---:|---:|---:|
+| Local CPU, 8 workers | 42 | 8 | 8 | 0 |
+| Local CUDA, 4 scoring workers | 5 | 55 | 1 | 0 |
+| Separate CI CPU, 4 workers | 46 | 4 | 8 | 0 |
+
+Every invocation reached its deadline during search seed 42; search seed 123 never started. There were zero failed trials. All completed five-seed candidates had zero threshold successes. No reliable winner was selected, so the independent Spiral test was not run. The local CPU and GPU quality jobs ran concurrently, while CI used a separate EPYC host; their completion counts and elapsed times are not a controlled CPU/GPU throughput comparison and cannot be pooled to complete candidate groups.
+
+CUDA did produce a concrete partial lead: `2→8→8→4→1`, with 137 parameters. Training seed 42 reached validation RMSE **0.00295294** at epoch 101,875; seed 123 reached **0.00931634** at epoch 9,750. However, all five trials were cancelled around 101,000–104,000 epochs, and only two seeds crossed the threshold. The seed-123 score later rose to 0.07548. These observations satisfy neither the four-success requirement nor the full-budget requirement, and establish no smallest reliable architecture. On cancellation, the last reported score belongs to the latest scoring boundary and may precede the final committed epoch.
+
+The [complete quality report](https://github.com/lisu188/jexperiments/blob/192058a18036c69fae81d43e69a4024b3721ddd3/jneuro/benchmarks/2026-10-01-search/QUALITY.md) retains every trial's scores, checkpoint epoch, counters, state, process exit, and source/runtime provenance. Its strict analyzer accepts consistent partial evidence while explicitly leaving completion and reliability false. Keeping those separate prevents a successful JVM exit or CI job from becoming an unsupported learning-quality claim.
+
+The [validation audit](https://github.com/lisu188/jexperiments/blob/192058a18036c69fae81d43e69a4024b3721ddd3/jneuro/benchmarks/2026-10-01-search/VALIDATION.md) records 304 passing CI unit tests and 96.92% line coverage, plus 26 native-control GUI tests covering all 131 documented paths. Final Windows checks passed 303 tests with one optional native-BLAS skip and 96.93% line coverage. Eighteen real CUDA acceptance tests passed at the separately recorded training-kernel revision. The short GUI Spiral fixture verifies controls, budgets, cancellation and replay with a 0.9 target; it is independent of the 0.01 quality experiment. These results support delivery of the explicit optimized execution path while preserving the reference default and the unresolved quality target.
