@@ -17,7 +17,7 @@ class SearchSummaryTest(unittest.TestCase):
         trial = dict(seed=42, state="COMPLETED", epochs=2000, sampleUpdates=352000, bestEpoch=25,
                      parametersAtBest=[1.] * 33, bestRmse=.4, finalRmse=.5, failure="",
                      deviceIdentity="jvm-cpu", backend="CPU", precision="FP64", sigmoid="EXACT", engine="SMALL",
-                     kernel="small-cpu", route="SMALL", simdBits=256)
+                     kernel="small-cpu-v1", route="SESSION", simdBits=256)
         common = dict(type="round", workComplete=True, termination="TRIAL_BUDGET", failedTrials=0,
                       partialCandidates=0, evaluatedCandidates=1, completeTrials=1, committedEpochs=2000,
                       sampleUpdates=352000, candidates=[dict(hidden=[8], parameters=33, complete=True, trials=[trial])])
@@ -28,7 +28,7 @@ class SearchSummaryTest(unittest.TestCase):
                            round=number, totalNanos=duration)
                 # Hardware is the same; different execution kernels and names are legitimate.
                 if execution == "REFERENCE":
-                    row["candidates"][0]["trials"][0].update(kernel="small-cohort", route="COHORT", device="CPU model lanes")
+                    row["candidates"][0]["trials"][0].update(kernel="small-cpu-cohort-v1", route="COHORT", device="CPU model lanes")
                 else:
                     row["candidates"][0]["trials"][0]["device"] = "CPU"
                 records.append(row)
@@ -168,6 +168,44 @@ class SearchSummaryTest(unittest.TestCase):
         self.assert_not_qualified(self.run_reports(missing_provenance))
         for field, value in (("deviceIdentity", "other-device"), ("precision", "FP32"), ("kernel", "different-kernel")):
             self.assert_not_qualified(self.run_reports(lambda reports: reports[0][-1]["candidates"][0]["trials"][0].update({field: value})))
+
+    def test_reference_routes_may_change_with_available_slots_but_remain_auditable(self):
+        def rerouted(reports):
+            for index, records in enumerate(reports):
+                for row in records[1:]:
+                    if "/REFERENCE/" in row["case"] and (row["round"] + index) % 2 == 0:
+                        # Session and model-lane cohort kernels can legitimately use different widths.
+                        row["candidates"][0]["trials"][0].update(route="SESSION", kernel="small-cpu-v1", simdBits=128)
+        result = self.run_reports(rerouted)["comparisons"][0]
+        self.assertTrue(result["qualifies"])
+        self.assertTrue(result["validExecutionRoutes"])
+        routes = result["observedExecutionRoutes"]["REFERENCE"]
+        self.assertEqual({"SESSION", "COHORT"}, {row["route"] for row in routes})
+        self.assertEqual(9, sum(row["trials"] for row in routes))
+        for route, kernel, bits in (("COHORT", "small-cpu-v1", 256), ("SESSION", "unknown", 256),
+                                    ("SESSION", "small-cpu-v1", 512)):
+            result = self.run_reports(lambda reports: reports[0][-1]["candidates"][0]["trials"][0].update(
+                route=route, kernel=kernel, simdBits=bits))["comparisons"][0]
+            self.assertFalse(result["qualifies"])
+            self.assertFalse(result["validExecutionRoutes"])
+
+    def test_cuda_and_general_reference_route_families(self):
+        def cuda(reports):
+            for records in reports:
+                for row in records[1:]:
+                    row["case"] = row["case"].replace("/CPU/", "/CUDA/")
+                    reference = "/REFERENCE/" in row["case"]
+                    route = ("SESSION" if row["round"] % 2 else "COHORT") if reference else "CUDA_QUEUE"
+                    prefix = "small-v2" if reference else "small-search-v3"
+                    row["candidates"][0]["trials"][0].update(backend="CUDA", deviceIdentity="gpu-0", simdBits=0,
+                        route=route, kernel=prefix + "/packed-fp64/driver-sha")
+        self.assertTrue(self.run_reports(cuda)["comparisons"][0]["qualifies"])
+        def general(reports):
+            for records in reports:
+                for row in records[1:]:
+                    row["case"] = row["case"].replace("SMALL/", "REFERENCE/")
+                    row["candidates"][0]["trials"][0].update(engine="REFERENCE", route="SESSION", kernel="cpu-v1", simdBits=0)
+        self.assertTrue(self.run_reports(general)["comparisons"][0]["qualifies"])
 
     def test_literal_ten_percent_median_reduction_and_no_p95_regression(self):
         for duration, qualifies in ((1800000, True), (1810000, False)):

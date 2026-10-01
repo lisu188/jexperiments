@@ -4,7 +4,7 @@ import argparse
 import json
 import math
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 
@@ -107,6 +107,26 @@ def validate_round(record, protocol, engine, backend):
     return trials
 
 
+
+def valid_execution_route(engine, backend, mode, protocol, trial):
+    """Reference SMALL may form a cohort or admit a single session as slots free up."""
+    route, kernel, bits = (trial.get(key) for key in ("route", "kernel", "simdBits"))
+    if type(bits) is not int or not isinstance(kernel, str):
+        return False
+    if engine == "SMALL" and backend == "CPU":
+        allowed = {("SESSION", "small-cpu-v1")}
+        if mode == "REFERENCE":
+            allowed.add(("COHORT", "small-cpu-cohort-v1"))
+        return (route, kernel) in allowed and bits in (0, 128, 256)
+    if engine == "SMALL" and backend == "CUDA":
+        prefix = "small-v2/packed-fp64/" if mode == "REFERENCE" else "small-search-v3/packed-fp64/"
+        routes = ("SESSION", "COHORT") if mode == "REFERENCE" else ("CUDA_QUEUE",)
+        return route in routes and bits == 0 and kernel.startswith(prefix) and len(kernel) > len(prefix)
+    if engine == "REFERENCE" and backend == "CPU":
+        return route == "SESSION" and bits == 0 and kernel == ("cpu-matrix-v1" if protocol["batchSize"] > 1 else "cpu-v1")
+    return False
+
+
 def summarize(paths):
     groups, failures, seen_paths, excluded_forks = {}, [], set(), set()
     for path in paths:
@@ -169,16 +189,21 @@ def summarize(paths):
                                    "rounds": len(times), "forks": len(paired_forks)}
         reference, optimized = distributions["REFERENCE"], distributions["OPTIMIZED"]
         scaled_error, epoch_match, stable_device, device_complete = 0.0, True, True, True
+        valid_routes = True
+        observed_routes = {mode: Counter() for mode in MODES}
         if selected["REFERENCE"]:
             anchor = validate_round(selected["REFERENCE"][0], protocol, engine, backend)
             hardware = {key: tuple(trial.get(field) for field in DEVICE_FIELDS) for key, trial in anchor.items()}
             for mode, samples in selected.items():
-                signatures = set()
+                route_signatures = defaultdict(set)
                 for record in samples:
                     trials = validate_round(record, protocol, engine, backend)
-                    signatures.add(canonical([(key, [trial.get(field) for field in DEVICE_FIELDS + ("kernel", "route", "simdBits")])
-                                              for key, trial in sorted(trials.items())]))
                     for key, trial in trials.items():
+                        routing = tuple(trial.get(field) for field in ("route", "kernel", "simdBits"))
+                        observed_routes[mode][routing] += 1
+                        # Preserve each shape/route's kernel and width, without fixing which seed takes that route.
+                        route_signatures[(key[0], routing[0])].add(routing[1:])
+                        valid_routes &= valid_execution_route(engine, backend, mode, protocol, trial)
                         actual_device = tuple(trial.get(field) for field in DEVICE_FIELDS)
                         stable_device &= actual_device == hardware[key]
                         device_complete &= all(value is not None and value != "" for value in actual_device)
@@ -190,7 +215,7 @@ def summarize(paths):
                             error = abs(value - expected_value) / (1e-10 + 1e-8 * abs(expected_value))
                             # Extreme finite inputs can overflow their difference; still emit valid JSON and fail parity.
                             scaled_error = max(scaled_error, error if math.isfinite(error) else float.fromhex("0x1.fffffffffffffp+1023"))
-                stable_device &= len(signatures) == 1
+                valid_routes &= all(len(signatures) == 1 for signatures in route_signatures.values())
         enough = all(d["forks"] >= 3 and d["rounds"] >= 9 for d in distributions.values())
         provenance = all(protocol.get(key) not in (None, "", "unspecified", "unknown") for key in PROVENANCE)
         eligible = bool(selected["REFERENCE"])
@@ -203,8 +228,11 @@ def summarize(paths):
                             "matchingBestEpochs": epoch_match if eligible else None,
                             "maximumScaledParameterOrScoreError": scaled_error if eligible else None,
                             "threeForkEvidence": enough, "provenanceComplete": provenance and device_complete,
-                            "stableEffectiveDevice": stable_device,
-                            "qualifies": enough and provenance and device_complete and stable_device and
+                            "stableEffectiveDevice": stable_device, "validExecutionRoutes": valid_routes,
+                            "observedExecutionRoutes": {mode: [dict(route=route, kernel=kernel, simdBits=bits, trials=count)
+                                for (route, kernel, bits), count in sorted(counts.items(), key=lambda item: str(item[0]))]
+                                for mode, counts in observed_routes.items()},
+                            "qualifies": enough and provenance and device_complete and stable_device and valid_routes and
                             protocol["precision"] == "FP64" and epoch_match and scaled_error <= 1 and
                             optimized["medianMs"] <= .90 * reference["medianMs"] and not p95_regression})
     return {"comparisons": comparisons, "incompleteOrFailed": failures,

@@ -6,6 +6,11 @@ on:
       - main
   pull_request:
   workflow_dispatch:
+    inputs:
+      search_benchmarks:
+        description: Run only the three-fork architecture search benchmark
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +21,7 @@ concurrency:
 
 jobs:
   gradle:
+    if: github.event_name != 'workflow_dispatch' || !inputs.search_benchmarks
     name: Gradle build
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -47,6 +53,7 @@ jobs:
           if-no-files-found: ignore
 
   docker:
+    if: github.event_name != 'workflow_dispatch' || !inputs.search_benchmarks
     name: Docker build
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -57,3 +64,7 @@ jobs:
 
       - name: Build blog image
         run: docker build --tag jexperiments:ci .
+
+  search-benchmark:
+    if: github.event_name == 'workflow_dispatch' && inputs.search_benchmarks
+    uses: ./.github/workflows/jneuro-search-benchmark.yml

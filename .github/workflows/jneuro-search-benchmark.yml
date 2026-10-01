@@ -2,6 +2,7 @@ name: JNeuro architecture search benchmark
 
 on:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
