@@ -85,6 +85,56 @@ class TensorFlowMathTest {
         }
     }
 
+    @Test fun multiEpochChunksPreserveRaggedBoundariesAcrossBatchAndPrecisionChanges() {
+        val initial = fixture()
+        val orders = arrayOf(intArrayOf(4, 0, 3, 1, 2), intArrayOf(2, 1, 4, 0, 3),
+            intArrayOf(1, 3, 0, 4, 2), intArrayOf(0, 4, 2, 3, 1))
+        for (precision in Neuro.TrainingPrecision.entries) for (mode in Neuro.SigmoidMode.entries) {
+            val hp = parameters.withSigmoidMode(mode)
+            TensorFlowMath.trainingKernel(initial, hp, precision, TrainingBackend.CPU).use { chunked ->
+                TensorFlowMath.trainingKernel(initial, hp, precision, TrainingBackend.CPU).use { separate ->
+                    var expected = initial
+                    var next = 0
+                    for ((epochs, batch, online) in listOf(Triple(2, 3, false), Triple(1, 2, false), Triple(1, 4, true))) {
+                        val group = orders.copyOfRange(next, next + epochs)
+                        val actual = chunked.train(group, batch, online)
+                        for (order in group) expected = separate.train(arrayOf(order), batch, online)
+                        assertState(expected, actual, 0.0)
+                        assertState(actual, chunked.train(emptyArray(), batch, online), 0.0)
+                        next += epochs
+                    }
+                    assertEquals(orders.size, next)
+                }
+            }
+        }
+    }
+
+    @Test fun emptyDatasetSnapshotsDoNotEnterTheTrainingLoop() {
+        val state = fixture().copy(inputs = doubleArrayOf(), targets = doubleArrayOf())
+        for (precision in Neuro.TrainingPrecision.entries) {
+            TensorFlowMath.trainingKernel(state, parameters, precision, TrainingBackend.CPU).use { kernel ->
+                assertState(state, kernel.train(emptyArray(), 3, false), tolerance(precision))
+                assertThrows(IllegalArgumentException::class.java) { kernel.train(arrayOf(intArrayOf()), 1, true) }
+                assertState(state, kernel.train(emptyArray(), 1, true), tolerance(precision))
+            }
+        }
+    }
+
+    @Test fun failureAfterAnEarlierFiniteBatchKeepsTheImportedCheckpointUnchanged() {
+        val state = NeuroTrainingState(intArrayOf(2, 1), arrayOf(doubleArrayOf(0.0, 0.0)), arrayOf(doubleArrayOf(0.0)),
+            arrayOf(doubleArrayOf(0.001, 0.002)), arrayOf(doubleArrayOf(0.003)),
+            doubleArrayOf(0.2, 0.3, 0.4, 0.5), doubleArrayOf(0.5, Double.MAX_VALUE))
+        val saved = copy(state)
+        TensorFlowMath.trainingKernel(state, Neuro.HyperParameters(Double.MAX_VALUE, 0.1, 1.0, 42),
+            Neuro.TrainingPrecision.FP64, TrainingBackend.CPU).use { kernel ->
+            assertThrows(IllegalStateException::class.java) { kernel.train(arrayOf(intArrayOf(0, 1)), 1, false) }
+            assertThrows(IllegalStateException::class.java) { kernel.train(emptyArray(), 1, false) }
+            assertState(saved, state, 0.0)
+            assertArrayEquals(saved.inputs, state.inputs)
+            assertArrayEquals(saved.targets, state.targets)
+        }
+    }
+
     @Test fun emptyBatchesAndDiagnosticPrimitivesHaveDefinedResults() {
         val state = fixture()
         for (precision in Neuro.TrainingPrecision.entries) {

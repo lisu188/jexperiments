@@ -37,7 +37,7 @@ try (NeuroTrainingSession session = network.newTrainingSession(
 
 `CPU` explicitly places the graph on `/device:CPU:0`. `CUDA` and the retained `CUBLAS` compatibility value select TensorFlow's GPU device. `AUTO` initially chooses CPU. `REFERENCE` and `SMALL` no longer identify separate numerical implementations; SMALL keeps its supported topology-family validation for existing experiment configurations. Likewise, old SCALAR/VECTOR kernel hints remain source-compatible but TensorFlow selects its own CPU kernels.
 
-Session metadata reports `tensorflow-<runtime-version>-dense-v1`, the actual CPU/GPU device, precision, activation mode and zero application-managed SIMD bits. Zero does not mean TensorFlow uses no SIMD; JNeuro does not inspect or claim the implementation details of TensorFlow's native kernels. Device identity is currently the logical TensorFlow placement, such as `GPU:0`, rather than a physical GPU UUID. Replay checks the recorded runtime/settings and reproduced score, but metadata alone does not establish identical physical hardware across machines.
+Session metadata reports `tensorflow-<runtime-version>-dense-loop-v2`, the actual CPU/GPU device, precision, activation mode and zero application-managed SIMD bits. The version distinguishes the functional training loop from the earlier `dense-v1` graph that executed each mini-batch through a separate JVM call. Zero SIMD bits does not mean TensorFlow uses no SIMD; JNeuro does not inspect or claim the implementation details of TensorFlow's native kernels. Device identity is currently the logical TensorFlow placement, such as `GPU:0`, rather than a physical GPU UUID. Replay checks the recorded runtime/settings and reproduced score, but metadata alone does not establish identical physical hardware across machines.
 
 ## Graph construction and forward inference
 
@@ -70,31 +70,87 @@ Both are averaged by the actual mini-batch size, including a short final batch. 
 
 ```kotlin
 val velocity = definition.op("AddV2",
-    definition.op("Mul", definition.scalar(hp.momentum), variables[kind + 2][layer]),
+    definition.op("Mul", definition.scalar(hp.momentum), previous[kind + 2][layer]),
     definition.op("Mul", definition.scalar(hp.learningRate), change))
-next[kind][layer] = definition.op("AddV2", variables[kind][layer], velocity)
+next[kind + 2][layer] = velocity
+next[kind][layer] = definition.op("AddV2", previous[kind][layer], velocity)
 ```
 
 The velocity buffer stores the update actually added to the parameter, including learning-rate scaling. It is exported alongside weights and biases, so closing and reopening does not silently reset momentum.
 
-A control-dependency barrier ensures that all new parameters and velocities are computed and checked for finiteness before any assignment begins. Otherwise one layer could read another layer's newly updated weights during the same backpropagation step. TensorFlow `CheckNumerics` failures poison the private training kernel; the caller must reopen from the last committed host checkpoint.
+Here `previous` contains the complete parameter and momentum tensors from the preceding loop iteration. The body returns the next values together, so a layer cannot observe another layer's updated weights during the same backpropagation step. Every returned parameter and velocity passes through TensorFlow `CheckNumerics`. A numerical failure poisons the private training kernel; the caller must reopen from the last committed host checkpoint.
 
 Exact sigmoid remains the default. FAST retains the previous polynomial forward approximation, expressed entirely using TensorFlow operations. Its backward derivative remains the historical sigmoid `beta * a * (1-a)`, rather than differentiating the polynomial. This is why the graph explicitly expresses deltas instead of applying automatic differentiation indiscriminately to both activation modes. Approximate math remains an explicit experiment.
 
-## Training state and transaction boundaries
+## Moving the epoch loop into TensorFlow
 
-Kotlin still owns the replayable shuffle stream. A chunk reserves orders without advancing the committed stream. The TensorFlow kernel gathers rows using those indices, performs one graph execution per mini-batch and keeps parameters and momentum in its session between calls.
+Tiny online networks expose the cost of crossing the JVM/native boundary. In the first TensorFlow implementation, 220 samples with batch size one required 220 `Session.run()` calls for an epoch, followed by another call to export the final state. Retaining the graph avoided reconstruction, but each sample still repeated runner setup, feeds, execution and cleanup.
+
+`TrainingGraph.buildTrainingLoop` now constructs condition and body functions with TensorFlow Java's `ConcreteFunction` and `Signature` APIs, imports their definitions into the retained graph, and invokes them with a functional `While`. Temporary graphs and function handles close after their definitions are copied. The loop's graph size depends on network topology; it does not unroll operations for every sample or requested epoch.
+
+The loop carries a cursor, the batch limit, dataset tensors, the flattened order array and all four groups of parameter state: weights, biases and their respective momentum buffers. Its condition compares the cursor with the order length. The body gathers the current mini-batch, executes the existing tensor update and returns the advanced cursor with the complete next state. `parallel_iterations` is explicitly one. Since [TensorFlow declares `CheckNumerics` stateful](https://github.com/tensorflow/tensorflow/blob/v2.21.0/tensorflow/core/ops/array_ops.cc), the operation is `While`, not `StatelessWhile`; this preserves the checks inside the body.
+
+Kotlin still owns the replayable shuffle stream. It reserves complete epoch permutations without advancing the committed stream, then concatenates them without reordering samples:
 
 ```kotlin
-runtime.session.runner().feed(dataset, inputTensor).feed(targets, targetTensor)
-    .feed(order, rows).addTarget("train").run().close()
+val flattened = IntArray(orders.size * source.samples)
+orders.forEachIndexed { epoch, indices ->
+    indices.copyInto(flattened, epoch * source.samples)
+}
 ```
 
-At publication, all parameter and momentum buffers return to the host. The model validates the complete state before committing reserved shuffle steps, copying parameters, advancing counters and publishing RMSE. A failed computation cannot advertise unpublished epochs as completed progress.
+Flattening must preserve mini-batch boundaries too. Five samples with batch size three must produce batches of `3, 2, 3, 2` across two epochs. A naive loop over all ten indices would produce `3, 3, 3, 1` and change both gradients and momentum. The TensorFlow body clips each batch to the remaining samples in its epoch:
 
-Single-epoch APIs retain immediate publication. Chunk APIs remain bounded by the requested epoch count, a maximum of 64 epochs, cancellation checks and an adaptive time budget. Search stops at its scoring/checkpoint boundaries. Cancellation happens between completed numerical calls; it does not interrupt an in-flight native TensorFlow operation or free its buffers prematurely.
+```kotlin
+val count = body.intOp("Minimum", args[1],
+    body.intOp("Sub", samples, body.intOp("FloorMod", position, samples)))
+```
 
-This migration does not preserve the old custom CUDA one-launch-per-epoch optimization. TensorFlow receives one mini-batch execution at a time. The retained-session path avoids rebuilding graphs and reinitializing weights, but very small online networks can still be dominated by native call overhead. New throughput measurements must distinguish startup, retained sessions, ordinary epoch publication and whole-search time.
+Online training supplies a batch limit of one. Larger requested batches are clamped to the dataset size, including `Int.MAX_VALUE`, before creating the scalar tensor. Argument validation also rejects malformed permutations and an order chunk too large for the int32 cursor before execution. An empty order list exports the current state without running an update, including for an empty dataset.
+
+Every nonempty `TrainingGraph.train(orders, batchSize, online)` now uses one `Session.run()` for the complete supplied chunk and its final state export:
+
+```kotlin
+repeat(4 * source.weights.size) { runner.fetch("training_loop:${5 + it}") }
+runner.feed(dataset, inputTensor).feed(targets, targetTensor)
+    .feed(order, rows).feed(batch, batchTensor).addTarget("train").run()
+```
+
+The first five loop outputs are cursor, batch limit, inputs, targets and order; the fetched outputs contain only the parameter and momentum state. Graph/session initialization and requested RMSE or visualization evaluations remain separate operations. One JVM execution call therefore describes the training boundary, not a promise of one GPU kernel launch: TensorFlow still schedules the operations inside the loop.
+
+## Training state and transaction boundaries
+
+Persistent TensorFlow variables retain the last completed chunk between calls. Their values enter the loop through `Identity` operations, while intermediate mini-batches carry their state as loop outputs. The graph assigns the final values back only after the whole loop, including every numeric check, succeeds:
+
+```kotlin
+definition.node("Assign",
+    listOf(variables[kind][layer], "$loop:${5 + kind * layers + layer}"),
+    mapOf("T" to Definition.type(definition.dtype),
+        "use_locking" to Definition.bool(true)))
+```
+
+The `train` target depends on all final assignments. Fetching loop outputs in the same run yields the state used for those assignments without another export call. A failure in a later mini-batch cannot publish the earlier mini-batches of that chunk. Native execution or export failures invalidate the kernel; recovery imports the host checkpoint rather than trusting private native state after an error.
+
+At host publication, the model validates every parameter and momentum buffer before committing reserved shuffle steps, copying parameters, advancing counters and publishing RMSE when requested. Search can defer RMSE until a scoring boundary. A failed computation cannot advertise unpublished epochs as completed progress.
+
+Single-epoch APIs retain immediate publication. Public chunk orchestration remains bounded by the requested epoch count, a maximum of 64 epochs, scoring boundaries and an adaptive time budget. A public `trainChunk` may invoke the numerical kernel more than once as that orchestration measures progress. Ordinary session search explicitly submits one epoch at a time to poll cancellation between epochs; the asynchronous search queue retains its bounded adaptive chunks. These choices determine cancellation granularity even though the mini-batch loop now executes inside TensorFlow.
+
+Cancellation and time budgets are checked between completed numerical calls. They do not interrupt an in-flight loop or free its tensors early. A requested stop can therefore wait for the current submitted chunk to finish and publish; the budget is not a hard native-execution deadline. Closing the asynchronous service still drains outstanding work before releasing the owning session.
+
+## Measured CPU effect
+
+The [TensorFlow epoch-loop report](benchmarks/2026-10-01-tensorflow-loops/README.md) records a local before/after comparison using the same retained-session harness, datasets and seeds. For CPU FP64 with exact sigmoid and online updates over 220 Spiral samples, the ordinary `trainEpoch()` measurements include final host publication and RMSE:
+
+| Topology | Previous median per epoch | Functional loop median | Speedup |
+| --- | ---: | ---: | ---: |
+| `2 → 6 → 1` | 30.04 ms | 5.88 ms | 5.11× |
+| `2 → 8 → 8 → 8 → 1` | 29.15 ms | 8.94 ms | 3.26× |
+
+Five concurrent trials with a 176-training/44-validation split improved from 117.89 to 264.46 aggregate epochs per second, a 2.24× gain. The timed work uses the actual retained-session search advancement route and final training RMSE. It excludes session initialization, validation scoring, snapshots and UI work, so it measures training throughput rather than the elapsed time of a complete architecture sweep.
+
+The comparison used two JVM processes per implementation, reversing baseline/optimized execution order in the second pair. Each process ran three repeats with five warm-up epochs and twenty measured epochs per case. Each timing is the mean over those twenty epochs; the table reports the median of six such observations. These are local measurements: for example, the small-network online timings ranged from 24.01–41.53 ms before and 5.58–7.03 ms after. They are not a throughput guarantee for another machine or workload. All 102 exported comparison checkpoints matched bit for bit, covering 16,044 parameter and momentum values along with RMSE, progress counters and the next shuffle order. Independent analytic tests also cover both precisions, both activation modes, changing batch modes, ragged tails, empty exports and failures after an earlier mini-batch succeeds.
+
+Session construction costs more because it now exports the two function definitions before opening the retained runtime: the median across measured openings rose from 13.43 to 21.95 ms. The benefit belongs to repeated training through that session; the report also records the slower first opening in each process separately. These measurements use CPU execution. GPU operation placement remains explicit, but a faster JVM call pattern does not establish GPU throughput or imply that TensorFlow fuses an entire epoch into one GPU kernel. Default batch size, precision, activation and search budgets are unchanged by this optimization.
 
 ## Architecture search and cohorts
 

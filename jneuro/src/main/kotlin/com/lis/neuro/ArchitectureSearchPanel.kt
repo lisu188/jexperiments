@@ -105,6 +105,10 @@ internal class ArchitectureSearchPanel(
             "Search execution" to execution)) {
             advanced.add(field(name, component))
         }
+        epochs.toolTipText = "<html>Each seed runs the full epoch budget, even after meeting the target.<br>" +
+            "Adaptive search waits for every seed of the first architecture before proposing others.<br>" +
+            "Cancel or set a time limit to stop earlier.</html>"
+        (epochs.editor as JSpinner.DefaultEditor).textField.toolTipText = epochs.toolTipText
         threads.toolTipText = "Maximum CPU workers. Optimized CUDA SMALL independently admits at most 64 resident models; CPU workers score completed checkpoints."
         advanced.isVisible = false
         controls.add(JCheckBox("Advanced search settings").apply {
@@ -247,7 +251,7 @@ internal class ArchitectureSearchPanel(
         val workers = "Active trials: ${progress.running.size}/${config?.concurrentModels} · $activeArchitectures architectures · peak ${progress.peakParallelTrials}" +
             " · CPU workers ${progress.activeWorkers}/${config?.parallelism}" +
             if (config?.usesCudaQueue == true) " · GPU models ${progress.residentModels}/64 · queued ${progress.queuedGpuRequests} · dispatches ${progress.gpuBatches}" else ""
-        summary.text = if (trial == null) "$workers · Collecting results…" else "$workers · ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch}"
+        summary.text = if (trial == null) "$workers · Collecting results…" else "$workers · ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch}/${config?.maxEpochs}"
     }
 
     fun complete(report: ArchitectureSearchResult) {
