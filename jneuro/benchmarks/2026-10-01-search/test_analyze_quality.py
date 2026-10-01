@@ -36,6 +36,17 @@ def record(candidates=None, full=False):
             "winner": [8], "targetMet": True, "independentTest": None}
 
 
+def unopened_candidate(state):
+    c = candidate(hidden=(4,))
+    t = c["trials"][0]
+    t.update(state=state, epochs=0, bestEpoch=0, sampleUpdates=0, historySize=0,
+             failure="CUDA open failed" if state == "FAILED" else "")
+    t.update({key: None for key in ("backend", "engine", "precision", "sigmoid", "kernel", "deviceIdentity", "device", "simdBits",
+                                   "bestRmse", "finalRmse", "parametersAtBest", "phaseNanos")})
+    c.update(trials=[t], complete=False, successes=0, medianRmse=None)
+    return c
+
+
 class QualityAnalysisTest(unittest.TestCase):
     def test_completed_reliable_candidate_survives_partial_search_without_global_claim(self):
         result = q.analyze_round(record(), env(), [])
@@ -48,6 +59,27 @@ class QualityAnalysisTest(unittest.TestCase):
         result = q.analyze_round(record([candidate(completed=4)]), env(), [])
         self.assertEqual([], result["reliableCompletedCandidates"])
         self.assertEqual(4, result["candidates"][0]["successesAtFullBudget"])
+
+    def test_unopened_cancelled_or_failed_trial_preserves_other_completed_reliable_group(self):
+        for state in ("CANCELLED", "FAILED"):
+            result = q.analyze_round(record([candidate(), unopened_candidate(state)]), env(), [])
+            self.assertEqual("partial_search", result["status"])
+            self.assertEqual([], result["issues"])
+            self.assertEqual([{"hidden": [8], "parameters": 33, "successes": 4}], result["reliableCompletedCandidates"])
+            partial = result["candidates"][1]["trials"][0]
+            self.assertTrue(partial["unopenedZeroWorkPartial"])
+            self.assertFalse(partial["fullBudgetComplete"])
+            self.assertFalse(partial["qualifyingSuccess"])
+            self.assertEqual([], partial["issues"])
+
+    def test_unopened_exception_does_not_allow_wrong_backend_or_trained_missing_metadata(self):
+        for change in ({"backend": "CUDA"}, {"state": "COMPLETED"}, {"epochs": 25, "sampleUpdates": 4400},
+                       {"precision": "FP64"}, {"bestRmse": .001}, {"historySize": 1}):
+            c = unopened_candidate("CANCELLED"); c["trials"][0].update(change)
+            result = q.analyze_round(record([candidate(), c]), env(), [])
+            self.assertEqual("invalid_record", result["status"])
+            self.assertEqual([], result["reliableCompletedCandidates"])
+            self.assertFalse(result["candidates"][1]["trials"][0]["unopenedZeroWorkPartial"])
 
     def test_duplicate_seed_and_short_budget_never_qualify(self):
         for mutation in (lambda c: c["trials"][4].update(seed=1), lambda c: c["trials"][4].update(epochs=999_999, sampleUpdates=999_999 * 176)):

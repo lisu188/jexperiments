@@ -27,6 +27,16 @@ def integer(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def unopened_partial(t):
+    """A cancelled-before-open or failed-open trial has no device or checkpoint."""
+    return (t.get("state") in ("CANCELLED", "FAILED")
+            and all(integer(t.get(k)) and t[k] == 0 for k in ("epochs", "bestEpoch", "sampleUpdates"))
+            and all(t.get(k) is None for k in ("backend", "engine", "precision", "sigmoid", "kernel", "deviceIdentity", "device", "simdBits",
+                                               "bestRmse", "finalRmse", "parametersAtBest", "phaseNanos"))
+            and t.get("historySize") in (None, 0)
+            and (t.get("state") != "FAILED" or bool(t.get("failure"))))
+
+
 def candidate(raw, samples):
     issues = []
     hidden = raw.get("hidden")
@@ -43,6 +53,7 @@ def candidate(raw, samples):
         issues.append("Requires exactly the five distinct protocol training seeds")
     trials = []
     for t in raw_trials:
+        unopened = unopened_partial(t)
         score_ok = all(finite(t.get(k)) and t[k] >= 0 for k in ("bestRmse", "finalRmse")) and t["bestRmse"] <= t["finalRmse"]
         epochs = t.get("epochs")
         best_epoch = t.get("bestEpoch")
@@ -52,13 +63,14 @@ def candidate(raw, samples):
         complete = declared and epochs == EPOCHS and updates_ok and score_ok and not t.get("failure")
         trial_issues = []
         if not counters_ok or not updates_ok: trial_issues.append("Invalid epoch/best-epoch/sample-update counters")
-        if not score_ok: trial_issues.append("Best/final RMSE must be finite, nonnegative, and best must not exceed final")
+        if not score_ok and not unopened: trial_issues.append("Best/final RMSE must be finite, nonnegative, and best must not exceed final")
         if declared and not complete: trial_issues.append("Declared completed trial fails full-budget/finite-score/failure checks")
-        if t.get("precision") != "FP64" or t.get("sigmoid") != "EXACT" or t.get("engine") != "SMALL":
+        if not unopened and (t.get("precision") != "FP64" or t.get("sigmoid") != "EXACT" or t.get("engine") != "SMALL"):
             trial_issues.append("Trial execution metadata differs from FP64/EXACT/SMALL")
         complete = complete and not trial_issues
         trials.append({k: t.get(k) for k in ("seed", "state", "epochs", "bestEpoch", "bestRmse", "finalRmse", "sampleUpdates", "failure", "backend", "route", "precision", "sigmoid", "engine", "kernel", "deviceIdentity")} |
-                      {"fullBudgetComplete": complete, "qualifyingSuccess": complete and t["bestRmse"] <= TARGET,
+                      {"unopenedZeroWorkPartial": unopened,
+                       "fullBudgetComplete": complete, "qualifyingSuccess": complete and t["bestRmse"] <= TARGET,
                        "partialObservedThresholdCrossing": not complete and finite(t.get("bestRmse")) and t["bestRmse"] <= TARGET,
                        "issues": trial_issues})
     all_complete = shape_ok and exact_seeds and not issues and all(t["fullBudgetComplete"] for t in trials)
@@ -88,7 +100,8 @@ def analyze_round(raw, env, protocol_issues):
     if len(trials) > MAX_TRIALS: issues.append("Search exceeds the 60-trial protocol budget")
     if match and (int(match[3]) not in env.get("workers", []) or match[1] not in env.get("backends", []) or match[2] not in env.get("executions", [])):
         issues.append("Case differs from environment selection")
-    if match and any(t["backend"] != match[1] for t in trials): issues.append("Trial backend differs from case")
+    if match and any(t["backend"] != match[1] and not t["unopenedZeroWorkPartial"] for t in trials):
+        issues.append("Trial backend differs from case or is missing outside an unopened zero-work partial trial")
     for field, actual in (("committedEpochs", sum(t["epochs"] for t in trials if integer(t["epochs"]))),
                           ("sampleUpdates", sum(t["sampleUpdates"] for t in trials if integer(t["sampleUpdates"]))),
                           ("completeTrials", sum(t["state"] == "COMPLETED" for t in trials))):

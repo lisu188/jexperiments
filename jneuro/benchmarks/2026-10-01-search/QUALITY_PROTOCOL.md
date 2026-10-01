@@ -11,6 +11,8 @@ This protocol qualifies observed architecture candidates; it does not establish 
 - A failed, cancelled, incomplete, duplicated-seed, non-finite, or otherwise invalid trial prevents that candidate from qualifying. A threshold crossing during partial training is an observation, not a qualifying success.
 - Deadline cancellation preserves partial evidence. A fully completed, reliable candidate can be reported within a partial search, with that scope stated explicitly. Unfinished candidates remain unqualified. An unstarted or progress-only search seed is not a completed replication.
 
+A trial cancelled before opening its training session, or failed while opening it, legitimately has no device metadata or checkpoint. The helper accepts this absence only for `CANCELLED`/`FAILED` trials with zero epochs, best epoch, and sample updates; absent device/checkpoint/score metadata; and no checkpoint history. Such a trial remains unqualified, but does not invalidate a different, fully completed reliable candidate in the same partial search. A failed open must retain its failure message. A wrong non-null backend, partial device metadata, or missing metadata on a trained/completed trial is still rejected.
+
 The harness uses the Spiral dataset generated with seed 42 and a 20% validation split using seed 42. Qualification requires exactly 176 training samples, 44 validation samples, and dataset fingerprint `f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9`. A different dataset or split cannot qualify under this protocol. Every best-checkpoint epoch must be a multiple of 25 between zero and the committed epoch count. Best and final validation scores must be finite and nonnegative, and the best score must not exceed the final score. Eligibility, ranking, and training continue to use the existing search algorithm; completion order can affect later adaptive proposals, so different execution routes need not visit identical architecture sets.
 
 ## Separate execution environments
@@ -46,7 +48,7 @@ python3 -m unittest discover \
   -p test_analyze_quality.py
 ```
 
-The fourteen focused tests cover completed and partial candidates/searches, duplicate seeds, short budgets, failures, wrong arithmetic or target, incorrect dataset fingerprints or sample counts, off-boundary best epochs, inconsistent score ordering, progress-only evidence, malformed or partial JSONL, superseded paths, and the independent-test scope. Tests use bounded temporary fixtures and no additional dependencies.
+The sixteen focused tests cover completed and partial candidates/searches, legitimate unopened cancellation/open-failure alongside completed reliable candidates, rejection of forged unopened states, duplicate seeds, short budgets, failures, wrong arithmetic or target, incorrect dataset fingerprints or sample counts, off-boundary best epochs, inconsistent score ordering, progress-only evidence, malformed or partial JSONL, superseded paths, and the independent-test scope. Tests use bounded temporary fixtures and no additional dependencies.
 
 ## Report interpretation
 

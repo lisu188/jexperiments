@@ -53,10 +53,10 @@ For a separate CPU quality run, manually dispatch the `CI` workflow with `search
 Use Java 27 and the existing Gradle wrapper. This CPU example executes one fresh JVM containing both modes; repeat it with distinct output paths and order offsets `0`, `1`, and `2`:
 
 ```text
-./gradlew :jneuro:architectureSearchBenchmark -PneuroBenchmarkRevision=529e7a9 --args="--mode fixed --engine SMALL --epochs 2000 --workers 1,4,8,16,32 --warmups 1 --repeats 3 --order-offset 0 --output search-cpu-small-0.jsonl"
+./gradlew :jneuro:architectureSearchBenchmark -PneuroBenchmarkRevision="$(git rev-parse HEAD)" --args="--mode fixed --engine SMALL --epochs 2000 --workers 1,4,8,16,32 --warmups 1 --repeats 3 --order-offset 0 --output search-cpu-small-0.jsonl"
 ```
 
-Use `--engine REFERENCE` for the general CPU engine baseline. Use `--backends CUDA --workers 4` with SMALL for the GPU group; this requires actual CUDA hardware and fails if unavailable. Run groups sequentially and retain process exit records alongside the JSONL reports. The bounded `--manifest general` option exercises arbitrary widths through the CPU reference engine.
+The revision argument declares provenance; it does not check out or verify that revision. Use a clean checkout and its actual SHA as above. Reproducing the historical matrix requires checking out `529e7a9` first. Use `--engine REFERENCE` for the general CPU engine baseline. Use `--backends CUDA --workers 4` with SMALL for the GPU group; this requires actual CUDA hardware and fails if unavailable. Run groups sequentially and retain process exit records alongside the JSONL reports. The bounded `--manifest general` option exercises arbitrary widths through the CPU reference engine.
 
 Summarize only the intended compatible reports:
 
@@ -88,7 +88,7 @@ The final report should retain every measured duration without repeating the ful
 
 The example is a schema sketch, not measurement data. `protocols` should contain the complete environment records with dynamic fork identity removed. `rounds` retains warmup rows using negative round indices, but summary distributions use only measured rows. It may include summed allocation counts and diagnostic phase totals if their scopes remain explicit.
 
-Each comparison should retain both median/p95 distributions, fork and round counts, speedup, median time reduction, work checks, numerical tolerances, maximum scaled error, best-epoch agreement, actual execution-route counts and the qualification verdict. Failed or incomplete observations belong in `exclusions`, with their original reason and process identity. Raw input hashes bind these summaries to the retained JSONL evidence; the raw reports remain necessary to independently recheck parameter comparisons.
+Each comparison should retain both median/p95 distributions, fork and round counts, speedup, median time reduction, work checks, numerical tolerances, maximum scaled error, best-epoch agreement, actual execution-route counts and the qualification verdict. Failed or incomplete observations belong in `exclusions`, with their original reason and process identity. Compact artifacts retain every parsed round and deduplicated full checkpoint parameters, so parameter comparisons can be reconstructed independently without the raw JSONL files. Original byte hashes preserve input provenance; canonical round hashes verify reconstruction.
 
 Record quality scores once per unique architecture/seed and arithmetic engine when repeated runs agree. Repeated timing rounds are not independent quality seeds. Keep within-engine parity separate from cross-engine arithmetic comparisons: the general CPU engine's AUTO vector path uses horizontal dot reductions and some separate multiply/add updates, while SMALL preserves ordered FMA accumulation. Equal FP64 precision and EXACT sigmoid therefore do not guarantee identical long-horizon optimization trajectories.
 
