@@ -49,7 +49,7 @@ class NeuroArchitectureSearchTest {
         }
     }
 
-    @Test fun replayRejectsChangedSmallEngineSimdProvenanceBeforeInstallingState() {
+    @Test fun replayRejectsChangedTensorFlowKernelProvenanceBeforeInstallingState() {
         val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
             maxLayers = 1, minWidth = 4, maxWidth = 4, seeds = listOf(42), requiredSuccesses = 1,
             maxEpochs = 2, checkEvery = 1, engine = TrainingEngine.SMALL)
@@ -59,7 +59,7 @@ class NeuroArchitectureSearchTest {
         NeuroStudio(openSession = { model, backend, precision, batch, engine ->
             val delegate = model.newTrainingSession(backend, precision, batch, engine)
             object : NeuroTrainingSession by delegate {
-                override val info = delegate.info.copy(simdBits = delegate.info.simdBits / 2)
+                override val info = delegate.info.copy(kernelVersion = "${delegate.info.kernelVersion}-different")
             }
         }).use { studio ->
             val before = studio.frame().diagnostics.parameters()
