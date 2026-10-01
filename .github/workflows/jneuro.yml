@@ -42,6 +42,12 @@ jobs:
           set -euo pipefail
           # Java benchmark drivers exercise the public JVM API and JMH processor.
           test -z "$(find jneuro/src/main jneuro/src/test -name '*.java' -print -quit)"
+          native_sources=$(find jneuro/src -type f \( -iname '*.c' -o -iname '*.cc' -o -iname '*.cpp' -o -iname '*.cxx' -o -iname '*.h' -o -iname '*.hpp' -o -iname '*.cu' -o -iname '*.cuh' -o -iname '*.ptx' \) -print)
+          if [[ -n "$native_sources" ]]; then
+            echo "::error::JNeuro source must use TensorFlow JVM; project-owned native or kernel files are forbidden."
+            printf '%s\n' "$native_sources"
+            exit 1
+          fi
           test -f jneuro/src/main/kotlin/com/lis/neuro/Neuro.kt
           test -f jneuro/src/jmh/kotlin/com/lis/neuro/NeuroInferenceJmhBenchmark.kt
       - name: Verify JNeuro and coverage

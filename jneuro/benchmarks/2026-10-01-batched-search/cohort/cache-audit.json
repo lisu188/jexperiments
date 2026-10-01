@@ -1,0 +1,86 @@
+{
+  "verifiedUtc": "2026-10-01T11:20:13.204606+00:00",
+  "allowlist": [
+    "/home/andrz/.javacpp/cache/tensorflow-core-native-1.2.0-linux-x86_64.jar",
+    "/home/andrz/.javacpp/cache/javacpp-1.5.12-linux-x86_64.jar"
+  ],
+  "regularFileBytes": 854293360,
+  "symlinkBytes": 49,
+  "uid": 1000,
+  "inactivity": "No process mapped any file below either allowlisted extraction directory at audit time; deletion was subsequently completed and recorded separately below.",
+  "consumers": [],
+  "entries": [
+    {
+      "path": "/home/andrz/.javacpp/cache/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libjnitensorflow.so",
+      "bytes": 830088,
+      "sha256": "42d1106cc293d29a9639718050653216f255ac0f9b5b059ca5f5845fcf482ecd",
+      "retainedNative": "/run/shm/jneuro-studio-main/native/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libjnitensorflow.so",
+      "retainedJar": "/run/shm/jneuro-studio-main/lib/tensorflow-core-native-1.2.0-linux-x86_64.jar",
+      "jarSha256": "e6fc5afb04092f3427408f1947ec1e5832ed196009acfc088b4d38a516b708bd",
+      "entry": "org/tensorflow/internal/c_api/linux-x86_64/libjnitensorflow.so",
+      "jarEntryCrc32": 946354065
+    },
+    {
+      "path": "/home/andrz/.javacpp/cache/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_cc.so",
+      "symlinkTarget": "libtensorflow_cc.so.2",
+      "linkBytes": 21
+    },
+    {
+      "path": "/home/andrz/.javacpp/cache/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_cc.so.2",
+      "bytes": 788086608,
+      "sha256": "6505a4b9657e62100c6bdacb683957a395cb047725042945aaa50e40a71e429e",
+      "retainedNative": "/run/shm/jneuro-studio-main/native/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_cc.so.2",
+      "retainedJar": "/run/shm/jneuro-studio-main/lib/tensorflow-core-native-1.2.0-linux-x86_64.jar",
+      "jarSha256": "e6fc5afb04092f3427408f1947ec1e5832ed196009acfc088b4d38a516b708bd",
+      "entry": "org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_cc.so.2",
+      "jarEntryCrc32": 3402441307
+    },
+    {
+      "path": "/home/andrz/.javacpp/cache/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_framework.so",
+      "symlinkTarget": "libtensorflow_framework.so.2",
+      "linkBytes": 28
+    },
+    {
+      "path": "/home/andrz/.javacpp/cache/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_framework.so.2",
+      "bytes": 65222328,
+      "sha256": "f060b323b26ef80add21b9df9428de3aeaf2843d772c5bb098745f7abff3709b",
+      "retainedNative": "/run/shm/jneuro-studio-main/native/tensorflow-core-native-1.2.0-linux-x86_64.jar/org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_framework.so.2",
+      "retainedJar": "/run/shm/jneuro-studio-main/lib/tensorflow-core-native-1.2.0-linux-x86_64.jar",
+      "jarSha256": "e6fc5afb04092f3427408f1947ec1e5832ed196009acfc088b4d38a516b708bd",
+      "entry": "org/tensorflow/internal/c_api/linux-x86_64/libtensorflow_framework.so.2",
+      "jarEntryCrc32": 3724540527
+    },
+    {
+      "path": "/home/andrz/.javacpp/cache/javacpp-1.5.12-linux-x86_64.jar/org/bytedeco/javacpp/linux-x86_64/libjnijavacpp.so",
+      "bytes": 154336,
+      "sha256": "9d4055d41e091cd2663d9787c7cc34ef7c76d28c9951c584e349c63f6c967fbd",
+      "retainedNative": "/run/shm/jneuro-studio-main/native/javacpp-1.5.12-linux-x86_64.jar/org/bytedeco/javacpp/linux-x86_64/libjnijavacpp.so",
+      "retainedJar": "/run/shm/jneuro-studio-main/lib/javacpp-1.5.12-linux-x86_64.jar",
+      "jarSha256": "b20c8f1b5da22b0015faad73500130c53544757eab0c5945c8bcdc1fac050714",
+      "entry": "org/bytedeco/javacpp/linux-x86_64/libjnijavacpp.so",
+      "jarEntryCrc32": 1357531729
+    }
+  ],
+  "preserve": [
+    "/home/andrz/.javacpp/cache/.lock",
+    "/run/shm/jneuro-studio-main/native",
+    "/run/shm/jneuro-studio-main/lib"
+  ],
+  "deletionPerformed": true,
+  "deletion": {
+    "utc": "2026-10-01T11:22:42Z",
+    "sourceReport": "/run/shm/jneuro-batched-search/reports/cache-cleanup.json",
+    "removedPaths": [
+      "/home/andrz/.javacpp/cache/tensorflow-core-native-1.2.0-linux-x86_64.jar",
+      "/home/andrz/.javacpp/cache/javacpp-1.5.12-linux-x86_64.jar"
+    ],
+    "removedRegularBytes": 854293360,
+    "removedSymlinkBytes": 49,
+    "linuxFreeBefore": 837536833536,
+    "linuxFreeAfter": 838390968320,
+    "observedLinuxFreeIncreaseBytes": 854134784,
+    "windowsAllocationReclaimed": null,
+    "windowsAllocationNote": "Not measured; Linux free-space recovery does not establish Windows allocation reclaimed.",
+    "retained": "Parent lock, required RAM native cache and source jars, compact reproducibility audit"
+  }
+}

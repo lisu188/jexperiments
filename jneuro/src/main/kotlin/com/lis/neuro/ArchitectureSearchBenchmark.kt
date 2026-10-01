@@ -15,8 +15,8 @@ object ArchitectureSearchBenchmark {
         Files.createDirectories(output.parent)
         Files.newBufferedWriter(output).use { writer ->
             SearchBenchmarkHarness.run(options) { record ->
-                writer.write(NeuroCudaBenchmarkReports.encode(record)); writer.newLine(); writer.flush()
-                println(NeuroCudaBenchmarkReports.encode(record.filterKeys { it in setOf("type", "case", "round", "totalNanos", "termination", "completeTrials", "targetMet", "error") }))
+                writer.write(TensorFlowBenchmarkReports.encode(record)); writer.newLine(); writer.flush()
+                println(TensorFlowBenchmarkReports.encode(record.filterKeys { it in setOf("type", "case", "round", "totalNanos", "termination", "completeTrials", "targetMet", "error") }))
             }
         }
         println("Search benchmark report: $output")
@@ -36,11 +36,9 @@ internal data class SearchBenchmarkOptions(
         require(mode in setOf("fixed", "quality") && manifest in setOf("small", "general"))
         require(mode != "quality" || manifest == "small") { "Quality protocol uses the SMALL family." }
         require(mode != "quality" || engine == TrainingEngine.SMALL)
-        require(TrainingBackend.CUDA !in backends || engine == TrainingEngine.SMALL) { "GPU search benchmark requires SMALL." }
         require(epochs > 0 && warmups in 0..10 && repeats in 1..100 && orderOffset >= 0 && limitSeconds >= 0)
         require(workers.isNotEmpty() && workers.distinct().size == workers.size && workers.all { it in 1..64 })
-        require(backends.isNotEmpty() && backends.distinct().size == backends.size && backends.all { it in setOf(TrainingBackend.CPU, TrainingBackend.CUDA) })
-        require(manifest != "general" || backends == listOf(TrainingBackend.CPU)) { "General-width regressions use CPU REFERENCE engine." }
+        require(backends.isNotEmpty() && backends.distinct().size == backends.size && backends.all { it in setOf(TrainingBackend.CPU, TrainingBackend.GPU) })
         require(executions.isNotEmpty() && executions.distinct().size == executions.size)
         require(searchSeeds.isNotEmpty() && searchSeeds.distinct().size == searchSeeds.size)
         require(trials >= 5 && trials % 5 == 0 && trials <= 1000)
@@ -50,7 +48,8 @@ internal data class SearchBenchmarkOptions(
         fun usage() = """
             architectureSearchBenchmark --mode fixed|quality --manifest small|general
               --epochs N (fixed default 2000; quality default 1000000) --engine SMALL|REFERENCE
-              --workers 1,4,8,16,32 --backends CPU,CUDA --executions REFERENCE,OPTIMIZED
+                         Topology family: SMALL is compact, REFERENCE is general; both use TensorFlow
+              --workers 1,4,8,16,32 --backends CPU,GPU --executions REFERENCE,OPTIMIZED,BATCHED
               --warmups 1 --repeats 3 --order-offset 0 --limit-seconds 0
               --search-seeds 42,123 --trials 60 --output PATH.jsonl
             Each process is one JVM fork; run three forks with rotated order offsets.
@@ -58,7 +57,7 @@ internal data class SearchBenchmarkOptions(
             Quality mode uses adaptive SMALL search, validation RMSE <=0.01 and >=4/5 seeds.
             Quality mode runs each selected case/search seed once; warmups/repeats apply only to fixed mode.
             Time limits preserve partial evidence; incomplete candidates cannot qualify.
-            GPU is explicit and requires CUDA; no fallback. All output is flushed incrementally.
+            GPU is explicit and requires TensorFlow GPU support; no fallback. All output is flushed incrementally.
         """.trimIndent()
         fun parse(args: Array<String>): SearchBenchmarkOptions {
             require(args.size % 2 == 0) { "Every option requires a value; use --help." }
@@ -70,7 +69,8 @@ internal data class SearchBenchmarkOptions(
                 values["--epochs"]?.toInt() ?: if (mode == "quality") 1_000_000 else 2_000,
                 values["--workers"]?.split(',')?.map(String::toInt) ?: listOf(4),
                 values["--backends"]?.split(',')?.map { TrainingBackend.valueOf(it) } ?: listOf(TrainingBackend.CPU),
-                values["--executions"]?.split(',')?.map { ArchitectureExecution.valueOf(it) } ?: ArchitectureExecution.entries,
+                values["--executions"]?.split(',')?.map { ArchitectureExecution.valueOf(it) }
+                    ?: listOf(ArchitectureExecution.REFERENCE, ArchitectureExecution.OPTIMIZED),
                 values["--warmups"]?.toInt() ?: 1, values["--repeats"]?.toInt() ?: 3,
                 values["--order-offset"]?.toInt() ?: 0, values["--limit-seconds"]?.toLong() ?: 0,
                 values["--search-seeds"]?.split(',')?.map(String::toLong) ?: listOf(42, 123),
@@ -189,6 +189,8 @@ internal object SearchBenchmarkHarness {
             "trialsPerSecond" to trials.count { it.state == ArchitectureTrialState.COMPLETED } * 1e9 / elapsed.coerceAtLeast(1),
             "peakModels" to result.peakParallelTrials, "peakWorkers" to result.peakWorkers,
             "peakResidentModels" to result.peakResidentModels, "gpuBatches" to result.gpuBatches,
+            "nativeTrainingCalls" to result.nativeTrainingCalls, "modelsPerBatch" to result.modelsPerBatch,
+            "aggregateEpochsPerSecond" to result.aggregateEpochsPerSecond, "budgetPolicy" to result.config.budgetPolicy.name,
             "targetMet" to (winner != null), "winner" to winner?.architecture?.hidden,
             "independentTest" to winner?.representative?.snapshot?.let(::independentScore),
             "candidates" to result.candidates.map { candidate -> mapOf("hidden" to candidate.architecture.hidden,
@@ -200,7 +202,7 @@ internal object SearchBenchmarkHarness {
                     "elapsedNanos" to trial.elapsedNanos, "historySize" to trial.history.size,
                     "phaseNanos" to trial.timings?.let { mapOf("open" to it.openNanos, "training" to it.trainingNanos,
                         "scoring" to it.scoringNanos, "snapshot" to it.snapshotNanos, "close" to it.closeNanos) },
-                    "kernel" to trial.deviceInfo?.kernelVersion, "simdBits" to trial.deviceInfo?.simdBits,
+                    "kernel" to trial.deviceInfo?.kernelVersion,
                     "device" to trial.deviceInfo?.name, "deviceIdentity" to trial.deviceInfo?.identity,
                     "precision" to trial.deviceInfo?.precision, "sigmoid" to trial.deviceInfo?.sigmoid,
                     "engine" to trial.deviceInfo?.engine?.name, "backend" to trial.deviceInfo?.backend?.name,

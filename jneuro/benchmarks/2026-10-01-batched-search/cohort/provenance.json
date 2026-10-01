@@ -1,0 +1,65 @@
+{
+  "runtime": "TensorFlow Java 1.2.0 / TensorFlow 2.21.0 CPU FP64 EXACT; online batch 1; 176 training / 44 validation Spiral samples",
+  "jvmProcesses": 1,
+  "repeatsPerCase": 2,
+  "warmupEpochs": 2,
+  "measuredEpochs": 5,
+  "includes": [
+    "permutation validation and flattening",
+    "native training",
+    "vector training and validation RMSE",
+    "native best snapshot selection"
+  ],
+  "excludes": [
+    "initial parameter creation",
+    "cohort open",
+    "whole-search scheduling and regrouping"
+  ],
+  "harnessSha256": "f35014cb59667efea3067b3b6c51dd4351b3fc96646c6102afbaff2abb6c080d",
+  "sources": {
+    "TensorFlowMath.kt": "3963c34fcc63e69ffe15737f35fc0eff8fd3cbfb05ecc3b730d2e859f4fc4e45",
+    "TensorFlowCohortGraph.kt": "333d2bfe03928d5256de98f60bf914d009dd20004dd5d81bfeea9526276ce65d",
+    "TensorFlowSearchCohort.kt": "e4f543a585f32053a7298ef391e7c7e726957c096b35d376a6077c17c21df382"
+  },
+  "classHashes": {
+    "TensorFlowMath.class": "96c73138ad070bda8c12ba13f7a95397828e6abf72592433f8633b42f48916b9",
+    "TensorFlowCohortGraph.class": "79b2be3b57bef90f7eba58f960f218f1f833ed9bb6d107463de0a47323bceea5",
+    "TensorFlowSearchCohort.class": "51c490993c8246c654a50c4cf0b1ed565997f4c81a6fadc410e96ccd8a427d1f"
+  },
+  "baselineCommit": "3f6ff25 (epoch-loop prerequisite); batched sources were uncommitted and identified below by SHA256",
+  "mainClasses": "/run/shm/jneuro-batched-search/main-classes",
+  "nativeClassifier": "tensorflow-core-native-1.2.0-linux-x86_64",
+  "nativeCacheActuallyUsed": "/home/andrz/.javacpp/cache (default; no cachedir JVM override)",
+  "temporaryDirectory": "/run/shm/jneuro-studio-main/tmp",
+  "jvmHeapLimit": "512 MiB",
+  "timingOrder": "shallow, deep, padded; models 5, 32, 128, 512; threads 1, 2, 4; repeats 0, 1",
+  "limitations": [
+    "One JVM and two repeats are exploratory, with ordered warmup bias and workstation variance.",
+    "The supplied cache override was omitted from this measurement; reproduction explicitly requires an existing native cache.",
+    "This is retained numerical throughput including one final vector score, not whole-search throughput.",
+    "No GPU run or GPU speed claim."
+  ],
+  "nativeCacheOrigin": "Created by the first focused cohort test at 2026-10-01T10:50:33\u201342 UTC because its launcher also omitted cachedir; the benchmark subsequently reused it.",
+  "nativeCacheCleanup": {
+    "completedUtc": "2026-10-01T11:22:42Z",
+    "audit": "cache-audit.json",
+    "removedRegularBytes": 854293360,
+    "observedLinuxFreeIncreaseBytes": 854134784,
+    "windowsAllocationReclaimed": null,
+    "scope": "Only the two audited extraction directories were removed. The parent lock, required RAM native cache and source jars were retained; Windows allocation recovery was not measured."
+  },
+  "machine": {
+    "cpuModel": "Intel(R) Core(TM) i5-14400F",
+    "logicalProcessors": 8,
+    "availableAffinityProcessors": 8,
+    "architecture": "x86_64",
+    "kernel": "6.18.40.1-microsoft-standard-WSL2"
+  },
+  "jdkRelease": {
+    "IMPLEMENTOR": "Eclipse Adoptium",
+    "JAVA_RUNTIME_VERSION": "27+35",
+    "JAVA_VERSION": "27",
+    "OS_ARCH": "x86_64",
+    "OS_NAME": "Linux"
+  }
+}

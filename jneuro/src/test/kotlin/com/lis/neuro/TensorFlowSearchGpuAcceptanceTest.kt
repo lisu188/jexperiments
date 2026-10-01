@@ -6,13 +6,13 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 
-/** Real mixed-topology CUDA arithmetic; driver absence/failure must fail this task. */
-@Tag("cuda")
+/** Real mixed-topology GPU arithmetic; driver absence/failure must fail this task. */
+@Tag("tensorflow-gpu")
 @Timeout(240)
-class SearchCudaAcceptanceTest {
+class TensorFlowSearchGpuAcceptanceTest {
     @Test fun mixedTopologiesAndPrecisionsMatchAllParametersMomentumAndContinuation() {
         for (precision in Neuro.TrainingPrecision.entries) for (mode in Neuro.SigmoidMode.entries) {
-            SearchCudaService(precision, 7).use { service ->
+            TensorFlowSearchService(precision, 7).use { service ->
                 for (shapes in shapes().chunked(64)) {
                     val models = shapes.mapIndexed { index, shape -> model(shape, index.toLong(), mode) }
                     val references = shapes.mapIndexed { index, shape -> model(shape, index.toLong(), mode) }
@@ -46,7 +46,7 @@ class SearchCudaAcceptanceTest {
     @Test fun onlineMaximumChunksRaggedDatasetAndSameRouteReopeningPreserveShuffle() {
         val shapes = listOf(intArrayOf(2, 4, 1), intArrayOf(2, 4, 16, 8, 16, 1), intArrayOf(2, 16, 16, 16, 16, 1))
         for (precision in Neuro.TrainingPrecision.entries) for (batch in listOf(1, 64)) {
-            SearchCudaService(precision, batch).use { service ->
+            TensorFlowSearchService(precision, batch).use { service ->
                 val models = shapes.mapIndexed { index, shape -> model(shape, index.toLong(), Neuro.SigmoidMode.EXACT) }
                 val references = shapes.mapIndexed { index, shape -> model(shape, index.toLong(), Neuro.SigmoidMode.EXACT) }
                 val sessions = models.map(service::openSession)

@@ -141,7 +141,7 @@ public final class SmallTrainingExperiments {
                 for (int index = 0; index < count; index++) networks.add(model(shape, 1234L + index, Neuro.SigmoidMode.EXACT, samples, false));
                 long started = System.nanoTime();
                 NeuroTrainingCohort group = engine.equals("CPU_COHORT") || engine.equals("GPU_COHORT") ?
-                    service.openCohort(networks, engine.equals("GPU_COHORT") ? TrainingBackend.CUDA : TrainingBackend.CPU, precision, batch, workers) : null;
+                    service.openCohort(networks, engine.equals("GPU_COHORT") ? TrainingBackend.GPU : TrainingBackend.CPU, precision, batch, workers) : null;
                 List<NeuroTrainingSession> sessions = new ArrayList<>();
                 long opened;
                 long trained;
@@ -177,7 +177,7 @@ public final class SmallTrainingExperiments {
                     Neuro reference = expected.get(index), actual = networks.get(index);
                     if (actual.statistics().epochsTrained() != epochs || actual.statistics().samplesSeen() != (long) epochs * samples)
                         throw new IllegalStateException("Wrong published epoch/sample count");
-                    var validation = NeuroCudaBenchmarkHarness.INSTANCE.validate$experiments_JNeuro(
+                    var validation = TensorFlowBenchmarkHarness.INSTANCE.validate$experiments_JNeuro(
                         reference.exportTrainingState$experiments_JNeuro(), actual.exportTrainingState$experiments_JNeuro(),
                         reference.trainingError(), actual.trainingError(), precision);
                     scaled = Math.max(scaled, validation.getMaximumScaledError());

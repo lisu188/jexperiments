@@ -4,7 +4,7 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Exercises backend routing and resource lifetimes without representing hardware acceptance. */
+/** GPU routing uses TensorFlow CPU arithmetic plus explicit fixture metadata, not hardware acceptance. */
 internal class RecordingTrainingSessions {
     val requested = Collections.synchronizedList(ArrayList<TrainingBackend>())
     val configurations = Collections.synchronizedList(ArrayList<Triple<TrainingBackend, Neuro.TrainingPrecision, Int>>())
@@ -24,41 +24,41 @@ internal class RecordingTrainingSessions {
         requested += backend
         engines += engine
         configurations += Triple(backend, precision, batchSize)
-        check(backend !in setOf(TrainingBackend.CUDA, TrainingBackend.CUBLAS) || !unavailable) { "CUDA fixture unavailable" }
+        check(backend != TrainingBackend.GPU || !unavailable) { "GPU fixture unavailable" }
         val delegate = model.newTrainingSession(TrainingBackend.CPU, precision, batchSize, engine)
         opened.incrementAndGet()
         val device = if (backend in setOf(TrainingBackend.CPU, TrainingBackend.AUTO)) delegate.info else
-            TrainingDeviceInfo(TrainingBackend.CUDA, "CUDA test fixture", identity, precision.name, kernelVersion = "fixture-v1",
+            TrainingDeviceInfo(TrainingBackend.GPU, "GPU test fixture", identity, precision.name, kernelVersion = "fixture-v1",
                 engine = engine, sigmoid = model.hyperParameters().sigmoidMode.name)
         return object : NeuroTrainingSession by delegate {
             private val released = AtomicBoolean()
             override val info = device
             override fun trainEpoch(): Double {
                 epochCalls.incrementAndGet()
-                check(!failEpoch) { "CUDA fixture epoch failed" }
+                check(!failEpoch) { "GPU fixture epoch failed" }
                 val error = delegate.trainEpoch()
-                check(!failAfterCommit) { "CUDA fixture cleanup after committed epoch failed" }
+                check(!failAfterCommit) { "GPU fixture cleanup after committed epoch failed" }
                 return error
             }
             override fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int) {
                 epochCalls.addAndGet(epochs)
                 miniBatches += batchSize
-                check(!failEpoch) { "CUDA fixture epoch failed" }
+                check(!failEpoch) { "GPU fixture epoch failed" }
                 delegate.trainMiniBatch(epochs, batchSize, parallelism)
-                check(!failAfterCommit) { "CUDA fixture cleanup after committed epoch failed" }
+                check(!failAfterCommit) { "GPU fixture cleanup after committed epoch failed" }
             }
             override fun trainChunk(request: TrainingChunkRequest): TrainingChunkResult {
                 chunkRequests += request
-                check(!failEpoch) { "CUDA fixture epoch failed" }
+                check(!failEpoch) { "GPU fixture epoch failed" }
                 val result = delegate.trainChunk(request)
                 epochCalls.addAndGet(result.committedEpochs)
-                check(!failAfterCommit) { "CUDA fixture cleanup after committed epoch failed" }
+                check(!failAfterCommit) { "GPU fixture cleanup after committed epoch failed" }
                 return result
             }
             override fun close() {
                 if (released.compareAndSet(false, true)) {
                     try { delegate.close() } finally { closed.incrementAndGet() }
-                    check(!failClose) { "CUDA fixture cleanup failed" }
+                    check(!failClose) { "GPU fixture cleanup failed" }
                 }
             }
         }

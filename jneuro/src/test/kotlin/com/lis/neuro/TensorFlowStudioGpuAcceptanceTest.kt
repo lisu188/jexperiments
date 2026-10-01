@@ -7,12 +7,12 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 
-/** Real CUDA integration; no fake device, skipped hardware check or GUI-path claim. */
-@Tag("cuda")
+/** Real GPU integration; no fake device, skipped hardware check or GUI-path claim. */
+@Tag("tensorflow-gpu")
 @Timeout(120)
-class NeuroCudaStudioAcceptanceTest {
-    @Test fun studioStepsPausesStudiesAndResetsThroughRealCudaSessions() {
-        val config = StudioConfig(hidden = "2", maxEpochs = 8, targetError = 0.0, backend = TrainingBackend.CUDA)
+class TensorFlowStudioGpuAcceptanceTest {
+    @Test fun studioStepsPausesStudiesAndResetsThroughRealGpuSessions() {
+        val config = StudioConfig(hidden = "2", maxEpochs = 8, targetError = 0.0, backend = TrainingBackend.GPU)
         NeuroStudio(config).use { studio ->
             val initial = studio.frame().diagnostics.parameters()
             studio.step(1)
@@ -59,7 +59,7 @@ class NeuroCudaStudioAcceptanceTest {
             assertEquals(device, studio.frame().deviceInfo)
             assertArrayEquals(first.diagnostics.parameters(), studio.frame().diagnostics.parameters(), TOLERANCE)
             assertEquals(first.diagnostics.error(), studio.currentError, TOLERANCE)
-            println("CUDA Studio acceptance: $device; stepped, paused, reopened, compared four seeds and reset reproducibly")
+            println("GPU Studio acceptance: $device; stepped, paused, reopened, compared four seeds and reset reproducibly")
         }
     }
 
@@ -75,14 +75,14 @@ class NeuroCudaStudioAcceptanceTest {
             val session = model.newTrainingSession(backend, precision, batchSize, selectedEngine)
             try {
                 initialSessions.countDown()
-                check(initialSessions.await(30, TimeUnit.SECONDS)) { "Concurrent CUDA sessions did not initialize." }
+                check(initialSessions.await(30, TimeUnit.SECONDS)) { "Concurrent GPU sessions did not initialize." }
                 session
             } catch (failure: Throwable) {
                 try { session.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
                 throw failure
             }
         }
-        val report = engine.search(data, config(TrainingBackend.CUDA))
+        val report = engine.search(data, config(TrainingBackend.GPU))
         assertEquals(ArchitectureTermination.COMPLETED, report.termination)
         assertEquals(2, report.peakParallelTrials)
         assertEquals(2, report.evaluated)
@@ -107,10 +107,10 @@ class NeuroCudaStudioAcceptanceTest {
         val (candidate, trial) = report.candidates.flatMap { candidate -> candidate.trials.map { candidate to it } }
             .maxBy { it.second.bestEpoch }
         assertTrue(trial.bestEpoch > 0, "Replay acceptance must execute trained epochs, not only initial parameters.")
-        NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA)).use { studio ->
+        NeuroStudio(StudioConfig(backend = TrainingBackend.GPU)).use { studio ->
             assertTrue(studio.replayArchitecture(report, candidate, trial))
             val replay = studio.frame()
-            assertEquals(TrainingBackend.CUDA, replay.config.backend)
+            assertEquals(TrainingBackend.GPU, replay.config.backend)
             assertEquals(device, replay.deviceInfo)
             assertEquals(trial.bestEpoch, replay.diagnostics.epoch())
             assertEquals(trial.trainingRmseAtBest, replay.diagnostics.error(), TOLERANCE)
@@ -119,24 +119,24 @@ class NeuroCudaStudioAcceptanceTest {
             assertTrue(studio.replayArchitecture(report, candidate, trial))
             assertArrayEquals(replay.diagnostics.parameters(), studio.frame().diagnostics.parameters(), TOLERANCE)
             studio.applyArchitecture(report, candidate)
-            assertEquals(TrainingBackend.CUDA, studio.activeConfig.backend)
+            assertEquals(TrainingBackend.GPU, studio.activeConfig.backend)
             assertEquals(0, studio.epochs)
             studio.step(1)
             assertEquals(1, studio.advance())
             assertEquals(device, studio.frame().deviceInfo)
         }
-        println("CUDA architecture acceptance: $device; four trials, two concurrent sessions, repeatable scored replay")
+        println("GPU architecture acceptance: $device; four trials, two concurrent sessions, repeatable scored replay")
     }
 
-    @Test fun cublasFp64StudioSearchAndReplayKeepRecordedBatchConfiguration() =
-        checkCublasStudioSearchAndReplay(Neuro.TrainingPrecision.FP64)
+    @Test fun tensorflowGpuFp64StudioSearchAndReplayKeepRecordedBatchConfiguration() =
+        checkTensorFlowGpuStudioSearchAndReplay(Neuro.TrainingPrecision.FP64)
 
-    @Test fun cublasFp32StudioSearchAndReplayKeepRecordedBatchConfiguration() =
-        checkCublasStudioSearchAndReplay(Neuro.TrainingPrecision.FP32)
+    @Test fun tensorflowGpuFp32StudioSearchAndReplayKeepRecordedBatchConfiguration() =
+        checkTensorFlowGpuStudioSearchAndReplay(Neuro.TrainingPrecision.FP32)
 
-    private fun checkCublasStudioSearchAndReplay(precision: Neuro.TrainingPrecision) {
+    private fun checkTensorFlowGpuStudioSearchAndReplay(precision: Neuro.TrainingPrecision) {
         val config = StudioConfig(hidden = "3", dataset = NeuroLearningSets.Kind.AND, maxEpochs = 4,
-            targetError = 0.0, backend = TrainingBackend.CUBLAS, precision = precision, batchSize = 3)
+            targetError = 0.0, backend = TrainingBackend.GPU, precision = precision, batchSize = 3)
         val data = ArchitectureSearchData.fitting(NeuroLearningSets.create(config.dataset, 42), "AND")
         lateinit var device: TrainingDeviceInfo
         NeuroStudio(config).use { studio ->
@@ -145,7 +145,7 @@ class NeuroCudaStudioAcceptanceTest {
             assertEquals(1, studio.advance())
             val first = studio.frame()
             device = requireNotNull(first.deviceInfo)
-            assertEquals(TrainingBackend.CUDA, device.backend)
+            assertEquals(TrainingBackend.GPU, device.backend)
             assertEquals(precision.name, device.precision)
             assertTrue(device.name.isNotBlank())
             assertTrue(device.identity.isNotBlank())
@@ -176,13 +176,13 @@ class NeuroCudaStudioAcceptanceTest {
         val searchConfig = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
             maxLayers = 1, minWidth = 3, maxWidth = 3, seeds = listOf(42, 123), requiredSuccesses = 1,
             maxEpochs = 2, checkEvery = 1, targetRmse = 0.0, parallelism = 2, maxTrials = 2,
-            backend = TrainingBackend.CUBLAS, precision = precision, batchSize = 3)
+            backend = TrainingBackend.GPU, precision = precision, batchSize = 3)
         val initialSessions = CountDownLatch(2)
         val engine = NeuroArchitectureSearch { model, selected, format, batch, selectedEngine ->
             val session = model.newTrainingSession(selected, format, batch, selectedEngine)
             try {
                 initialSessions.countDown()
-                check(initialSessions.await(30, TimeUnit.SECONDS)) { "Concurrent cuBLAS sessions did not initialize." }
+                check(initialSessions.await(30, TimeUnit.SECONDS)) { "Concurrent TensorFlow GPU sessions did not initialize." }
                 session
             } catch (failure: Throwable) {
                 try { session.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
@@ -201,11 +201,11 @@ class NeuroCudaStudioAcceptanceTest {
             assertEquals(8L, trial.sampleUpdates)
         }
         val trial = candidate.trials.maxBy { it.bestEpoch }
-        assertTrue(trial.bestEpoch > 0, "cuBLAS replay must execute trained epochs.")
+        assertTrue(trial.bestEpoch > 0, "TensorFlow GPU replay must execute trained epochs.")
         NeuroStudio(config).use { studio ->
             assertTrue(studio.replayArchitecture(report, candidate, trial))
             val replay = studio.frame()
-            assertEquals(TrainingBackend.CUDA, replay.config.backend)
+            assertEquals(TrainingBackend.GPU, replay.config.backend)
             assertEquals(precision, replay.config.precision)
             assertEquals(3, replay.config.batchSize)
             assertEquals(device, replay.deviceInfo)
@@ -219,23 +219,23 @@ class NeuroCudaStudioAcceptanceTest {
             assertEquals(1, studio.advance())
             assertEquals(device, studio.frame().deviceInfo)
         }
-        println("cuBLAS Studio acceptance: $device; batch=3 with partial final batch; pause/reopen/reset; " +
+        println("TensorFlow GPU Studio acceptance: $device; batch=3 with partial final batch; pause/reopen/reset; " +
             "two concurrent search trials; strict scored replay")
     }
 
-    @Test fun smallFp64StudioCohortReplayAndContinuationUseRealCuda() =
+    @Test fun smallFp64StudioCohortReplayAndContinuationUseRealGpu() =
         checkSmallStudioCohortReplay(Neuro.TrainingPrecision.FP64)
 
-    @Test fun smallFp32StudioCohortReplayAndContinuationUseRealCuda() =
+    @Test fun smallFp32StudioCohortReplayAndContinuationUseRealGpu() =
         checkSmallStudioCohortReplay(Neuro.TrainingPrecision.FP32)
 
     private fun checkSmallStudioCohortReplay(precision: Neuro.TrainingPrecision) {
         val tolerance = if (precision == Neuro.TrainingPrecision.FP64) 1e-9 else 5e-5
         val config = StudioConfig(hidden = "4", dataset = NeuroLearningSets.Kind.AND, maxEpochs = 14,
-            targetError = 0.0, backend = TrainingBackend.CUDA, precision = precision,
+            targetError = 0.0, backend = TrainingBackend.GPU, precision = precision,
             engine = TrainingEngine.SMALL, sigmoid = Neuro.SigmoidMode.FAST)
-        fun assertSmallCuda(info: TrainingDeviceInfo) {
-            assertEquals(TrainingBackend.CUDA, info.backend)
+        fun assertSmallGpu(info: TrainingDeviceInfo) {
+            assertEquals(TrainingBackend.GPU, info.backend)
             assertEquals(TrainingEngine.SMALL, info.engine)
             assertEquals(precision.name, info.precision)
             assertEquals("FAST", info.sigmoid)
@@ -262,7 +262,7 @@ class NeuroCudaStudioAcceptanceTest {
         NeuroStudio(config).use { gpu ->
             NeuroStudio(config.copy(backend = TrainingBackend.CPU)).use { cpu ->
                 step(gpu, 1); step(cpu, 1)
-                assertSmallCuda(requireNotNull(gpu.frame().deviceInfo))
+                assertSmallGpu(requireNotNull(gpu.frame().deviceInfo))
                 assertModels(model(cpu), model(gpu))
                 step(gpu, 10); step(cpu, 10)
                 assertEquals(listOf(0, 10), gpu.frame().checkpoints.map { it.epoch })
@@ -273,7 +273,7 @@ class NeuroCudaStudioAcceptanceTest {
                 assertSmallState(beforeRelease, model(gpu).exportTrainingState(), 0.0)
                 assertEquals(beforeStatistics, model(gpu).statistics())
                 step(gpu, 1); step(cpu, 1)
-                assertSmallCuda(requireNotNull(gpu.frame().deviceInfo))
+                assertSmallGpu(requireNotNull(gpu.frame().deviceInfo))
                 assertEquals(12L, model(gpu).statistics().epochsTrained)
                 assertEquals(48L, model(gpu).statistics().samplesSeen)
                 assertModels(model(cpu), model(gpu))
@@ -286,7 +286,7 @@ class NeuroCudaStudioAcceptanceTest {
                     maxEpochs = 7, checkEvery = 3, targetRmse = 0.0, backend = backend, precision = precision,
                     engine = TrainingEngine.SMALL,
                     hyperParameters = Neuro.HyperParameters(0.6, 0.2, 1.0, 42, sigmoidMode = Neuro.SigmoidMode.FAST))
-                val report = NeuroArchitectureSearch().search(data, searchConfig(TrainingBackend.CUDA))
+                val report = NeuroArchitectureSearch().search(data, searchConfig(TrainingBackend.GPU))
                 val reference = NeuroArchitectureSearch().search(data, searchConfig(TrainingBackend.CPU))
                 assertEquals(ArchitectureTermination.COMPLETED, report.termination)
                 assertEquals(2, report.peakParallelTrials)
@@ -296,7 +296,7 @@ class NeuroCudaStudioAcceptanceTest {
                 assertTrue(candidate.valid && cpuCandidate.valid)
                 for (trial in candidate.trials) {
                     assertTrue(trial.cohort)
-                    assertSmallCuda(requireNotNull(trial.deviceInfo))
+                    assertSmallGpu(requireNotNull(trial.deviceInfo))
                     assertEquals(7, trial.epochs)
                     assertEquals(28L, trial.sampleUpdates)
                     assertEquals(listOf(0, 3, 6, 7), trial.history.map { it.epoch })
@@ -320,9 +320,9 @@ class NeuroCudaStudioAcceptanceTest {
                 // through the public service, preserving the recorded search budget and replay provenance.
                 gpu.closeTraining(); cpu.closeTraining()
                 NeuroTrainingDeviceService().use { service ->
-                    service.openSession(model(gpu), TrainingBackend.CUDA, precision, engine = TrainingEngine.SMALL).use { resumedGpu ->
+                    service.openSession(model(gpu), TrainingBackend.GPU, precision, engine = TrainingEngine.SMALL).use { resumedGpu ->
                         service.openSession(model(cpu), TrainingBackend.CPU, precision, engine = TrainingEngine.SMALL).use { resumedCpu ->
-                            assertSmallCuda(resumedGpu.info)
+                            assertSmallGpu(resumedGpu.info)
                             resumedGpu.trainEpoch(); resumedCpu.trainEpoch()
                             assertEquals(trial.bestEpoch.toLong() + 1, model(gpu).statistics().epochsTrained)
                             assertEquals((trial.bestEpoch.toLong() + 1) * 4, model(gpu).statistics().samplesSeen)
@@ -336,7 +336,7 @@ class NeuroCudaStudioAcceptanceTest {
     }
 
     private fun assertGpu(info: TrainingDeviceInfo) {
-        assertEquals(TrainingBackend.CUDA, info.backend)
+        assertEquals(TrainingBackend.GPU, info.backend)
         assertEquals("FP64", info.precision)
         assertTrue(info.name.isNotBlank())
         assertTrue(info.identity.isNotBlank())

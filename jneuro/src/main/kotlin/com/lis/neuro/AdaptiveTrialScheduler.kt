@@ -86,7 +86,7 @@ internal class AdaptiveTrialScheduler(
                 val active = activity.snapshot()
                 onProgress(ArchitectureSearchProgress(planner.lineage.size, plannedTrials, received, candidates(),
                     active, now - start, planner.lineage, activity.peak, dispatcher.activeWorkers, dispatcher.peakWorkers,
-                    if (config.usesCudaQueue) device.residentModels else active.size, device.queuedRequests, device.batches))
+                    if (config.usesTensorFlowQueue) device.residentModels else active.size, device.queuedRequests, device.batches))
                 lastPublish = now
             }
         }
@@ -166,7 +166,7 @@ internal class AdaptiveTrialScheduler(
             val device = deviceActivity()
             return ArchitectureSearchResult(data, config, end, planner.lineage.size, candidates(),
                 System.nanoTime() - start, planner.lineage, activity.peak, dispatcher.peakWorkers,
-                if (config.usesCudaQueue) device.peakResidentModels else activity.peak, device.batches)
+                if (config.usesTensorFlowQueue) device.peakResidentModels else activity.peak, device.batches)
         } catch (failure: Throwable) {
             searchFailure = failure
             throw failure

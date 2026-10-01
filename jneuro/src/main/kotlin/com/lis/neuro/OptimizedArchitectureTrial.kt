@@ -140,10 +140,10 @@ internal class OptimizedArchitectureTrial(
         }
     }
 
-    fun evaluateAsync(service: SearchCudaService, executor: Executor): CompletableFuture<ArchitectureTrial> {
-        route = ArchitectureTrialRoute.CUDA_QUEUE
+    fun evaluateAsync(service: TensorFlowSearchService, executor: Executor): CompletableFuture<ArchitectureTrial> {
+        route = ArchitectureTrialRoute.TENSORFLOW_QUEUE
         val completion = CompletableFuture<ArchitectureTrial>()
-        var session: SearchCudaSession? = null
+        var session: TensorFlowSearchSession? = null
         fun finish(state: ArchitectureTrialState, problem: Throwable? = null) {
             var failure = problem
             try { session?.let(::close) } catch (cleanup: Throwable) {

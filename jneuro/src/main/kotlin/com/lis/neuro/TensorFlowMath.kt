@@ -1,7 +1,9 @@
 package com.lis.neuro
 
+import org.tensorflow.ConcreteFunction
 import org.tensorflow.Graph
 import org.tensorflow.Session
+import org.tensorflow.Signature
 import org.tensorflow.Tensor
 import org.tensorflow.TensorFlow
 import org.tensorflow.ndarray.Shape
@@ -9,8 +11,10 @@ import org.tensorflow.ndarray.buffer.DataBuffers
 import org.tensorflow.proto.AttrValue
 import org.tensorflow.proto.ConfigProto
 import org.tensorflow.proto.DataType
+import org.tensorflow.proto.FunctionDef
 import org.tensorflow.proto.GPUOptions
 import org.tensorflow.proto.GraphDef
+import org.tensorflow.proto.NameAttrList
 import org.tensorflow.proto.NodeDef
 import org.tensorflow.proto.TensorProto
 import org.tensorflow.proto.TensorShapeProto
@@ -49,13 +53,13 @@ internal object TensorFlowMath {
              engine: TrainingEngine = TrainingEngine.REFERENCE,
              sigmoid: Neuro.SigmoidMode = Neuro.SigmoidMode.EXACT): TrainingDeviceInfo {
         val device = device(backend)
-        return TrainingDeviceInfo(if (device == CPU) TrainingBackend.CPU else TrainingBackend.CUDA,
+        return TrainingDeviceInfo(if (device == CPU) TrainingBackend.CPU else TrainingBackend.GPU,
             "TensorFlow ${TensorFlow.version()} ${if (device == CPU) "CPU" else "GPU 0"}",
-            "tensorflow:$device", precision.name, "tensorflow-${TensorFlow.version()}-dense-v1",
+            "tensorflow:$device", precision.name, "tensorflow-${TensorFlow.version()}-dense-loop-v2",
             engine, 0, sigmoid.name)
     }
 
-    private fun device(backend: TrainingBackend): String {
+    internal fun device(backend: TrainingBackend): String {
         if (backend == TrainingBackend.CPU || backend == TrainingBackend.AUTO) return CPU
         check(isGpuAvailable()) { "TensorFlow GPU unavailable: ${gpuFailure()}. Use a GPU-enabled Linux runtime or select CPU." }
         return GPU
@@ -104,6 +108,12 @@ internal object TensorFlowMath {
                        precision: Neuro.TrainingPrecision, backend: TrainingBackend,
                        engine: TrainingEngine = TrainingEngine.REFERENCE): SmallTrainingKernel =
         TrainingGraph(state, hp, precision, backend, engine)
+
+    fun searchCohort(states: Array<NeuroTrainingState>, hp: Neuro.HyperParameters,
+                     precision: Neuro.TrainingPrecision, backend: TrainingBackend,
+                     validationInputs: DoubleArray, validationTargets: DoubleArray,
+                     batchSize: Int = 1, paddedTopology: IntArray? = null, intraOpThreads: Int = 1): TensorFlowSearchCohort =
+        TensorFlowCohortGraph(states, hp, precision, backend, validationInputs, validationTargets, batchSize, paddedTopology, intraOpThreads)
 
     private fun <T> withInference(topology: IntArray, hp: Neuro.HyperParameters,
                                   precision: Neuro.TrainingPrecision, backend: TrainingBackend,
@@ -206,6 +216,7 @@ internal object TensorFlowMath {
         private val dataset = definition.placeholder("dataset", longArrayOf(-1, topology.first().toLong()))
         private val targets = definition.placeholder("targets", longArrayOf(-1, topology.last().toLong()))
         private val order = definition.placeholder("order", longArrayOf(-1), DataType.DT_INT32)
+        private val batch = definition.placeholder("batch", longArrayOf(), DataType.DT_INT32)
         private val parameters = arrayOf(source.weights, source.biases, source.weightVelocity, source.biasVelocity)
         private val variables = Array(4) { kind -> Array(source.weights.size) { layer ->
             val shape = if (kind % 2 == 0) longArrayOf(topology[layer + 1].toLong(), topology[layer].toLong())
@@ -225,45 +236,7 @@ internal object TensorFlowMath {
                     "Training state and hyperparameters must be representable in FP32."
                 }
             }
-            val input = definition.gather(dataset, order)
-            val target = definition.gather(targets, order)
-            val weights = variables[0].map { definition.op("Identity", it) }
-            val biases = variables[1].map { definition.op("Identity", it) }
-            val activation = definition.forward(input, weights, biases, hp)
-            val deltas = Array(weights.size) { "" }
-            for (layer in weights.indices.reversed()) {
-                val output = activation[layer + 1]
-                val residual = if (layer == weights.lastIndex) definition.op("Sub", target, output)
-                    else definition.matmul(deltas[layer + 1], weights[layer + 1])
-                val derivative = definition.op("Mul", definition.scalar(hp.beta),
-                    definition.op("Mul", output, definition.op("Sub", definition.scalar(1.0), output)))
-                deltas[layer] = definition.op("Mul", residual, derivative)
-            }
-            val count = definition.cast(definition.node("Size", listOf(order), mapOf(
-                "T" to Definition.type(DataType.DT_INT32), "out_type" to Definition.type(DataType.DT_INT32))), definition.dtype)
-            val next = Array(4) { Array(weights.size) { "" } }
-            for (layer in weights.indices) {
-                val gradient = definition.op("RealDiv", definition.matmul(deltas[layer], activation[layer], transposeA = true), count)
-                val biasGradient = definition.reduce("Mean", deltas[layer], intArrayOf(0))
-                for ((kind, change) in listOf(0 to gradient, 1 to biasGradient)) {
-                    val velocity = definition.op("AddV2", definition.op("Mul", definition.scalar(hp.momentum), variables[kind + 2][layer]),
-                        definition.op("Mul", definition.scalar(hp.learningRate), change))
-                    next[kind + 2][layer] = velocity
-                    next[kind][layer] = definition.op("AddV2", variables[kind][layer], velocity)
-                }
-            }
-            // Compute every new value before any assign: updates must all use the same old parameters.
-            for (kind in next.indices) for (layer in next[kind].indices) {
-                next[kind][layer] = definition.node("CheckNumerics", listOf(next[kind][layer]), mapOf(
-                    "T" to Definition.type(definition.dtype), "message" to AttrValue.newBuilder()
-                        .setS(com.google.protobuf.ByteString.copyFromUtf8("Training produced non-finite parameters or momentum")).build()))
-            }
-            val barrier = definition.node("NoOp", next.flatMap { it.toList() }.map { "^$it" }, emptyMap())
-            val assigns = variables.indices.flatMap { kind -> variables[kind].indices.map { layer ->
-                definition.node("Assign", listOf(variables[kind][layer], next[kind][layer], "^$barrier"),
-                    mapOf("T" to Definition.type(definition.dtype), "use_locking" to Definition.bool(true)))
-            } }
-            definition.node("NoOp", assigns.map { "^$it" }, emptyMap(), "train")
+            buildTrainingLoop(hp, backend)
             runtime = definition.open()
             var data: Tensor? = null
             var expected: Tensor? = null
@@ -275,6 +248,90 @@ internal object TensorFlowMath {
             } catch (failure: Throwable) {
                 expected?.close(); data?.close(); runtime.close(); throw failure
             }
+        }
+
+        private fun buildTrainingLoop(hp: Neuro.HyperParameters, backend: TrainingBackend) {
+            // All parameters are loop values: an update can only read the preceding batch's complete state.
+            val parameterShapes = variables.indices.flatMap { kind -> variables[kind].indices.map { layer ->
+                if (kind % 2 == 0) longArrayOf(topology[layer + 1].toLong(), topology[layer].toLong())
+                else longArrayOf(topology[layer + 1].toLong())
+            } }
+            val shapes = listOf(longArrayOf(), longArrayOf(), longArrayOf(-1, topology.first().toLong()),
+                longArrayOf(-1, topology.last().toLong()), longArrayOf(-1)) + parameterShapes
+            val types = listOf(DataType.DT_INT32, DataType.DT_INT32, definition.dtype, definition.dtype,
+                DataType.DT_INT32) + List(parameterShapes.size) { definition.dtype }
+            fun arguments(graph: Definition) = shapes.indices.map { graph.placeholder("arg$it", shapes[it], types[it]) }
+            val condition = Definition(precision, device(backend))
+            val conditionArgs = arguments(condition)
+            val conditionOutput = condition.intOp("Less", conditionArgs[0], condition.size(conditionArgs[4]))
+            val cond = condition.function("training_condition", conditionArgs, listOf(conditionOutput))
+
+            val body = Definition(precision, device(backend))
+            val args = arguments(body)
+            val position = args[0]
+            // Flattening the requested permutations must never combine the tail of one epoch with the next.
+            val samples = body.intScalar(maxOf(1, source.samples))
+            val count = body.intOp("Minimum", args[1], body.intOp("Sub", samples, body.intOp("FloorMod", position, samples)))
+            val rows = body.node("Slice", listOf(args[4], body.intVector(position), body.intVector(count)),
+                mapOf("T" to Definition.type(DataType.DT_INT32), "Index" to Definition.type(DataType.DT_INT32)))
+            val input = body.gather(args[2], rows)
+            val target = body.gather(args[3], rows)
+            val layers = source.weights.size
+            val previous = Array(4) { kind -> List(layers) { layer -> args[5 + kind * layers + layer] } }
+            val next = batchUpdate(body, hp, previous, input, target, body.cast(count, definition.dtype))
+            val outputs = listOf(body.intOp("AddV2", position, count)) + args.subList(1, 5) + next.flatMap { it.toList() }
+            val step = body.function("training_batch", args, outputs)
+            definition.function(cond)
+            definition.function(step)
+            val initial = listOf(definition.intScalar(0), batch, dataset, targets, order) +
+                variables.flatMap { values -> values.map { definition.op("Identity", it) } }
+            // CheckNumerics is stateful in TensorFlow's op registry, so this must be While, not StatelessWhile.
+            val loop = definition.node("While", initial, mapOf(
+                "T" to AttrValue.newBuilder().setList(AttrValue.ListValue.newBuilder().addAllType(types)).build(),
+                "cond" to AttrValue.newBuilder().setFunc(NameAttrList.newBuilder().setName(cond.signature.name)).build(),
+                "body" to AttrValue.newBuilder().setFunc(NameAttrList.newBuilder().setName(step.signature.name)).build(),
+                "parallel_iterations" to AttrValue.newBuilder().setI(1).build(),
+                "output_shapes" to AttrValue.newBuilder().setList(AttrValue.ListValue.newBuilder()
+                    .addAllShape(shapes.map { Definition.shape(it).shape })).build()), "training_loop")
+            // Commit native variables only after the entire chunk, including every CheckNumerics, succeeds.
+            val assigns = variables.indices.flatMap { kind -> variables[kind].indices.map { layer ->
+                definition.node("Assign", listOf(variables[kind][layer], "$loop:${5 + kind * layers + layer}"),
+                    mapOf("T" to Definition.type(definition.dtype), "use_locking" to Definition.bool(true)))
+            } }
+            definition.node("NoOp", assigns.map { "^$it" }, emptyMap(), "train")
+        }
+
+        private fun batchUpdate(definition: Definition, hp: Neuro.HyperParameters, previous: Array<List<String>>,
+                                input: String, target: String, count: String): Array<Array<String>> {
+            val weights = previous[0]
+            val biases = previous[1]
+            val activation = definition.forward(input, weights, biases, hp)
+            val deltas = Array(weights.size) { "" }
+            for (layer in weights.indices.reversed()) {
+                val output = activation[layer + 1]
+                val residual = if (layer == weights.lastIndex) definition.op("Sub", target, output)
+                    else definition.matmul(deltas[layer + 1], weights[layer + 1])
+                val derivative = definition.op("Mul", definition.scalar(hp.beta),
+                    definition.op("Mul", output, definition.op("Sub", definition.scalar(1.0), output)))
+                deltas[layer] = definition.op("Mul", residual, derivative)
+            }
+            val next = Array(4) { Array(weights.size) { "" } }
+            for (layer in weights.indices) {
+                val gradient = definition.op("RealDiv", definition.matmul(deltas[layer], activation[layer], transposeA = true), count)
+                val biasGradient = definition.reduce("Mean", deltas[layer], intArrayOf(0))
+                for ((kind, change) in listOf(0 to gradient, 1 to biasGradient)) {
+                    val velocity = definition.op("AddV2", definition.op("Mul", definition.scalar(hp.momentum), previous[kind + 2][layer]),
+                        definition.op("Mul", definition.scalar(hp.learningRate), change))
+                    next[kind + 2][layer] = velocity
+                    next[kind][layer] = definition.op("AddV2", previous[kind][layer], velocity)
+                }
+            }
+            for (kind in next.indices) for (layer in next[kind].indices) {
+                next[kind][layer] = definition.node("CheckNumerics", listOf(next[kind][layer]), mapOf(
+                    "T" to Definition.type(definition.dtype), "message" to AttrValue.newBuilder()
+                        .setS(com.google.protobuf.ByteString.copyFromUtf8("Training produced non-finite parameters or momentum")).build()))
+            }
+            return next
         }
 
         private fun initialize() {
@@ -295,20 +352,26 @@ internal object TensorFlowMath {
             check(!closed && !failed) { "TensorFlow kernel is closed or failed; reopen from the committed checkpoint." }
             require(batchSize > 0)
             require(orders.isEmpty() || source.samples > 0) { "Training requires samples." }
+            require(orders.size.toLong() * source.samples <= Int.MAX_VALUE) { "Training order chunk is too large." }
             require(orders.all { it.size == source.samples && it.toSet().size == source.samples &&
                 it.all { sample -> sample in 0 until source.samples } })
             try {
-                val batch = if (online) 1 else batchSize
-                for (indices in orders) for (start in indices.indices step batch) {
-                    val slice = indices.copyOfRange(start, minOf(indices.size, start + batch))
-                    TInt32.tensorOf(Shape.of(slice.size.toLong()), DataBuffers.of(slice, false, false)).use { rows ->
-                        runtime.session.runner().feed(dataset, inputTensor).feed(targets, targetTensor)
-                            .feed(order, rows).addTarget("train").run().close()
+                val runner = runtime.session.runner()
+                val result = if (orders.isEmpty()) {
+                    variables.forEach { layer -> layer.forEach { runner.fetch(it) } }
+                    runner.run()
+                } else {
+                    val flattened = IntArray(orders.size * source.samples)
+                    orders.forEachIndexed { epoch, indices -> indices.copyInto(flattened, epoch * source.samples) }
+                    TInt32.tensorOf(Shape.of(flattened.size.toLong()), DataBuffers.of(flattened, false, false)).use { rows ->
+                        TInt32.scalarOf(if (online) 1 else minOf(batchSize, source.samples)).use { batchTensor ->
+                            repeat(4 * source.weights.size) { runner.fetch("training_loop:${5 + it}") }
+                            runner.feed(dataset, inputTensor).feed(targets, targetTensor)
+                                .feed(order, rows).feed(batch, batchTensor).addTarget("train").run()
+                        }
                     }
                 }
-                val runner = runtime.session.runner()
-                variables.forEach { layer -> layer.forEach { runner.fetch(it) } }
-                return runner.run().use { result ->
+                return result.use {
                     val layers = source.weights.size
                     val output = Array(4) { kind -> Array(layers) { layer -> doubles(result[kind * layers + layer]) } }
                     check(output.all { values -> values.all { buffer -> buffer.all { it.isFinite() } } }) {
@@ -354,12 +417,12 @@ internal object TensorFlowMath {
             }
     }
 
-    private class RuntimeGraph(val graph: Graph, val session: Session) : AutoCloseable {
+    internal class RuntimeGraph(val graph: Graph, val session: Session) : AutoCloseable {
         override fun close() { try { session.close() } finally { graph.close() } }
     }
 
     /** Named TensorFlow operations keep dtype and device decisions inside the numerical boundary. */
-    private class Definition(val precision: Neuro.TrainingPrecision, private val device: String) {
+    internal class Definition(val precision: Neuro.TrainingPrecision, private val device: String) {
         val dtype = if (precision == Neuro.TrainingPrecision.FP64) DataType.DT_DOUBLE else DataType.DT_FLOAT
         private val graph = GraphDef.newBuilder()
         private var sequence = 0
@@ -368,6 +431,22 @@ internal object TensorFlowMath {
             return name
         }
         fun op(op: String, vararg inputs: String): String = node(op, inputs.toList(), mapOf("T" to type(dtype)))
+        fun intOp(op: String, vararg inputs: String): String = node(op, inputs.toList(), mapOf("T" to type(DataType.DT_INT32)))
+        fun intScalar(value: Int): String = node("Const", emptyList(), mapOf("dtype" to type(DataType.DT_INT32),
+            "value" to AttrValue.newBuilder().setTensor(TensorProto.newBuilder().setDtype(DataType.DT_INT32)
+                .setTensorShape(TensorShapeProto.getDefaultInstance()).addIntVal(value)).build()))
+        fun intVector(value: String): String = node("Pack", listOf(value), mapOf("T" to type(DataType.DT_INT32),
+            "N" to AttrValue.newBuilder().setI(1).build(), "axis" to AttrValue.newBuilder().setI(0).build()))
+        fun size(value: String): String = node("Size", listOf(value), mapOf("T" to type(DataType.DT_INT32),
+            "out_type" to type(DataType.DT_INT32)))
+        fun function(value: FunctionDef) { graph.libraryBuilder.addFunction(value) }
+        fun function(name: String, inputs: List<String>, outputs: List<String>): FunctionDef = Graph().use { native ->
+            native.importGraphDef(graph.build())
+            val signature = Signature.builder(name)
+            inputs.forEachIndexed { index, input -> signature.input("arg$index", native.outputOrThrow(input)) }
+            outputs.forEachIndexed { index, output -> signature.output("result$index", native.outputOrThrow(output)) }
+            ConcreteFunction.create(signature.build(), native).use { it.functionDef }
+        }
         fun placeholder(name: String, dims: LongArray, dataType: DataType = dtype) =
             node("Placeholder", emptyList(), mapOf("dtype" to type(dataType), "shape" to shape(dims)), name)
         fun scalar(value: Double): String {
@@ -383,8 +462,8 @@ internal object TensorFlowMath {
         }
         fun matmul(a: String, b: String, transposeA: Boolean = false, transposeB: Boolean = false) =
             node("MatMul", listOf(a, b), mapOf("T" to type(dtype), "transpose_a" to bool(transposeA), "transpose_b" to bool(transposeB)))
-        fun reduce(op: String, input: String, axes: IntArray) = node(op, listOf(input, ints(axes)),
-            mapOf("T" to type(dtype), "Tidx" to type(DataType.DT_INT32), "keep_dims" to bool(false)))
+        fun reduce(op: String, input: String, axes: IntArray, keepDims: Boolean = false) = node(op, listOf(input, ints(axes)),
+            mapOf("T" to type(dtype), "Tidx" to type(DataType.DT_INT32), "keep_dims" to bool(keepDims)))
         fun cast(input: String, destination: DataType, source: DataType = DataType.DT_INT32) = node("Cast", listOf(input),
             mapOf("SrcT" to type(source), "DstT" to type(destination), "Truncate" to bool(false)))
         fun gather(input: String, indices: String): String {
@@ -426,12 +505,13 @@ internal object TensorFlowMath {
             val positive = op("GreaterEqual", input, scalar(0.0))
             return node("SelectV2", listOf(positive, op("RealDiv", scalar(1.0), denominator), op("RealDiv", exp, denominator)), mapOf("T" to type(dtype)))
         }
-        fun open(): RuntimeGraph {
+        fun open(intraOpThreads: Int = 1, privateThreads: Boolean = false): RuntimeGraph {
+            require(intraOpThreads > 0)
             val native = Graph()
             try {
                 native.importGraphDef(graph.build())
                 val config = ConfigProto.newBuilder().setAllowSoftPlacement(false).setInterOpParallelismThreads(1)
-                    .setIntraOpParallelismThreads(1).setIsolateSessionState(true)
+                    .setIntraOpParallelismThreads(intraOpThreads).setUsePerSessionThreads(privateThreads).setIsolateSessionState(true)
                     .setGpuOptions(GPUOptions.newBuilder().setAllowGrowth(true)).build()
                 return RuntimeGraph(native, Session(native, false, config))
             } catch (failure: Throwable) { native.close(); throw failure }
@@ -444,11 +524,11 @@ internal object TensorFlowMath {
         }
     }
 
-    private fun tensor(values: DoubleArray, precision: Neuro.TrainingPrecision, vararg dims: Long): Tensor =
+    internal fun tensor(values: DoubleArray, precision: Neuro.TrainingPrecision, vararg dims: Long): Tensor =
         if (precision == Neuro.TrainingPrecision.FP64) TFloat64.tensorOf(Shape.of(*dims), DataBuffers.of(values, false, false))
         else TFloat32.tensorOf(Shape.of(*dims), DataBuffers.of(FloatArray(values.size) { values[it].toFloat() }, false, false))
 
-    private fun validate(state: NeuroTrainingState): NeuroTrainingState {
+    internal fun validate(state: NeuroTrainingState): NeuroTrainingState {
         require(state.topology.size >= 2 && state.topology.all { it > 0 }) { "Invalid training topology." }
         val layers = state.topology.size - 1
         val buffers = arrayOf(state.weights, state.biases, state.weightVelocity, state.biasVelocity)
@@ -467,7 +547,7 @@ internal object TensorFlowMath {
         return state
     }
 
-    private fun doubles(value: Tensor): DoubleArray {
+    internal fun doubles(value: Tensor): DoubleArray {
         val size = Math.toIntExact(value.shape().size())
         return when (value) {
             is TFloat64 -> DoubleArray(size).also { value.copyTo(DataBuffers.of(it, false, false)) }

@@ -28,12 +28,24 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private val charts = View.entries.filter { it != View.SEARCH }.associateWith { Chart(it) }
     private val hidden = JTextField("6")
     private val dataset = JComboBox(NeuroLearningSets.Kind.entries.toTypedArray())
-    private val backend = JComboBox(TrainingBackend.entries.toTypedArray())
+    private val backend = JComboBox(TrainingBackend.entries.toTypedArray()).apply {
+        renderer = object : DefaultListCellRenderer() {
+            override fun getListCellRendererComponent(list: JList<*>?, value: Any?, index: Int,
+                                                      isSelected: Boolean, cellHasFocus: Boolean): Component =
+                super.getListCellRendererComponent(list, (value as? TrainingBackend)?.displayName ?: "",
+                    index, isSelected, cellHasFocus)
+        }
+    }
     private val engine = JComboBox(TrainingEngine.entries.toTypedArray()).apply {
-        toolTipText = "SMALL supports 1–4 hidden layers, each with 4, 8 or 16 neurons. REFERENCE accepts general topologies."
+        renderer = object : DefaultListCellRenderer() {
+            override fun getListCellRendererComponent(list: JList<*>?, value: Any?, index: Int,
+                                                      isSelected: Boolean, cellHasFocus: Boolean): Component =
+                super.getListCellRendererComponent(list, (value as? TrainingEngine)?.displayName ?: "",
+                    index, isSelected, cellHasFocus)
+        }
     }
     private val sigmoid = JComboBox(Neuro.SigmoidMode.entries.toTypedArray())
-    private val deviceStatus = JLabel("CPU · awaiting training").apply { accessibleContext.accessibleName = "Training device" }
+    private val deviceStatus = JLabel("TensorFlow CPU · awaiting training").apply { accessibleContext.accessibleName = "Training device" }
     private val seed = JTextField("42")
     private val epochLimit = NumericInputs.spinner(10_000, 1000)
     private val rate = NumericInputs.spinner(0.6, 0.05)
@@ -157,9 +169,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         sidebar.add(Box.createVerticalStrut(20))
         section("03  TRAINING")
         field("Training backend", backend)
-        field("Training engine", engine)
-        engine.toolTipText = "Both choices use TensorFlow. SMALL retains its restricted topology family; REFERENCE accepts general topologies."
-        backend.toolTipText = "TensorFlow CPU is the default; AUTO selects CPU. CUDA and the CUBLAS compatibility alias require an available TensorFlow GPU runtime."
+        field("Topology family", engine)
+        engine.toolTipText = "Both families train with TensorFlow. General accepts any supported topology; Compact uses 1–4 hidden layers of width 4, 8 or 16."
+        backend.toolTipText = "TensorFlow CPU is the default; AUTO selects CPU. TensorFlow GPU requires an available GPU-enabled TensorFlow runtime and never falls back silently."
         field("Random seed", seed)
         field("Maximum epochs", epochLimit)
         val advanced = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false; alignmentX = 0f }
@@ -530,7 +542,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             else -> contextBar.add(JLabel(when (View.entries[tabs.selectedIndex.coerceAtLeast(0)]) {
                 View.UPDATE -> "Before / after one update batch. Pause and step to isolate an epoch."
                 View.TIMELINE -> "Saved milestones and final state. These images are history, not replay controls."
-                View.SEARCH -> "Evolve promising architectures through mutations. Equal seed budgets; reference grid optional."
+                View.SEARCH -> "Train a broad population together. Prune weak trials or use the full training budget."
                 else -> "Grayscale = output 0–1. RMSE = training error, not validation error."
             }).apply { foreground = MUTED; font = uiFont(12) })
         }
@@ -555,9 +567,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         architectureSearch.setSource(next.config, next.samples.size)
         status.text = if (searchRunning) "Architecture search…" else if (studyRunning) "Comparing seeds…" else next.state.label
         status.foreground = if (next.state == StudioState.FAILED) ERROR else ACCENT
-        deviceStatus.text = next.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision}" }
-            ?: "${next.config.backend} · ${if (next.state == StudioState.FAILED) "unavailable" else "awaiting training"}"
-        deviceStatus.toolTipText = next.deviceInfo?.let { "${it.identity} · TensorFlow · ${it.engine} · ${it.sigmoid} · kernel ${it.kernelVersion}" }
+        deviceStatus.text = next.deviceInfo?.let { "${it.backend.displayName} · ${it.name} · ${it.precision}" }
+            ?: "${next.config.backend.displayName} · ${if (next.state == StudioState.FAILED) "unavailable" else "awaiting training"}"
+        deviceStatus.toolTipText = next.deviceInfo?.let { "${it.identity} · ${it.engine.displayName} · ${it.sigmoid} · kernel ${it.kernelVersion}" }
         activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}   ·   batch ${next.config.batchSize}" + if (next.replayNote.isEmpty()) "" else "   ·   ${next.replayNote}"
         metrics[0].text = "%,d".format(Locale.ROOT, next.diagnostics.epoch())
         metricDetails[0].text = "of %,d epochs".format(Locale.ROOT, next.config.maxEpochs)

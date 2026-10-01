@@ -38,7 +38,7 @@ class NeuroStudioTest {
         assertEquals(sessions.opened.get(), sessions.closed.get())
     }
 
-    @Test fun smallEngineChunksRespectStepsMilestonesLimitsAndCancellation() {
+    @Test fun compactTopologyChunksRespectStepsMilestonesLimitsAndCancellation() {
         val sessions = RecordingTrainingSessions()
         val config = StudioConfig(hidden = "4", maxEpochs = 70, targetError = 0.0,
             engine = TrainingEngine.SMALL, precision = Neuro.TrainingPrecision.FP32, sigmoid = Neuro.SigmoidMode.FAST)
@@ -61,7 +61,7 @@ class NeuroStudioTest {
         assertEquals(sessions.opened.get(), sessions.closed.get())
     }
 
-    @Test fun smallStudioStopsAtTheSameTargetEpochAsSingleEpochTraining() {
+    @Test fun compactTopologyStopsAtTheSameTargetEpochAsSingleEpochTraining() {
         val config = StudioConfig(hidden = "4", maxEpochs = 200, targetError = 0.49,
             engine = TrainingEngine.SMALL, precision = Neuro.TrainingPrecision.FP32, sigmoid = Neuro.SigmoidMode.FAST)
         NeuroStudio(config).use { single ->
@@ -79,7 +79,7 @@ class NeuroStudioTest {
         }
     }
 
-    @Test fun enginePrecisionAndSigmoidConfigurationRemainExplicit() {
+    @Test fun topologyFamilyPrecisionAndSigmoidConfigurationRemainExplicit() {
         assertEquals(TrainingEngine.REFERENCE, StudioConfig().engine)
         assertEquals(Neuro.SigmoidMode.EXACT, StudioConfig().sigmoid)
         assertThrows(IllegalArgumentException::class.java) { StudioConfig(hidden = "6", engine = TrainingEngine.SMALL) }
@@ -136,14 +136,14 @@ class NeuroStudioTest {
 
     @Test fun selectedBackendSessionsAreReusedAndReleasedOnResetFailureAndClose() {
         val sessions = RecordingTrainingSessions()
-        NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->
+        NeuroStudio(StudioConfig(backend = TrainingBackend.GPU), openSession = sessions::open).use { studio ->
             assertNull(studio.frame().deviceInfo)
             studio.step(2); studio.advance()
             studio.step(1); studio.advance()
             assertEquals(1, sessions.opened.get())
             assertEquals(3, sessions.epochCalls.get())
-            assertEquals(TrainingBackend.CUDA, studio.frame().deviceInfo!!.backend)
-            assertEquals("CUDA test fixture", studio.frame().deviceInfo!!.name)
+            assertEquals(TrainingBackend.GPU, studio.frame().deviceInfo!!.backend)
+            assertEquals("GPU test fixture", studio.frame().deviceInfo!!.name)
             studio.apply(studio.activeConfig)
             assertEquals(1, sessions.closed.get())
             assertNull(studio.frame().deviceInfo)
@@ -155,22 +155,22 @@ class NeuroStudioTest {
             assertEquals(2, sessions.closed.get())
             assertEquals(1, studio.frame().diagnostics.epoch())
             sessions.failEpoch = false
-            studio.apply(StudioConfig(dataset = NeuroLearningSets.Kind.CUSTOM, backend = TrainingBackend.CUDA))
+            studio.apply(StudioConfig(dataset = NeuroLearningSets.Kind.CUSTOM, backend = TrainingBackend.GPU))
             studio.addSample(0.2, 0.3, 1.0); studio.step(1); studio.advance()
             studio.addSample(0.4, 0.5, 0.0)
             assertEquals(3, sessions.closed.get())
             studio.step(1); studio.advance()
         }
         assertEquals(sessions.opened.get(), sessions.closed.get())
-        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+        assertTrue(sessions.requested.all { it == TrainingBackend.GPU })
     }
 
     @Test fun unavailableBackendNeverFallsBackAndSeedStudyClosesCancelledSessions() {
         val sessions = RecordingTrainingSessions().apply { unavailable = true }
-        NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->
+        NeuroStudio(StudioConfig(backend = TrainingBackend.GPU), openSession = sessions::open).use { studio ->
             studio.step(1)
             assertThrows(IllegalStateException::class.java) { studio.advance() }
-            assertEquals(listOf(TrainingBackend.CUDA), sessions.requested.toList())
+            assertEquals(listOf(TrainingBackend.GPU), sessions.requested.toList())
             assertEquals(0, studio.epochs)
             sessions.unavailable = false
             assertEquals(4, studio.compareSeeds(2).size)
@@ -178,15 +178,15 @@ class NeuroStudioTest {
             var polls = 0
             assertTrue(studio.compareSeeds(100) { ++polls > 3 }.isEmpty())
             assertEquals(5, sessions.closed.get())
-            assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+            assertTrue(sessions.requested.all { it == TrainingBackend.GPU })
         }
     }
 
     @Test fun failureAfterCommittedEpochReportsItsActualParametersErrorAndEpoch() {
-        for ((backend, batch) in listOf(TrainingBackend.CUDA to 1, TrainingBackend.CUBLAS to 3)) {
+        for (batch in listOf(1, 3)) {
             val sessions = RecordingTrainingSessions().apply { failAfterCommit = true }
             lateinit var model: Neuro
-            val config = StudioConfig(backend = backend, batchSize = batch, targetError = 0.0)
+            val config = StudioConfig(backend = TrainingBackend.GPU, batchSize = batch, targetError = 0.0)
             NeuroStudio(config, openSession = { network, selected, precision, batchSize, engine ->
                 model = network
                 sessions.open(network, selected, precision, batchSize, engine)
@@ -215,13 +215,13 @@ class NeuroStudioTest {
 
     @Test fun failedBackendCleanupStillAllowsConfigurationRecovery() {
         val sessions = RecordingTrainingSessions()
-        NeuroStudio(StudioConfig(backend = TrainingBackend.CUDA), openSession = sessions::open).use { studio ->
+        NeuroStudio(StudioConfig(backend = TrainingBackend.GPU), openSession = sessions::open).use { studio ->
             studio.step(1); studio.advance()
             sessions.failClose = true
             studio.fail("Epoch failed")
             assertEquals(StudioState.FAILED, studio.state)
             assertTrue(studio.frame().message.contains("Epoch failed"))
-            assertTrue(studio.frame().message.contains("CUDA fixture cleanup failed"))
+            assertTrue(studio.frame().message.contains("GPU fixture cleanup failed"))
             sessions.failClose = false
             studio.apply(StudioConfig())
             studio.step(1); studio.advance()
@@ -345,7 +345,7 @@ class NeuroStudioTest {
     @Test fun configuredMiniBatchesKeepEpochBoundariesAndReachSeedStudies() {
         val sessions = RecordingTrainingSessions()
         val config = StudioConfig("2", maxEpochs = 8, targetError = 0.0,
-            backend = TrainingBackend.CUBLAS, precision = Neuro.TrainingPrecision.FP32, batchSize = 3)
+            backend = TrainingBackend.GPU, precision = Neuro.TrainingPrecision.FP32, batchSize = 3)
         val expected = Neuro(config.topology(), Neuro.HyperParameters(config.learningRate, config.momentum, 1.0, config.seed))
         NeuroLearningSets.addTo(expected, NeuroLearningSets.create(config.dataset, 0xC0FFEE42L).toList())
         NeuroStudio(config, openSession = sessions::open).use { studio ->
@@ -356,7 +356,7 @@ class NeuroStudioTest {
             assertEquals(expected.trainingError(), studio.currentError, 0.0)
             assertArrayEquals(NeuroXorDiagnostics.capture(expected, 4, expected.trainingError()).parameters(),
                 studio.frame().diagnostics.parameters(), 0.0)
-            assertEquals(TrainingBackend.CUDA, studio.frame().deviceInfo!!.backend)
+            assertEquals(TrainingBackend.GPU, studio.frame().deviceInfo!!.backend)
             assertEquals("FP32", studio.frame().deviceInfo!!.precision)
             studio.setRunning(true)
             var checks = 0
@@ -369,7 +369,7 @@ class NeuroStudioTest {
             assertArrayEquals(before, studio.frame().diagnostics.parameters())
             assertEquals(13, sessions.miniBatches.size)
             assertTrue(sessions.miniBatches.all { it == 3 })
-            assertTrue(sessions.configurations.all { it == Triple(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32, 3) })
+            assertTrue(sessions.configurations.all { it == Triple(TrainingBackend.GPU, Neuro.TrainingPrecision.FP32, 3) })
         }
         assertEquals(sessions.opened.get(), sessions.closed.get())
     }

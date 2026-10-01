@@ -30,7 +30,7 @@ class NeuroArchitectureSearchTest {
             assertEquals(trial.deviceInfo, studio.frame().deviceInfo)
             assertArrayEquals(trial.snapshot!!.parameters(), studio.frame().diagnostics.parameters(), 1e-10)
         }
-        assertDoesNotThrow { ArchitectureSearchConfig(engine = TrainingEngine.SMALL, backend = TrainingBackend.CUBLAS) }
+        assertDoesNotThrow { ArchitectureSearchConfig(engine = TrainingEngine.SMALL, backend = TrainingBackend.GPU) }
     }
 
     @Test fun referenceFastSigmoidProvenanceSurvivesSearchAndReplay() {
@@ -49,7 +49,7 @@ class NeuroArchitectureSearchTest {
         }
     }
 
-    @Test fun replayRejectsChangedSmallEngineSimdProvenanceBeforeInstallingState() {
+    @Test fun replayRejectsChangedTensorFlowKernelProvenanceBeforeInstallingState() {
         val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
             maxLayers = 1, minWidth = 4, maxWidth = 4, seeds = listOf(42), requiredSuccesses = 1,
             maxEpochs = 2, checkEvery = 1, engine = TrainingEngine.SMALL)
@@ -59,7 +59,7 @@ class NeuroArchitectureSearchTest {
         NeuroStudio(openSession = { model, backend, precision, batch, engine ->
             val delegate = model.newTrainingSession(backend, precision, batch, engine)
             object : NeuroTrainingSession by delegate {
-                override val info = delegate.info.copy(simdBits = delegate.info.simdBits / 2)
+                override val info = delegate.info.copy(kernelVersion = "${delegate.info.kernelVersion}-different")
             }
         }).use { studio ->
             val before = studio.frame().diagnostics.parameters()
@@ -75,7 +75,7 @@ class NeuroArchitectureSearchTest {
             val sessions = RecordingTrainingSessions()
             val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
                 maxLayers = 1, maxWidth = 1, seeds = listOf(42, 43), requiredSuccesses = 1,
-                maxEpochs = 3, checkEvery = 1, parallelism = 2, backend = TrainingBackend.CUDA)
+                maxEpochs = 3, checkEvery = 1, parallelism = 2, backend = TrainingBackend.GPU)
             val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
             val candidate = report.candidates.single()
             val trial = candidate.trials.first()
@@ -143,7 +143,7 @@ class NeuroArchitectureSearchTest {
     }
 
     @Test fun configuredBatchSearchReplaysTheResolvedBackendAndPrecision() {
-        for (backend in listOf(TrainingBackend.AUTO, TrainingBackend.CUBLAS)) {
+        for (backend in listOf(TrainingBackend.AUTO, TrainingBackend.GPU)) {
             val sessions = RecordingTrainingSessions()
             val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
                 maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1,
@@ -155,7 +155,7 @@ class NeuroArchitectureSearchTest {
             assertTrue(candidate.valid, trial.failure)
             assertEquals(4, sessions.miniBatches.size)
             assertEquals(Triple(backend, Neuro.TrainingPrecision.FP32, 3), sessions.configurations.single())
-            val effective = if (backend == TrainingBackend.AUTO) TrainingBackend.CPU else TrainingBackend.CUDA
+            val effective = if (backend == TrainingBackend.AUTO) TrainingBackend.CPU else TrainingBackend.GPU
             val precision = Neuro.TrainingPrecision.FP32
             assertEquals(effective, trial.deviceInfo!!.backend)
             assertEquals(precision.name, trial.deviceInfo.precision)
@@ -179,17 +179,17 @@ class NeuroArchitectureSearchTest {
         val sessions = RecordingTrainingSessions()
         val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
             maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1,
-            maxEpochs = 2, checkEvery = 1, backend = TrainingBackend.CUDA)
+            maxEpochs = 2, checkEvery = 1, backend = TrainingBackend.GPU)
         val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
         val candidate = report.candidates.single()
         val trial = candidate.trials.single()
         assertEquals(ArchitectureTrialState.COMPLETED, trial.state)
-        assertEquals(TrainingBackend.CUDA, trial.deviceInfo!!.backend)
+        assertEquals(TrainingBackend.GPU, trial.deviceInfo!!.backend)
         assertEquals(1, sessions.closed.get())
         NeuroStudio(openSession = sessions::open).use { studio ->
             assertTrue(studio.replayArchitecture(report, candidate, trial))
             assertEquals(trial.deviceInfo, studio.frame().deviceInfo)
-            assertEquals(TrainingBackend.CUDA, studio.activeConfig.backend)
+            assertEquals(TrainingBackend.GPU, studio.activeConfig.backend)
             val replay = studio.frame()
             sessions.identity = "replacement-device"
             assertThrows(IllegalStateException::class.java) { studio.replayArchitecture(report, candidate, trial) }
@@ -199,14 +199,14 @@ class NeuroArchitectureSearchTest {
             assertThrows(IllegalStateException::class.java) { studio.replayArchitecture(report, candidate, trial) }
         }
         assertEquals(sessions.opened.get(), sessions.closed.get())
-        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+        assertTrue(sessions.requested.all { it == TrainingBackend.GPU })
     }
 
     @Test fun cleanupFailureCountsCommittedEpochButKeepsFailedTrialDisqualified() {
         val sessions = RecordingTrainingSessions().apply { failAfterCommit = true }
         val data = ArchitectureSearchData.fitting(xor())
         val config = ArchitectureSearchConfig(maxEpochs = 4, checkEvery = 1, targetRmse = 1.0,
-            seeds = listOf(42), requiredSuccesses = 1, backend = TrainingBackend.CUBLAS, batchSize = 3)
+            seeds = listOf(42), requiredSuccesses = 1, backend = TrainingBackend.GPU, batchSize = 3)
         val architecture = NetworkArchitecture(listOf(2))
         val initialModel = data.newNetwork(architecture, config.hyperParameters, 42)
         val initial = NeuroXorDiagnostics.capture(initialModel, 0, initialModel.trainingError())
@@ -229,20 +229,20 @@ class NeuroArchitectureSearchTest {
     @Test fun backendFailuresRemainFailedTrialsAndReleaseResources() {
         val sessions = RecordingTrainingSessions().apply { unavailable = true }
         val data = ArchitectureSearchData.fitting(xor())
-        val config = ArchitectureSearchConfig(maxEpochs = 2, checkEvery = 1, backend = TrainingBackend.CUDA)
+        val config = ArchitectureSearchConfig(maxEpochs = 2, checkEvery = 1, backend = TrainingBackend.GPU)
         val engine = NeuroArchitectureSearch(sessions::open)
         val missing = engine.evaluate(data, config, NetworkArchitecture(listOf(2)), 42, { false }, { _, _ -> })
         assertEquals(ArchitectureTrialState.FAILED, missing.state)
-        assertEquals("CUDA fixture unavailable", missing.failure)
+        assertEquals("GPU fixture unavailable", missing.failure)
         assertNull(missing.deviceInfo)
         assertEquals(0, missing.epochs)
         sessions.unavailable = false; sessions.failEpoch = true
         val failed = engine.evaluate(data, config, NetworkArchitecture(listOf(2)), 42, { false }, { _, _ -> })
         assertEquals(ArchitectureTrialState.FAILED, failed.state)
-        assertEquals(TrainingBackend.CUDA, failed.deviceInfo!!.backend)
-        assertEquals("CUDA fixture epoch failed", failed.failure)
+        assertEquals(TrainingBackend.GPU, failed.deviceInfo!!.backend)
+        assertEquals("GPU fixture epoch failed", failed.failure)
         assertEquals(1, sessions.closed.get())
-        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+        assertTrue(sessions.requested.all { it == TrainingBackend.GPU })
     }
 
     @Test fun enumeratesUniqueParameterOrderedArchitecturesWithoutDiscardingPermutations() {

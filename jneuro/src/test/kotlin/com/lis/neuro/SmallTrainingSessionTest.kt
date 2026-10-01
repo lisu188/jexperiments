@@ -9,7 +9,7 @@ class SmallTrainingSessionTest {
         SmallTrainingSession(model, batch, { SmallCpuTraining(it, model.hyperParameters(), Neuro.TrainingPrecision.FP64) }, clock)
 
     private fun same(expected: Neuro, actual: Neuro) {
-        val comparison = NeuroCudaBenchmarkHarness.validate(expected.exportTrainingState(), actual.exportTrainingState(),
+        val comparison = TensorFlowBenchmarkHarness.validate(expected.exportTrainingState(), actual.exportTrainingState(),
             expected.trainingError(), actual.trainingError(), Neuro.TrainingPrecision.FP64)
         assertTrue(comparison.maximumScaledError <= 1.0, comparison.toString())
         assertEquals(expected.statistics().epochsTrained, actual.statistics().epochsTrained)

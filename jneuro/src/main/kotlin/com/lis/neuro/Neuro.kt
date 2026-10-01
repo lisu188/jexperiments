@@ -10,7 +10,7 @@ class Neuro @JvmOverloads constructor(
     /** Legacy compatibility hint. TensorFlow selects its compute kernels for every value. */
     enum class Kernel { AUTO, SCALAR, VECTOR }
     enum class SigmoidMode { EXACT, FAST }
-    enum class BatchBackend { CPU, CUDA, AUTO }
+    enum class BatchBackend { CPU, GPU, AUTO }
     enum class TrainingPrecision { FP64, FP32 }
 
     @JvmRecord
@@ -368,6 +368,20 @@ class Neuro @JvmOverloads constructor(
 
     internal fun commitDeviceEpoch(state: NeuroTrainingState): Double = commitTrainingChunk(state, 1)
 
+    /** Publishes native precision conversion for a scored, untrained checkpoint without consuming shuffle state. */
+    @Synchronized internal fun publishInitialTrainingState(state: NeuroTrainingState) {
+        checkTrainingAccess()
+        check(epochsTrained == 0L && samplesSeen == 0L) { "Initial state publication requires an untrained model." }
+        validateTrainingState(state)
+        for (index in layers.indices) {
+            state.weights[index].copyInto(layers[index].weights)
+            state.biases[index].copyInto(layers[index].biases)
+            state.weightVelocity[index].copyInto(layers[index].weightVelocity)
+            state.biasVelocity[index].copyInto(layers[index].biasVelocity)
+        }
+        lastTrainingError = Double.NaN
+    }
+
     @JvmOverloads internal fun commitTrainingChunk(state: NeuroTrainingState, epochs: Int, evaluateError: Boolean = true): Double {
         checkTrainingAccess()
         require(epochs in 1..64)
@@ -462,7 +476,7 @@ class Neuro @JvmOverloads constructor(
         val effectiveBatch = minOf(batchSize, trainingSampleCount())
         val requested = when (backend) {
             BatchBackend.CPU -> TrainingBackend.CPU
-            BatchBackend.CUDA -> TrainingBackend.CUDA
+            BatchBackend.GPU -> TrainingBackend.GPU
             BatchBackend.AUTO -> TrainingBackend.AUTO
         }
         TensorFlowMath.trainingKernel(exportTrainingState(shareDataset = true), hyperParameters,

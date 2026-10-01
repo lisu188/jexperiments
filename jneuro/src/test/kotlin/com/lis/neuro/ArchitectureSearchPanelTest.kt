@@ -56,16 +56,18 @@ class ArchitectureSearchPanelTest {
         val sessions = RecordingTrainingSessions().apply { unavailable = true }
         val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
             maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1,
-            maxEpochs = 1, checkEvery = 1, backend = TrainingBackend.CUDA)
+            maxEpochs = 1, checkEvery = 1, backend = TrainingBackend.GPU)
         val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
         EventQueue.invokeAndWait {
             val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
-            panel.setSource(StudioConfig(backend = TrainingBackend.CUBLAS, precision = Neuro.TrainingPrecision.FP32, batchSize = 7), 4)
-            assertEquals(TrainingBackend.CUBLAS, panel.readConfig().backend)
+            panel.setSource(StudioConfig(backend = TrainingBackend.GPU, precision = Neuro.TrainingPrecision.FP32, batchSize = 7), 4)
+            assertEquals(TrainingBackend.GPU, panel.readConfig().backend)
             assertEquals(Neuro.TrainingPrecision.FP32, panel.readConfig().precision)
             assertEquals(7, panel.readConfig().batchSize)
+            assertTrue((field(panel, "sourceLabel") as JLabel).text.contains("TensorFlow GPU"))
+            assertTrue((field(panel, "sourceLabel") as JLabel).text.contains("General topology"))
             panel.complete(report)
-            assertTrue((field(panel, "summary") as JLabel).text.contains("CUDA: CUDA fixture unavailable"))
+            assertTrue((field(panel, "summary") as JLabel).text.contains("TensorFlow GPU: GPU fixture unavailable"))
             assertFalse(button(panel, "Replay selected run").isEnabled)
         }
     }
@@ -79,12 +81,12 @@ class ArchitectureSearchPanelTest {
             val selection = field(panel, "selected")
             val trial = field(panel, "chosenTrial")
             val surface = field(panel, "surface")
-            panel.replayFailed("Recorded CUDA device differs")
+            panel.replayFailed("Recorded GPU device differs")
             assertSame(report, field(panel, "result"))
             assertSame(selection, field(panel, "selected"))
             assertSame(trial, field(panel, "chosenTrial"))
             assertSame(surface, field(panel, "surface"))
-            assertTrue((field(panel, "summary") as JLabel).text.contains("Replay error: Recorded CUDA device differs"))
+            assertTrue((field(panel, "summary") as JLabel).text.contains("Replay error: Recorded GPU device differs"))
             assertTrue((field(panel, "progressBar") as JProgressBar).string.contains("results retained"))
             assertTrue(button(panel, "Replay selected run").isEnabled)
         }
@@ -117,14 +119,24 @@ class ArchitectureSearchPanelTest {
             assertEquals(12, defaults.restartAfter)
             assertEquals(4, defaults.maxRestarts)
             assertEquals(ArchitectureSearchStrategy.ADAPTIVE, defaults.strategy)
-            assertEquals(ArchitectureExecution.REFERENCE, defaults.execution)
+            assertEquals(ArchitectureExecution.BATCHED, defaults.execution)
+            assertEquals(ArchitectureBudgetPolicy.SUCCESSIVE_HALVING, defaults.budgetPolicy)
+            assertEquals(25, defaults.initialEpochs)
+            assertEquals(3, defaults.reductionFactor)
+            assertEquals(128, defaults.modelsPerBatch)
             assertEquals(ArchitecturePolicy.SMALLEST_MEETING_TARGET, defaults.policy)
+            val epochControl = field(panel, "epochs") as JSpinner
+            assertTrue(epochControl.toolTipText.contains("Weaker architectures are pruned"))
+            assertTrue(epochControl.toolTipText.contains("cannot be recommended or replayed"))
+            assertEquals(epochControl.toolTipText, (epochControl.editor as JSpinner.DefaultEditor).textField.toolTipText)
             button(panel, "Start search").doClick()
             assertEquals(1, starts); assertFalse(button(panel, "Start search").isEnabled)
             val config = panel.readConfig()
+            epochControl.value = 100_001 // Unapplied edits must not change the running budget shown.
             panel.updateProgress(ArchitectureSearchProgress(584, 2920, 0, emptyList(),
                 listOf(ArchitectureRunningTrial(NetworkArchitecture(listOf(2)), 42, 25, 0.5)), 10))
-            assertTrue((field(panel, "summary") as JLabel).text.contains("epoch 25"))
+            assertTrue((field(panel, "summary") as JLabel).text.endsWith("epoch 25/100000"))
+            epochControl.value = 100_000
             panel.updateProgress(ArchitectureSearchProgress(584, 2920, 0, emptyList(), emptyList(), 20))
             render(panel, 1150, 850)
             button(panel, "Cancel search").doClick(); assertEquals(1, cancels)
@@ -271,6 +283,160 @@ class ArchitectureSearchPanelTest {
             assertThrows(IllegalArgumentException::class.java) { panel.readConfig() }
             panel.invalidateResults()
             render(panel, 1280, 980)
+        }
+    }
+
+    @Test fun batchedBudgetControlsValidateInputsAndKeepFullBudgetAnExplicitAlternative() {
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
+            panel.setSource(StudioConfig(batchSize = 7), 4)
+            val execution = field(panel, "execution") as JComboBox<*>
+            val budget = field(panel, "budgetPolicy") as JComboBox<*>
+            val initial = field(panel, "initialEpochs") as JSpinner
+            val reduction = field(panel, "reductionFactor") as JSpinner
+            val models = field(panel, "modelsPerBatch") as JSpinner
+            val threads = field(panel, "threads") as JSpinner
+            val plateau = field(panel, "restartAfter") as JSpinner
+            val restarts = field(panel, "restarts") as JSpinner
+            assertFalse(plateau.isEnabled || restarts.isEnabled)
+            assertTrue((field(panel, "lineageStatus") as JLabel).text.contains("broad population"))
+            assertFalse((field(panel, "lineageStatus") as JLabel).text.contains("restarts"))
+            assertFalse(threads.isEnabled, "Batched training does not use legacy trial workers")
+            assertTrue(initial.isEnabled && reduction.isEnabled && models.isEnabled)
+            models.value = 6; initial.value = 2; reduction.value = 2
+            assertEquals(6, panel.readConfig().modelsPerBatch)
+            assertEquals(7, panel.readConfig().batchSize, "Model batching must not change sample batching")
+            assertEquals(2, panel.readConfig().initialEpochs)
+            assertEquals(2, panel.readConfig().reductionFactor)
+            for ((control, invalid) in listOf(models to 0, models to 1025, initial to 0, reduction to 1, reduction to 9)) {
+                val previous = control.value
+                control.value = invalid
+                assertThrows(IllegalArgumentException::class.java) { panel.readConfig() }
+                control.value = previous
+            }
+            budget.selectedItem = ArchitectureBudgetPolicy.FULL
+            assertFalse(initial.isEnabled || reduction.isEnabled)
+            assertTrue(models.isEnabled)
+            assertTrue((field(panel, "epochs") as JSpinner).toolTipText.contains("without pruning"))
+            assertEquals(ArchitectureBudgetPolicy.FULL, panel.readConfig().budgetPolicy)
+            execution.selectedItem = ArchitectureExecution.REFERENCE
+            assertTrue(threads.isEnabled && plateau.isEnabled && restarts.isEnabled)
+            assertTrue((field(panel, "lineageStatus") as JLabel).text.contains("restarts"))
+            assertFalse(budget.isEnabled || models.isEnabled)
+            assertTrue((field(panel, "epochs") as JSpinner).toolTipText.contains("every seed of the first architecture"))
+            execution.selectedItem = ArchitectureExecution.BATCHED
+            budget.selectedItem = ArchitectureBudgetPolicy.SUCCESSIVE_HALVING
+            execution.selectedItem = ArchitectureExecution.OPTIMIZED
+            assertEquals(ArchitectureBudgetPolicy.FULL, panel.readConfig().budgetPolicy)
+            execution.selectedItem = ArchitectureExecution.BATCHED
+            budget.selectedItem = ArchitectureBudgetPolicy.SUCCESSIVE_HALVING
+            val config = panel.readConfig()
+            assertFalse(threads.isEnabled || plateau.isEnabled || restarts.isEnabled)
+            (field(panel, "strategy") as JComboBox<*>).selectedItem = ArchitectureSearchStrategy.EXHAUSTIVE
+            assertTrue((field(panel, "lineageStatus") as JLabel).text.contains("pre-enumerated population"))
+            (field(panel, "strategy") as JComboBox<*>).selectedItem = ArchitectureSearchStrategy.ADAPTIVE
+            panel.started(config, ArchitectureEvaluation.TRAINING_FIT)
+            assertFalse(budget.isEnabled || models.isEnabled || initial.isEnabled || reduction.isEnabled)
+            panel.failed("batch initialization failed")
+            assertTrue(budget.isEnabled && models.isEnabled && initial.isEnabled && reduction.isEnabled)
+            panel.invalidateResults()
+            assertTrue((field(panel, "throughputStatus") as JLabel).text.contains("first batch"))
+        }
+    }
+
+    @Test fun disabledSettingsCannotBlockApplicableModesAndTheirEditsRemainAvailable() {
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
+            panel.setSource(StudioConfig(), 4)
+            val execution = field(panel, "execution") as JComboBox<*>
+            val budget = field(panel, "budgetPolicy") as JComboBox<*>
+            val initial = field(panel, "initialEpochs") as JSpinner
+            val reduction = field(panel, "reductionFactor") as JSpinner
+            val models = field(panel, "modelsPerBatch") as JSpinner
+            val threads = field(panel, "threads") as JSpinner
+            val plateau = field(panel, "restartAfter") as JSpinner
+            val restarts = field(panel, "restarts") as JSpinner
+            initial.value = 0; reduction.value = 1
+            (initial.editor as JSpinner.DefaultEditor).textField.text = "unfinished"
+            budget.selectedItem = ArchitectureBudgetPolicy.FULL
+            assertEquals(25, panel.readConfig().initialEpochs)
+            assertEquals(3, panel.readConfig().reductionFactor)
+            panel.started(panel.readConfig(), ArchitectureEvaluation.TRAINING_FIT)
+            panel.failed("Stopped full-budget fixture")
+            assertEquals(0, initial.value); assertEquals(1, reduction.value)
+            assertEquals("unfinished", (initial.editor as JSpinner.DefaultEditor).textField.text)
+            budget.selectedItem = ArchitectureBudgetPolicy.SUCCESSIVE_HALVING
+            assertThrows(Exception::class.java) { panel.readConfig() }
+            budget.selectedItem = ArchitectureBudgetPolicy.FULL
+
+            models.value = 1025
+            (models.editor as JSpinner.DefaultEditor).textField.text = "unfinished"
+            execution.selectedItem = ArchitectureExecution.REFERENCE
+            assertEquals(128, panel.readConfig().modelsPerBatch)
+            panel.started(panel.readConfig(), ArchitectureEvaluation.TRAINING_FIT)
+            panel.failed("Stopped reference fixture")
+            assertEquals(1025, models.value)
+            assertEquals("unfinished", (models.editor as JSpinner.DefaultEditor).textField.text)
+            execution.selectedItem = ArchitectureExecution.BATCHED
+            assertThrows(Exception::class.java) { panel.readConfig() }
+            execution.selectedItem = ArchitectureExecution.REFERENCE
+
+            threads.value = 0; plateau.value = 0; restarts.value = -1
+            (threads.editor as JSpinner.DefaultEditor).textField.text = "unfinished"
+            models.value = 6
+            execution.selectedItem = ArchitectureExecution.BATCHED
+            val batched = panel.readConfig()
+            assertEquals(32, batched.parallelism); assertEquals(12, batched.restartAfter); assertEquals(4, batched.maxRestarts)
+            assertEquals(6, batched.modelsPerBatch)
+            panel.started(batched, ArchitectureEvaluation.TRAINING_FIT)
+            panel.failed("Stopped batched fixture")
+            assertEquals(0, threads.value); assertEquals(0, plateau.value); assertEquals(-1, restarts.value)
+            assertEquals("unfinished", (threads.editor as JSpinner.DefaultEditor).textField.text)
+            execution.selectedItem = ArchitectureExecution.REFERENCE
+            assertThrows(Exception::class.java) { panel.readConfig() }
+        }
+    }
+
+    @Test fun prunedCheckpointsRemainInspectableButNeverBecomeRecommendationsOrReplayTargets() {
+        val original = report()
+        val candidate = original.candidates.first()
+        val seed = candidate.trials.first()
+        val prunedTrial = ArchitectureTrial(seed.seed, ArchitectureTrialState.PRUNED, seed.epochs, seed.bestEpoch,
+            seed.bestRmse, seed.trainingRmseAtBest, seed.finalRmse, seed.sampleUpdates, seed.elapsedNanos,
+            seed.history, seed.snapshot, execution = ArchitectureExecution.BATCHED, route = ArchitectureTrialRoute.TENSOR_BATCH)
+        val pruned = ArchitectureCandidate(candidate.architecture, listOf(prunedTrial), 1, 0.9)
+        val pending = ArchitectureCandidate(NetworkArchitecture(listOf(5)), emptyList(), 1, 0.9)
+        val active = ArchitectureCandidate(NetworkArchitecture(listOf(6)), emptyList(), 1, 0.9)
+        val config = ArchitectureSearchConfig(maxLayers = 1, maxWidth = 6, seeds = listOf(seed.seed), requiredSuccesses = 1,
+            execution = ArchitectureExecution.BATCHED, budgetPolicy = ArchitectureBudgetPolicy.SUCCESSIVE_HALVING)
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> fail("Pruned application") },
+                { _, _, _ -> fail("Pruned replay") })
+            panel.setSource(StudioConfig(), 4)
+            panel.started(config, ArchitectureEvaluation.TRAINING_FIT)
+            panel.updateProgress(ArchitectureSearchProgress(3, 3, 1, listOf(pruned, pending, active),
+                listOf(ArchitectureRunningTrial(active.architecture, seed.seed, 25, 0.5)), 1_000_000,
+                nativeTrainingCalls = 7, modelsPerBatch = 3, aggregateEpochsPerSecond = 125.5))
+            val table = field(panel, "table") as JTable
+            assertEquals("PRUNED", table.model.getValueAt(0, 6))
+            assertEquals("Pending", table.model.getValueAt(1, 6))
+            assertEquals("Running", table.model.getValueAt(2, 6))
+            assertEquals("Training calls: 7 · peak models per batch: 3 · aggregate model-epochs/s: 125.5",
+                (field(panel, "throughputStatus") as JLabel).text)
+            panel.complete(ArchitectureSearchResult(original.data, config, ArchitectureTermination.COMPLETED, 1,
+                listOf(pruned), 1_000_000, nativeTrainingCalls = 8, modelsPerBatch = 3, aggregateEpochsPerSecond = 150.0))
+            assertTrue((field(panel, "summary") as JLabel).text.contains("No fully evaluated"))
+            assertTrue((field(panel, "progressBar") as JProgressBar).string.contains("1 pruned"))
+            assertTrue((field(panel, "throughputStatus") as JLabel).text.contains("Training calls: 8"))
+            panel.selectArchitecture(pruned.architecture)
+            assertTrue(button(panel, "Inspect result").isEnabled)
+            assertNotNull(field(panel, "surface"))
+            assertFalse(button(panel, "Apply architecture").isEnabled)
+            assertFalse(button(panel, "Replay selected run").isEnabled)
+            assertTrue((field(panel, "details") as JLabel).text.contains("PRUNED"))
+            assertTrue((field(panel, "details") as JLabel).text.contains("not eligible"))
+            button(panel, "Apply architecture").doClick(); button(panel, "Replay selected run").doClick()
+            render(panel, 1100, 1120)
         }
     }
 

@@ -3,6 +3,7 @@
 import argparse
 import json
 import math
+import re
 import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -109,21 +110,26 @@ def validate_round(record, protocol, engine, backend):
 
 
 def valid_execution_route(engine, backend, mode, protocol, trial):
-    """Reference SMALL may form a cohort or admit a single session as slots free up."""
-    route, kernel, bits = (trial.get(key) for key in ("route", "kernel", "simdBits"))
-    if type(bits) is not int or not isinstance(kernel, str):
+    """Audit TensorFlow execution routes independently of topology-family hints."""
+    route, kernel = (trial.get(key) for key in ("route", "kernel"))
+    if engine not in ("SMALL", "REFERENCE") or backend not in ("CPU", "GPU"):
         return False
-    if engine == "SMALL" and backend == "CPU":
-        allowed = {("SESSION", "small-cpu-v1")}
-        if mode == "REFERENCE":
-            allowed.add(("COHORT", "small-cpu-cohort-v1"))
-        return (route, kernel) in allowed and bits in (0, 128, 256)
-    if engine == "SMALL" and backend == "CUDA":
-        prefix = "small-v2/packed-fp64/" if mode == "REFERENCE" else "small-search-v3/packed-fp64/"
-        routes = ("SESSION", "COHORT") if mode == "REFERENCE" else ("CUDA_QUEUE",)
-        return route in routes and bits == 0 and kernel.startswith(prefix) and len(kernel) > len(prefix)
-    if engine == "REFERENCE" and backend == "CPU":
-        return route == "SESSION" and bits == 0 and kernel == ("cpu-matrix-v1" if protocol["batchSize"] > 1 else "cpu-v1")
+    if mode == "BATCHED":
+        return route == "TENSOR_BATCH" and isinstance(kernel, str) and bool(
+            re.fullmatch(r"tensorflow-.+-batched-v1-t[1-9][0-9]*", kernel))
+    prefix, suffix = "tensorflow-", "-dense-loop-v2"
+    if not isinstance(kernel, str) or not kernel.startswith(prefix) or not kernel.endswith(suffix) or len(kernel) <= len(prefix) + len(suffix):
+        return False
+    if mode not in MODES:
+        return False
+    if engine == "REFERENCE":
+        return route == "SESSION"
+    if mode == "REFERENCE":
+        return route in ("SESSION", "COHORT")
+    if backend == "CPU":
+        return route == "SESSION"
+    if backend == "GPU":
+        return route == "TENSORFLOW_QUEUE"
     return False
 
 
@@ -199,9 +205,9 @@ def summarize(paths):
                 for record in samples:
                     trials = validate_round(record, protocol, engine, backend)
                     for key, trial in trials.items():
-                        routing = tuple(trial.get(field) for field in ("route", "kernel", "simdBits"))
+                        routing = tuple(trial.get(field) for field in ("route", "kernel"))
                         observed_routes[mode][routing] += 1
-                        # Preserve each shape/route's kernel and width, without fixing which seed takes that route.
+                        # Preserve each shape/route's TensorFlow kernel, without fixing which seed takes that route.
                         route_signatures[(key[0], routing[0])].add(routing[1:])
                         valid_routes &= valid_execution_route(engine, backend, mode, protocol, trial)
                         actual_device = tuple(trial.get(field) for field in DEVICE_FIELDS)
@@ -229,8 +235,8 @@ def summarize(paths):
                             "maximumScaledParameterOrScoreError": scaled_error if eligible else None,
                             "threeForkEvidence": enough, "provenanceComplete": provenance and device_complete,
                             "stableEffectiveDevice": stable_device, "validExecutionRoutes": valid_routes,
-                            "observedExecutionRoutes": {mode: [dict(route=route, kernel=kernel, simdBits=bits, trials=count)
-                                for (route, kernel, bits), count in sorted(counts.items(), key=lambda item: str(item[0]))]
+                            "observedExecutionRoutes": {mode: [dict(route=route, kernel=kernel, trials=count)
+                                for (route, kernel), count in sorted(counts.items(), key=lambda item: str(item[0]))]
                                 for mode, counts in observed_routes.items()},
                             "qualifies": enough and provenance and device_complete and stable_device and valid_routes and
                             protocol["precision"] == "FP64" and epoch_match and scaled_error <= 1 and

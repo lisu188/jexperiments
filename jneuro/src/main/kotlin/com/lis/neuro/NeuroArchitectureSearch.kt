@@ -22,9 +22,13 @@ internal enum class ArchitecturePolicy(val label: String) {
 }
 
 internal enum class ArchitectureTermination { COMPLETED, TRIAL_BUDGET, TIME_LIMIT, CANCELLED, NEIGHBOURHOODS_EXHAUSTED, MEMORY_LIMIT }
-internal enum class ArchitectureTrialState { COMPLETED, FAILED, CANCELLED }
-internal enum class ArchitectureExecution { REFERENCE, OPTIMIZED }
-internal enum class ArchitectureTrialRoute { SESSION, COHORT, CUDA_QUEUE }
+internal enum class ArchitectureTrialState { COMPLETED, FAILED, CANCELLED, PRUNED }
+internal enum class ArchitectureExecution { REFERENCE, OPTIMIZED, BATCHED }
+internal enum class ArchitectureTrialRoute { SESSION, COHORT, TENSORFLOW_QUEUE, TENSOR_BATCH }
+internal enum class ArchitectureBudgetPolicy(private val label: String) {
+    FULL("Full budget"), SUCCESSIVE_HALVING("Prune weak trials");
+    override fun toString() = label
+}
 
 internal class NetworkArchitecture(hidden: List<Int>) {
     val hidden: List<Int> = java.util.List.copyOf(hidden)
@@ -62,7 +66,11 @@ internal class ArchitectureSearchConfig(
     val precision: Neuro.TrainingPrecision = Neuro.TrainingPrecision.FP64,
     val batchSize: Int = 1,
     val engine: TrainingEngine = TrainingEngine.REFERENCE,
-    val execution: ArchitectureExecution = ArchitectureExecution.REFERENCE
+    val execution: ArchitectureExecution = ArchitectureExecution.REFERENCE,
+    val budgetPolicy: ArchitectureBudgetPolicy = ArchitectureBudgetPolicy.FULL,
+    val reductionFactor: Int = 3,
+    val initialEpochs: Int = minOf(maxEpochs, maxOf(checkEvery, 25)),
+    val modelsPerBatch: Int = 128
 ) {
     val seeds: List<Long> = java.util.List.copyOf(seeds)
     val initialHidden: List<Int>? = initialHidden?.let { java.util.List.copyOf(it) }
@@ -70,7 +78,7 @@ internal class ArchitectureSearchConfig(
         require(minLayers > 0 && maxLayers >= minLayers) { "Hidden layer bounds must be positive and ordered." }
         require(minWidth > 0 && maxWidth >= minWidth) { "Width bounds must be positive and ordered." }
         require(engine != TrainingEngine.SMALL || minLayers <= 4 && listOf(4, 8, 16).any { it in minWidth..maxWidth }) {
-            "SMALL search bounds must include 1–4 hidden layers with widths 4, 8 or 16."
+            "Compact search bounds must include 1–4 hidden layers with widths 4, 8 or 16."
         }
         require(maxParameters > 0) { "Parameter budget must be positive." }
         require(this.seeds.isNotEmpty() && this.seeds.distinct().size == this.seeds.size) { "Use a nonempty list of distinct seeds." }
@@ -79,6 +87,12 @@ internal class ArchitectureSearchConfig(
         require(requiredSuccesses in 1..this.seeds.size) { "Required successes must be between 1 and the seed count." }
         require(nearBestTolerance.isFinite() && nearBestTolerance >= 0.0) { "Near-best tolerance must be finite and non-negative." }
         require(parallelism > 0) { "Parallelism must be positive." }
+        require(modelsPerBatch in 1..1024) { "Models per training batch must be between 1 and 1,024." }
+        require(initialEpochs > 0) { "Initial training epochs must be positive." }
+        require(reductionFactor in 2..8) { "Pruning factor must be between 2 and 8." }
+        require(budgetPolicy == ArchitectureBudgetPolicy.FULL || execution == ArchitectureExecution.BATCHED) {
+            "Pruning requires batched TensorFlow search."
+        }
         require(batchSize > 0) { "Batch size must be positive." }
         require(maxTrials >= this.seeds.size) { "Trial budget must fit at least one full seed group." }
         require(restartAfter > 0 && maxRestarts >= 0) { "Restart interval must be positive and restart count non-negative." }
@@ -87,9 +101,13 @@ internal class ArchitectureSearchConfig(
     }
 
     internal val supportedMaxLayers: Int get() = if (engine == TrainingEngine.SMALL) minOf(4, maxLayers) else maxLayers
-    internal val usesCudaQueue: Boolean get() = execution == ArchitectureExecution.OPTIMIZED &&
-        engine == TrainingEngine.SMALL && backend == TrainingBackend.CUDA
-    internal val concurrentModels: Int get() = if (usesCudaQueue) 64 else parallelism
+    internal val usesTensorFlowQueue: Boolean get() = execution == ArchitectureExecution.OPTIMIZED &&
+        engine == TrainingEngine.SMALL && backend == TrainingBackend.GPU
+    internal val concurrentModels: Int get() = when {
+        execution == ArchitectureExecution.BATCHED -> maxOf(modelsPerBatch, seeds.size)
+        usesTensorFlowQueue -> 64
+        else -> parallelism
+    }
     internal fun widthChoices(): Iterable<Int> = if (engine == TrainingEngine.SMALL)
         listOf(4, 8, 16).filter { it in minWidth..maxWidth } else minWidth..maxWidth
     internal fun acceptsArchitecture(architecture: NetworkArchitecture): Boolean =
@@ -226,6 +244,8 @@ internal class ArchitectureSearchData private constructor(
 internal data class ArchitectureCheckpoint(val epoch: Int, val trainingRmse: Double, val score: Double)
 internal data class ArchitectureTrialTimings(val openNanos: Long, val trainingNanos: Long,
     val scoringNanos: Long, val snapshotNanos: Long, val closeNanos: Long)
+internal data class ArchitectureBatchSegment(val startEpoch: Int, val endEpoch: Int,
+    val paddedTopology: List<Int>, val capacity: Int, val lane: Int)
 internal class ArchitectureTrial(
     val seed: Long,
     val state: ArchitectureTrialState,
@@ -244,14 +264,20 @@ internal class ArchitectureTrial(
     val cohort: Boolean = false,
     val execution: ArchitectureExecution = ArchitectureExecution.REFERENCE,
     val route: ArchitectureTrialRoute = if (cohort) ArchitectureTrialRoute.COHORT else ArchitectureTrialRoute.SESSION,
-    val timings: ArchitectureTrialTimings? = null
+    val timings: ArchitectureTrialTimings? = null,
+    batchSegments: List<ArchitectureBatchSegment> = emptyList()
 ) {
     val history: List<ArchitectureCheckpoint> = java.util.List.copyOf(history)
+    val batchSegments: List<ArchitectureBatchSegment> = java.util.List.copyOf(batchSegments.map {
+        it.copy(paddedTopology = java.util.List.copyOf(it.paddedTopology))
+    })
 }
 
 internal class ArchitectureCandidate(val architecture: NetworkArchitecture, trials: List<ArchitectureTrial>, val expectedSeeds: Int, val targetRmse: Double) {
     val trials: List<ArchitectureTrial> = java.util.List.copyOf(trials)
-    val fullyEvaluated: Boolean = trials.size == expectedSeeds && trials.none { it.state == ArchitectureTrialState.CANCELLED }
+    val fullyEvaluated: Boolean = trials.size == expectedSeeds && trials.none {
+        it.state == ArchitectureTrialState.CANCELLED || it.state == ArchitectureTrialState.PRUNED
+    }
     val valid: Boolean = fullyEvaluated && trials.all { it.state == ArchitectureTrialState.COMPLETED && it.bestRmse.isFinite() }
     val successes: Int = trials.count { it.state == ArchitectureTrialState.COMPLETED && it.bestRmse <= targetRmse }
     private val errors = trials.map { if (it.state == ArchitectureTrialState.COMPLETED) it.bestRmse else Double.POSITIVE_INFINITY }.sorted()
@@ -324,7 +350,10 @@ internal class ArchitectureSearchProgress(
     val peakWorkers: Int = 0,
     val residentModels: Int = running.size,
     val queuedGpuRequests: Int = 0,
-    val gpuBatches: Long = 0
+    val gpuBatches: Long = 0,
+    val nativeTrainingCalls: Long = 0,
+    val modelsPerBatch: Int = 0,
+    val aggregateEpochsPerSecond: Double = 0.0
 ) {
     val lineage: List<ArchitectureProposal> = java.util.List.copyOf(lineage)
     val candidates: List<ArchitectureCandidate> = java.util.List.copyOf(candidates)
@@ -343,7 +372,10 @@ internal class ArchitectureSearchResult(
     val peakParallelTrials: Int = 0,
     val peakWorkers: Int = 0,
     val peakResidentModels: Int = peakParallelTrials,
-    val gpuBatches: Long = 0
+    val gpuBatches: Long = 0,
+    val nativeTrainingCalls: Long = 0,
+    val modelsPerBatch: Int = 0,
+    val aggregateEpochsPerSecond: Double = 0.0
 ) {
     val lineage: List<ArchitectureProposal> = java.util.List.copyOf(lineage)
     val candidates: List<ArchitectureCandidate> = java.util.List.copyOf(candidates)
@@ -363,10 +395,10 @@ internal fun interface ArchitectureSearcher {
 
 internal class NeuroArchitectureSearch(
     private val openSession: ((Neuro, TrainingBackend, Neuro.TrainingPrecision, Int, TrainingEngine) -> NeuroTrainingSession)? = null,
-    private val openCudaService: (Neuro.TrainingPrecision, Int) -> SearchCudaService = { precision, batch -> SearchCudaService(precision, batch) }
+    private val openTensorFlowService: (Neuro.TrainingPrecision, Int) -> TensorFlowSearchService = { precision, batch -> TensorFlowSearchService(precision, batch) }
 ) : ArchitectureSearcher {
     constructor(openSession: (Neuro, TrainingBackend, Neuro.TrainingPrecision, Int, TrainingEngine) -> NeuroTrainingSession) :
-        this(openSession, { precision, batch -> SearchCudaService(precision, batch) })
+        this(openSession, { precision, batch -> TensorFlowSearchService(precision, batch) })
     override fun search(data: ArchitectureSearchData, config: ArchitectureSearchConfig,
                         onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult =
         executeSearch(data, config, onProgress, cancelled, null)
@@ -392,13 +424,17 @@ internal class NeuroArchitectureSearch(
         NeuroLog.info("search", "search.started", "searchId" to searchId, "strategy" to config.strategy,
             "backend" to config.backend, "precision" to config.precision, "batchSize" to config.batchSize,
             "engine" to config.engine, "execution" to config.execution, "sigmoid" to config.hyperParameters.sigmoidMode,
+            "budgetPolicy" to config.budgetPolicy, "modelsPerBatch" to config.modelsPerBatch,
+            "initialEpochs" to config.initialEpochs, "reductionFactor" to config.reductionFactor,
             "trainingSamples" to data.training.size, "validationSamples" to data.validation.size,
             "datasetFingerprint" to data.fingerprint, "searchSeed" to config.searchSeed,
             "parallelism" to config.parallelism, "maxTrials" to config.maxTrials, "maxEpochs" to config.maxEpochs)
         try {
-            val report = NeuroTrainingDeviceService(config.parallelism).use { service ->
+            val report = if (config.execution == ArchitectureExecution.BATCHED) {
+                BatchedPopulationSearch(data, config, manifest, searchId = searchId).search(onProgress, cancelled)
+            } else NeuroTrainingDeviceService(config.parallelism).use { service ->
                 val sessionFactory = openSession ?: service::openSession
-                fun run(queue: SearchCudaService?): ArchitectureSearchResult {
+                fun run(queue: TensorFlowSearchService?): ArchitectureSearchResult {
                     val async: AsyncArchitectureEvaluator? = queue?.let { device -> { architecture, seed, stop, progress, executor ->
                         OptimizedArchitectureTrial(data, config, architecture, seed, stop, progress, searchId).evaluateAsync(device, executor)
                     } }
@@ -408,12 +444,14 @@ internal class NeuroArchitectureSearch(
                         searchAdaptive(data, config, onProgress, cancelled, searchId, sessionFactory, service::openCohort, async, activity)
                     else searchExhaustive(data, config, onProgress, cancelled, searchId, sessionFactory, service::openCohort, async, activity, manifest)
                 }
-                if (config.usesCudaQueue) openCudaService(config.precision, config.batchSize).use(::run) else run(null)
+                if (config.usesTensorFlowQueue) openTensorFlowService(config.precision, config.batchSize).use(::run) else run(null)
             }
             report.logId = searchId
             NeuroLog.info("search", "search.completed", "searchId" to searchId, "termination" to report.termination,
                 "generated" to report.generated, "evaluated" to report.evaluated, "partial" to report.partial,
                 "failedTrials" to report.numericalFailures, "peakParallelTrials" to report.peakParallelTrials,
+                "nativeTrainingCalls" to report.nativeTrainingCalls, "modelsPerBatch" to report.modelsPerBatch,
+                "aggregateEpochsPerSecond" to report.aggregateEpochsPerSecond,
                 "elapsedMs" to report.elapsedNanos / 1_000_000, "recommended" to report.selection.recommended?.architecture)
             return report
         } catch (exception: Exception) {
@@ -457,7 +495,7 @@ internal class NeuroArchitectureSearch(
                 val active = activity.snapshot()
                 onProgress(ArchitectureSearchProgress(architectures.size, requests.size, received, candidates(),
                     active, now - start, peakParallelTrials = activity.peak, activeWorkers = dispatcher.activeWorkers,
-                    peakWorkers = dispatcher.peakWorkers, residentModels = if (config.usesCudaQueue) device.residentModels else active.size,
+                    peakWorkers = dispatcher.peakWorkers, residentModels = if (config.usesTensorFlowQueue) device.residentModels else active.size,
                     queuedGpuRequests = device.queuedRequests, gpuBatches = device.batches))
                 lastPublish = now
             }
@@ -505,7 +543,7 @@ internal class NeuroArchitectureSearch(
             val device = deviceActivity()
             return ArchitectureSearchResult(data, config, end, architectures.size, candidates(), System.nanoTime() - start,
                 peakParallelTrials = activity.peak, peakWorkers = dispatcher.peakWorkers,
-                peakResidentModels = if (config.usesCudaQueue) device.peakResidentModels else activity.peak, gpuBatches = device.batches)
+                peakResidentModels = if (config.usesTensorFlowQueue) device.peakResidentModels else activity.peak, gpuBatches = device.batches)
         } catch (failure: Throwable) {
             searchFailure = failure
             throw failure

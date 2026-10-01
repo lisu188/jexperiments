@@ -21,7 +21,7 @@ internal data class StudioConfig(
     init {
         val layers = NeuroTopologyConfig.parseHidden(hidden)
         require(engine != TrainingEngine.SMALL || SmallNetworkShape.supports(NeuroTopologyConfig.topology(layers))) {
-            "SMALL requires 1–4 hidden layers of width 4, 8 or 16; select REFERENCE for other topologies."
+            "Compact topology requires 1–4 hidden layers of width 4, 8 or 16; select General topology for other topologies."
         }
         require(maxEpochs > 0) { "Epoch limit must be positive." }
         require(targetError.isFinite() && targetError >= 0.0) { "Target RMSE must be finite and non-negative." }
@@ -81,7 +81,7 @@ internal class NeuroStudio(
     config: StudioConfig = StudioConfig(), custom: List<NeuroLearningSets.Sample> = emptyList(),
     private val windowId: String? = null,
     private val openCohort: ((List<Neuro>, TrainingBackend, Neuro.TrainingPrecision, Int, Int) -> NeuroTrainingCohort)? = null,
-    private val openSearchCuda: ((Neuro.TrainingPrecision, Int) -> SearchCudaService)? = null,
+    private val openSearchTensorFlow: ((Neuro.TrainingPrecision, Int) -> TensorFlowSearchService)? = null,
     private val openSession: ((Neuro, TrainingBackend, Neuro.TrainingPrecision, Int, TrainingEngine) -> NeuroTrainingSession)? = null
 ) : AutoCloseable {
     private val ownedDeviceService = lazy { NeuroTrainingDeviceService() }
@@ -391,9 +391,13 @@ internal class NeuroStudio(
                 }
                 return true
             }
-            if (trial.route == ArchitectureTrialRoute.CUDA_QUEUE) {
-                (openSearchCuda?.invoke(recordedPrecision, report.config.batchSize)
-                    ?: SearchCudaService(recordedPrecision, report.config.batchSize, maximumModels = 1)).use { service ->
+            var batchedScore: Double? = null
+            if (trial.route == ArchitectureTrialRoute.TENSOR_BATCH) {
+                batchedScore = BatchedSearchReplay.replay(model, report.data, report.config, trial, ::verifyDevice, ::isCancelled)
+                    ?: return false
+            } else if (trial.route == ArchitectureTrialRoute.TENSORFLOW_QUEUE) {
+                (openSearchTensorFlow?.invoke(recordedPrecision, report.config.batchSize)
+                    ?: TensorFlowSearchService(recordedPrecision, report.config.batchSize, maximumModels = 1)).use { service ->
                     service.openSession(model).use { training ->
                         verifyDevice(training.info)
                         if (!replayChunks(training::advanceForSearch)) return false
@@ -421,7 +425,7 @@ internal class NeuroStudio(
                     }
                 }
             }
-            val score = report.data.score(model)
+            val score = batchedScore ?: report.data.score(model)
             check(score.isFinite() && kotlin.math.abs(score - trial.bestRmse) <= 1e-10) { "Replay did not reproduce the scored checkpoint." }
             if (isCancelled()) return false
             applyArchitecture(report, candidate)
