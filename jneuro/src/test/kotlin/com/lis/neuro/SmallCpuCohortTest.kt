@@ -19,7 +19,7 @@ class SmallCpuCohortTest {
             for (bits in listOf(0, 128, 256)) SmallCpuCohort(states, hp, precision, bits).use { cohort ->
                 val actual = cohort.train(orders, 3, online)
                 for (model in actual.indices) assertState(expected[model], actual[model], context = "${shape.contentToString()} $precision $online $bits model=$model")
-                assertEquals(smallVectorBits(hp, bits), cohort.info.simdBits)
+                assertEquals(0, cohort.info.simdBits)
                 assertEquals(TrainingEngine.SMALL, cohort.info.engine)
             }
         }

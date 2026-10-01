@@ -592,6 +592,20 @@ project(':jneuro') {
 
     dependencies {
         implementation 'com.formdev:flatlaf:3.7.2'
+        // 1.1 is the last TensorFlow JVM release publishing Windows CPU binaries.
+        // Resolve one native platform only; GPU is an explicit Linux runtime selection.
+        implementation 'org.tensorflow:tensorflow-core-api:1.1.0'
+        def tfOs = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT)
+        def tfArm = System.getProperty('os.arch') in ['aarch64', 'arm64']
+        def tfGpu = providers.gradleProperty('neuroTensorFlowGpu').orElse('false').get().toBoolean()
+        if (tfGpu && (!tfOs.contains('linux') || tfArm)) {
+            throw new GradleException('TensorFlow GPU requires Linux x86_64, including WSL. Windows supports CPU.')
+        }
+        def tfPlatform = tfOs.contains('windows') ? 'windows-x86_64' :
+                tfOs.contains('mac') ? 'macosx-arm64' : tfArm ? 'linux-arm64' :
+                tfGpu ? 'linux-x86_64-gpu' : 'linux-x86_64'
+        if (tfOs.contains('mac') && !tfArm) throw new GradleException('TensorFlow 1.1 requires Apple Silicon on macOS.')
+        runtimeOnly "org.tensorflow:tensorflow-core-native:1.1.0:${tfPlatform}"
         jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
         kaptJmh 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
         jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
@@ -673,16 +687,6 @@ project(':jneuro') {
         args "--screenshots=${layout.buildDirectory.dir('screenshots').get().asFile.absolutePath}"
     }
 
-    tasks.register('migrationParity', JavaExec) {
-        group = 'verification'
-        description = 'Compares Kotlin inference and training against the pinned Java baseline.'
-        dependsOn tasks.named('testClasses')
-        classpath = sourceSets.test.runtimeClasspath
-        mainClass = 'com.lis.neuro.NeuroMigrationParity'
-        javaLauncher = java27
-        args providers.gradleProperty('neuroJavaBaseline').orElse(
-                layout.buildDirectory.dir('migration-baseline/classes').get().asFile.absolutePath).get()
-    }
 
     tasks.register('verifyExperiment', JavaExec) {
         group = 'verification'
@@ -729,7 +733,7 @@ project(':jneuro') {
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
         javaLauncher = java27
-        args 'com.lis.neuro.NeuroInferenceJmhBenchmark.vectorSession',
+        args 'com.lis.neuro.NeuroInferenceJmhBenchmark.tensorflowSession',
                 '-wi', '1',
                 '-i', '1',
                 '-f', '1',
@@ -739,7 +743,7 @@ project(':jneuro') {
 
     tasks.register('jmhCompare', JavaExec) {
         group = 'verification'
-        description = 'Runs bounded scalar, SIMD, fast-sigmoid and float inference comparisons.'
+        description = 'Runs TensorFlow session, activation and precision inference comparisons.'
         dependsOn tasks.named('jmhClasses')
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
@@ -755,7 +759,7 @@ project(':jneuro') {
 
     tasks.register('jmhBatchCompare', JavaExec) {
         group = 'verification'
-        description = 'Runs bounded vector, parallel and float batch comparisons.'
+        description = 'Runs TensorFlow batch, parallel and FP32 inference comparisons.'
         dependsOn tasks.named('jmhClasses')
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
@@ -772,7 +776,7 @@ project(':jneuro') {
 
     tasks.register('jmhTrainingCompare', JavaExec) {
         group = 'verification'
-        description = 'Runs bounded scalar, SIMD and mini-batch training comparisons.'
+        description = 'Runs TensorFlow online and mini-batch training comparisons.'
         dependsOn tasks.named('jmhClasses')
         classpath = sourceSets.jmh.runtimeClasspath
         mainClass = 'org.openjdk.jmh.Main'
@@ -786,14 +790,6 @@ project(':jneuro') {
                 '-jvmArgsAppend', '--add-modules=jdk.incubator.vector'
     }
 
-    tasks.register('nativeBlasBenchmark', JavaExec) {
-        group = 'verification'
-        description = 'Runs the optional FFM CBLAS batch-inference benchmark.'
-        classpath = sourceSets.main.runtimeClasspath
-        mainClass = 'com.lis.neuro.NeuroNativeBlasBenchmark'
-        javaLauncher = java27
-        jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms2g', '-Xmx2g'
-    }
 
     tasks.register('profileNeuro', JavaExec) {
         group = 'verification'
@@ -1081,9 +1077,7 @@ def coverageExcludes = [
         '**/NeuroBenchmark*',
         '**/NeuroExample*',
         '**/NeuroJfr*',
-        '**/NeuroNativeBlas*',
-        '**/NeuroNativeBlasBenchmark*',
-        '**/NeuroPerformanceMatrix*',
+                '**/NeuroPerformanceMatrix*',
         '**/NeuroVerification*'
     ],
     observableconcurrenttree: [
@@ -1221,20 +1215,9 @@ project(':jneuro') {
     tasks.named('test') {
         useJUnitPlatform { excludeTags 'gui', 'cuda', 'native-small' }
     }
-    def verifyCudaResources = tasks.register('verifyCudaResources', Exec) {
-        group = 'verification'
-        description = 'Checks packaged CUDA PTX source, compiler provenance and ABI without requiring CUDA.'
-        commandLine guiPython, file('tools/build_cuda.py'), 'verify'
-    }
-    def cudaResourceVerifierTest = tasks.register('cudaResourceVerifierTest', Exec) {
-        group = 'verification'
-        environment 'PYTHONDONTWRITEBYTECODE', '1'
-        commandLine guiPython, '-m', 'unittest', 'discover', '-s', file('tools'), '-p', 'test_*.py'
-    }
-    tasks.named('check') { dependsOn verifyCudaResources, cudaResourceVerifierTest }
     tasks.register('gpuCheck', Test) {
         group = 'verification'
-        description = 'Verifies CUDA training on a real NVIDIA GPU; absence or driver failure is an error.'
+        description = 'Verifies TensorFlow GPU training on a real GPU; absence is an error.'
         testClassesDirs = sourceSets.test.output.classesDirs
         classpath = sourceSets.test.runtimeClasspath
         useJUnitPlatform { includeTags 'cuda' }
@@ -1246,19 +1229,9 @@ project(':jneuro') {
         reports.html.required = true
         testLogging.showStandardStreams = true
     }
-    tasks.register('nativeSmallCheck', Test) {
-        group = 'verification'
-        description = 'Requires the experimental native SMALL library and checks actual scalar/AVX2 parity.'
-        testClassesDirs = sourceSets.test.output.classesDirs
-        classpath = sourceSets.test.runtimeClasspath
-        useJUnitPlatform { includeTags 'native-small' }
-        systemProperty 'jneuro.small.native', providers.gradleProperty('neuroSmallNative').orElse('').get()
-        outputs.upToDateWhen { false }
-        maxParallelForks = 1
-    }
     tasks.register('cudaTest') {
         group = 'verification'
-        description = 'Compatibility alias for hardware-required CUDA and cuBLAS acceptance.'
+        description = 'Compatibility alias for hardware-required TensorFlow GPU acceptance.'
         dependsOn tasks.named('gpuCheck')
     }
     tasks.register('smallExperiments', JavaExec) {
@@ -1270,7 +1243,6 @@ project(':jneuro') {
         javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
         jvmArgs '-Xms128m', '-Xmx2g'
         systemProperty 'jneuro.benchmark.sourceRevision', providers.gradleProperty('neuroBenchmarkRevision').orElse('unspecified').get()
-        if (providers.gradleProperty('neuroSmallNative').isPresent()) systemProperty 'jneuro.small.native', providers.gradleProperty('neuroSmallNative').get()
     }
     tasks.register('architectureSearchBenchmark', JavaExec) {
         group = 'verification'
@@ -1284,13 +1256,12 @@ project(':jneuro') {
     ['cudaBenchmark', 'cpuGpuBenchmark'].each { benchmarkTask ->
         tasks.register(benchmarkTask, JavaExec) {
             group = 'verification'
-            description = 'Compares CPU matrix training with CUDA/cuBLAS FP64 and FP32.'
+            description = 'Compares TensorFlow CPU/GPU FP64 and FP32 training.'
             classpath = sourceSets.main.runtimeClasspath
             mainClass = 'com.lis.neuro.NeuroCudaTrainingBenchmark'
             javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
             jvmArgs '--enable-native-access=ALL-UNNAMED', '-Xms128m', '-Xmx2g'
             systemProperty 'jneuro.benchmark.sourceRevision', providers.gradleProperty('neuroBenchmarkRevision').orElse('unspecified').get()
-            if (providers.gradleProperty('neuroSmallNative').isPresent()) systemProperty 'jneuro.small.native', providers.gradleProperty('neuroSmallNative').get()
         }
     }
     def guiTest = tasks.register('guiTest', Test) {

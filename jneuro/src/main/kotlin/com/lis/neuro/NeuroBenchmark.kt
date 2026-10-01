@@ -4,7 +4,7 @@ object NeuroBenchmark {
     @Volatile private var blackhole = 0.0
 
     @JvmStatic fun main(args: Array<String>) = NeuroLog.application("NeuroBenchmark") {
-        val iterations = args.getOrNull(0)?.toInt() ?: 100_000
+        val iterations = args.getOrNull(0)?.toInt() ?: 2_000
         val repetitions = args.getOrNull(1)?.toInt() ?: 5
         require(iterations > 0 && repetitions > 0)
         repeat(2) { run(iterations) }
@@ -12,8 +12,12 @@ object NeuroBenchmark {
         repeat(repetitions) {
             for ((name, value) in run(iterations)) samples.getOrPut(name) { ArrayList() }.add(value)
         }
-        println("JNeuro benchmark: %,d predictions".format(iterations))
-        for ((name, values) in samples) println("%-24s %10.3f ms median".format(name, values.sorted()[values.size / 2]))
+        println("TensorFlow CPU benchmark: %,d predictions per inference case; training includes session setup/close".format(iterations))
+        for ((name, values) in samples) {
+            val ordered = values.sorted()
+            val median = (ordered[(ordered.size - 1) / 2] + ordered[ordered.size / 2]) / 2
+            println("%-30s %10.3f ms median".format(name, median))
+        }
         println("blackhole=$blackhole")
     }
 
@@ -21,18 +25,32 @@ object NeuroBenchmark {
         val network = preparedNetwork(intArrayOf(32, 64, 32, 8))
         val input = input(32)
         val output = DoubleArray(8)
+        val session = network.newInferenceSession()
+        val fp32 = network.toFloatModel()
+        val floatInput = FloatArray(input.size) { input[it].toFloat() }
+        val floatOutput = FloatArray(output.size)
         return linkedMapOf(
-            "predict-allocating" to millis {
+            "tensorflow-fp64-allocating" to millis {
                 var sum = 0.0
                 repeat(iterations) { sum += network.predict(input)[it and 7] }
                 blackhole += sum
             },
-            "predict-into" to millis {
+            "tensorflow-fp64-direct" to millis {
                 var sum = 0.0
                 repeat(iterations) { network.predictInto(input, output); sum += output[it and 7] }
                 blackhole += sum
             },
-            "train-100-epochs" to millis {
+            "tensorflow-fp64-session" to millis {
+                var sum = 0.0
+                repeat(iterations) { session.predictInto(input, output); sum += output[it and 7] }
+                blackhole += sum
+            },
+            "tensorflow-fp32" to millis {
+                var sum = 0.0
+                repeat(iterations) { fp32.predictInto(floatInput, floatOutput); sum += floatOutput[it and 7] }
+                blackhole += sum
+            },
+            "tensorflow-train-100" to millis {
                 val training = preparedNetwork(intArrayOf(32, 64, 32, 8))
                 training.train(100)
                 blackhole += training.trainingError()

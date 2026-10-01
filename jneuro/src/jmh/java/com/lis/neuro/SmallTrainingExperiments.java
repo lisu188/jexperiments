@@ -30,7 +30,7 @@ public final class SmallTrainingExperiments {
             "\nrevision=" + System.getProperty("jneuro.benchmark.sourceRevision", "unspecified") +
             "\nprocessId=" + ProcessHandle.current().pid() + "\njvmStartMillis=" + java.lang.management.ManagementFactory.getRuntimeMXBean().getStartTime() +
             "\njvmArguments=" + java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments() +
-            "\nbenchmarkClassSha256=" + classHash() + "\nnativeLibrarySha256=" + nativeHash() +
+            "\nbenchmarkClassSha256=" + classHash() + "\nruntime=TensorFlow " + org.tensorflow.TensorFlow.version() +
             "\noptions=" + options + "\n", StandardCharsets.UTF_8);
         System.out.println("Reports: " + output.toAbsolutePath());
     }
@@ -41,12 +41,6 @@ public final class SmallTrainingExperiments {
         }
     }
 
-    private static String nativeHash() throws Exception {
-        String path = System.getProperty("jneuro.small.native", "");
-        return path.isEmpty() ? "none" : java.util.HexFormat.of().formatHex(
-            java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(Path.of(path))));
-    }
-
     private static int integer(java.util.Map<String, String> options, String name, int fallback, int maximum) {
         int value = Integer.parseInt(options.getOrDefault(name, Integer.toString(fallback)));
         if (value < 1 || value > maximum) throw new IllegalArgumentException(name + " must be 1.." + maximum);
@@ -55,7 +49,7 @@ public final class SmallTrainingExperiments {
 
     private static Neuro model(int[] shape, long seed, Neuro.SigmoidMode sigmoid, int samples, boolean xor) {
         Neuro result = new Neuro(shape, new Neuro.HyperParameters(xor ? 0.5 : 0.05, xor ? 0.2 : 0.1,
-            1.0, seed, Neuro.Kernel.VECTOR, sigmoid));
+            1.0, seed).withSigmoidMode(sigmoid));
         for (int sample = 0; sample < samples; sample++) {
             double x = xor ? ((sample & 3) / 2) : ((sample * 17) & 255) / 255.0;
             double y = xor ? (sample & 1) : ((sample * 17 + 13) & 255) / 255.0;
@@ -126,34 +120,35 @@ public final class SmallTrainingExperiments {
         int repeats = integer(options, "repeats", 8, 1000);
         int warmups = integer(options, "warmups", 3, 100);
         int[] shape = Arrays.stream(options.getOrDefault("topology", "2,8,8,8,1").split(",")).mapToInt(Integer::parseInt).toArray();
-        String[] engines = options.getOrDefault("engines", "REFERENCE_MATRIX,REFERENCE_PARALLEL,SMALL_SEQUENTIAL,SMALL_CPU,SMALL_CUDA").split(",");
+        String[] engines = options.getOrDefault("engines", "CPU_SESSION_CALL,CPU_PARALLEL_CALL,CPU_SESSION_RETAINED,CPU_COHORT").split(",");
         Neuro.TrainingPrecision precision = Neuro.TrainingPrecision.valueOf(options.getOrDefault("precision", "FP64"));
+        if (!SmallNetworkShape.INSTANCE.supports(shape)) throw new IllegalArgumentException("Unsupported small-network topology");
+        var supported = java.util.Set.of("CPU_SESSION_CALL", "CPU_PARALLEL_CALL", "CPU_SESSION_RETAINED", "CPU_COHORT", "GPU_COHORT");
+        if (engines.length == 0 || Arrays.stream(engines).anyMatch(engine -> !supported.contains(engine)))
+            throw new IllegalArgumentException("Unknown TensorFlow execution mode");
         var expected = new ArrayList<Neuro>();
         for (int index = 0; index < count; index++) {
             Neuro reference = model(shape, 1234L + index, Neuro.SigmoidMode.EXACT, samples, false);
-            if (batch == 1) reference.train(epochs);
-            else reference.trainMiniBatch(epochs, batch, 1, Neuro.BatchBackend.CPU);
+            referenceTrain(reference, epochs, batch, precision);
             expected.add(reference);
         }
         List<String> rows = new ArrayList<>();
-        rows.add("round,engine,models,precision,epochs,batch,workers,open_ns,training_ns,close_ns,total_ns,max_scaled_error,actual_cpu_workers,actual_precision");
+        rows.add("round,engine,models,precision,epochs,batch,workers,open_ns,training_ns,close_ns,total_ns,max_scaled_error,cpu_worker_limit,actual_precision,actual_backend,kernel");
         try (NeuroTrainingDeviceService service = new NeuroTrainingDeviceService(workers)) {
             for (int round = -warmups; round < repeats; round++) for (int offset = 0; offset < engines.length; offset++) {
                 String engine = engines[Math.floorMod(round + offset, engines.length)];
                 List<Neuro> networks = new ArrayList<>();
                 for (int index = 0; index < count; index++) networks.add(model(shape, 1234L + index, Neuro.SigmoidMode.EXACT, samples, false));
                 long started = System.nanoTime();
-                NeuroTrainingCohort group = engine.equals("SMALL_CPU") || engine.equals("SMALL_CUDA") ?
-                    service.openCohort(networks, engine.equals("SMALL_CUDA") ? TrainingBackend.CUDA : TrainingBackend.CPU, precision, batch, workers) : null;
-                NativeSmallCohort nativeGroup = engine.equals("NATIVE") ? new NativeSmallCohort(
-                    networks.stream().map(Neuro::exportTrainingState$experiments_JNeuro).toArray(NeuroTrainingState[]::new),
-                    networks.getFirst().hyperParameters(), precision, true, NativeSmallTrainingKt::loadSmallNativeLibrary) : null;
+                NeuroTrainingCohort group = engine.equals("CPU_COHORT") || engine.equals("GPU_COHORT") ?
+                    service.openCohort(networks, engine.equals("GPU_COHORT") ? TrainingBackend.CUDA : TrainingBackend.CPU, precision, batch, workers) : null;
                 List<NeuroTrainingSession> sessions = new ArrayList<>();
-                if (engine.equals("SMALL_SEQUENTIAL")) for (Neuro network : networks)
-                    sessions.add(service.openSession(network, TrainingBackend.CPU, precision, batch, TrainingEngine.SMALL));
-                long opened = System.nanoTime();
+                long opened;
                 long trained;
                 try {
+                    if (engine.equals("CPU_SESSION_RETAINED")) for (Neuro network : networks)
+                        sessions.add(service.openSession(network, TrainingBackend.CPU, precision, batch, TrainingEngine.SMALL));
+                    opened = System.nanoTime();
                     if (group != null) {
                         int completed = 0;
                         boolean[] active = new boolean[count];
@@ -163,25 +158,11 @@ public final class SmallTrainingExperiments {
                             if (advanced < 1) throw new IllegalStateException("No cohort progress");
                             completed += advanced;
                         }
-                    } else if (nativeGroup != null) {
-                        int completed = 0;
-                        long nanosPerEpoch = 0;
-                        while (completed < epochs) {
-                            int step = Math.min(epochs - completed, nanosPerEpoch == 0 ? 1 : (int) Math.max(1L, Math.min(64L, 25_000_000L / nanosPerEpoch)));
-                            long chunkStarted = System.nanoTime();
-                            int[][][] orders = new int[count][][];
-                            for (int index = 0; index < count; index++) orders[index] = networks.get(index).reserveTrainingOrders$experiments_JNeuro(step);
-                            NeuroTrainingState[] states = nativeGroup.train(orders, batch, batch == 1);
-                            for (int index = 0; index < count; index++) networks.get(index).validateTrainingState$experiments_JNeuro(states[index]);
-                            for (int index = 0; index < count; index++) networks.get(index).commitTrainingChunk$experiments_JNeuro(states[index], step);
-                            nanosPerEpoch = Math.max(1L, (System.nanoTime() - chunkStarted) / step);
-                            completed += step;
-                        }
                     } else if (!sessions.isEmpty()) for (NeuroTrainingSession session : sessions) train(session, epochs);
-                    else if (engine.equals("REFERENCE_MATRIX")) for (Neuro network : networks) referenceTrain(network, epochs, batch);
-                    else if (engine.equals("REFERENCE_PARALLEL")) {
+                    else if (engine.equals("CPU_SESSION_CALL")) for (Neuro network : networks) referenceTrain(network, epochs, batch, precision);
+                    else if (engine.equals("CPU_PARALLEL_CALL")) {
                         try (var pool = Executors.newFixedThreadPool(workers)) {
-                            List<Callable<Void>> tasks = networks.stream().<Callable<Void>>map(network -> () -> { referenceTrain(network, epochs, batch); return null; }).toList();
+                            List<Callable<Void>> tasks = networks.stream().<Callable<Void>>map(network -> () -> { referenceTrain(network, epochs, batch, precision); return null; }).toList();
                             for (var result : pool.invokeAll(tasks)) result.get();
                         }
                     } else throw new IllegalArgumentException("Unknown engine " + engine);
@@ -189,7 +170,6 @@ public final class SmallTrainingExperiments {
                 } finally {
                     for (NeuroTrainingSession session : sessions) session.close();
                     if (group != null) group.close();
-                    if (nativeGroup != null) nativeGroup.close();
                 }
                 long closed = System.nanoTime();
                 double scaled = 0;
@@ -204,14 +184,15 @@ public final class SmallTrainingExperiments {
                 }
                 if (scaled > 1.0) throw new IllegalStateException("Full cohort state outside parity tolerance: " + scaled);
                 int actualWorkers = switch (engine) {
-                    case "SMALL_CPU" -> Math.min(workers, (count + (precision == Neuro.TrainingPrecision.FP64 ? 3 : 7)) / (precision == Neuro.TrainingPrecision.FP64 ? 4 : 8));
-                    case "REFERENCE_PARALLEL" -> Math.min(workers, count);
-                    case "SMALL_CUDA" -> 0;
+                    case "CPU_COHORT" -> Math.min(workers, count);
+                    case "CPU_PARALLEL_CALL" -> Math.min(workers, count);
+                    case "GPU_COHORT" -> 0;
                     default -> 1;
                 };
-                Neuro.TrainingPrecision actualPrecision = engine.startsWith("REFERENCE") ? Neuro.TrainingPrecision.FP64 : precision;
-                if (round >= 0) rows.add(String.format(Locale.ROOT, "%d,%s,%d,%s,%d,%d,%d,%d,%d,%d,%d,%.17g,%d,%s",
-                    round, engine, count, precision, epochs, batch, workers, opened - started, trained - opened, closed - trained, closed - started, scaled, actualWorkers, actualPrecision));
+                TrainingDeviceInfo device = group != null ? group.getInfo() : !sessions.isEmpty() ? sessions.getFirst().getInfo() :
+                    TensorFlowMath.INSTANCE.info(TrainingBackend.CPU, precision, TrainingEngine.SMALL, Neuro.SigmoidMode.EXACT);
+                if (round >= 0) rows.add(String.format(Locale.ROOT, "%d,%s,%d,%s,%d,%d,%d,%d,%d,%d,%d,%.17g,%d,%s,%s,%s",
+                    round, engine, count, precision, epochs, batch, workers, opened - started, trained - opened, closed - trained, closed - started, scaled, actualWorkers, device.getPrecision(), device.getBackend(), device.getKernelVersion()));
                 System.out.printf(Locale.ROOT, "round=%d %s models=%d train=%.3fms total=%.3fms scaledError=%.3g%n",
                     round, engine, count, (trained - opened) / 1e6, (closed - started) / 1e6, scaled);
             }
@@ -219,8 +200,9 @@ public final class SmallTrainingExperiments {
         return rows;
     }
 
-    private static void referenceTrain(Neuro network, int epochs, int batch) {
-        if (batch == 1) network.train(epochs);
-        else network.trainMiniBatch(epochs, batch, 1, Neuro.BatchBackend.CPU);
+    private static void referenceTrain(Neuro network, int epochs, int batch, Neuro.TrainingPrecision precision) {
+        try (NeuroTrainingSession session = network.newTrainingSession(TrainingBackend.CPU, precision, batch, TrainingEngine.SMALL)) {
+            train(session, epochs);
+        }
     }
 }

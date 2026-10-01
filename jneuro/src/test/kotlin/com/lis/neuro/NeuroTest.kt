@@ -74,7 +74,7 @@ class NeuroTest {
         assertEquals(0.3, legacyConstructor.hyperParameters().learningRate)
     }
 
-    @Test fun scalarVectorSessionsBatchAndFloatAgree() {
+    @Test fun legacyKernelHintsSessionsBatchAndFloatUseConsistentTensorFlowPredictions() {
         for (shape in listOf(intArrayOf(32, 64, 32, 8), intArrayOf(3, 7, 2), intArrayOf(33, 65, 17), intArrayOf(2, 1))) {
             val scalar = prepared(shape, Neuro.Kernel.SCALAR)
             val vector = prepared(shape, Neuro.Kernel.VECTOR)
@@ -110,7 +110,8 @@ class NeuroTest {
             val floatBatch = FloatArray(batch.size)
             val floatBatchInputs = FloatArray(batchInputs.size) { batchInputs[it].toFloat() }
             floatModel.predictBatch(floatBatchInputs, batchSize, floatBatch)
-            assertArrayEquals(floatOutput, floatBatch.copyOfRange(0, floatOutput.size), 0.0f)
+            // TensorFlow may choose different FP32 reductions for a matrix and a single row.
+            assertArrayEquals(floatOutput, floatBatch.copyOfRange(0, floatOutput.size), 1e-6f)
             assertThrows(IllegalArgumentException::class.java) { vector.predictInto(DoubleArray(1), reused) }
             assertThrows(IllegalArgumentException::class.java) { vector.predictInto(input, DoubleArray(shape.last() + 1)) }
             assertThrows(IllegalArgumentException::class.java) { vector.predictBatch(DoubleArray(1), 1, batch) }
@@ -141,16 +142,77 @@ class NeuroTest {
         }
     }
 
-    @Test fun exactXorMatchesPinnedJavaBaseline() {
-        val model = xor()
-        assertEquals(0.5129051250129316, model.trainingError(), 1e-14)
-        val result = model.trainUntil(0.05, 10_000)
-        assertEquals(1144, result.epochs)
-        assertEquals(0.04997028695977735, result.error, 1e-12)
-        val expected = doubleArrayOf(0.045355701043297426, 0.9499573164770715, 0.9514754011138365, 0.055426273796837275)
-        val corners = doubleArrayOf(0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0)
-        val actual = DoubleArray(4); model.predictBatch(corners, 4, actual)
-        assertArrayEquals(expected, actual, 1e-12)
+    @Test fun tensorFlowUpdatesPreserveMomentumAndDoNotAverageAcrossOutputNeurons() {
+        val parameters = Neuro.HyperParameters(0.1, 0.3, 1.4, 42)
+        val inputs = doubleArrayOf(0.25, 0.75)
+        val targets = doubleArrayOf(0.0, 1.0)
+        fun model() = Neuro(intArrayOf(2, 2), parameters).also {
+            val layer = it.backendLayers().single()
+            doubleArrayOf(0.2, -0.1, 0.6, 0.3).copyInto(layer.weights)
+            doubleArrayOf(0.05, -0.2).copyInto(layer.biases)
+            doubleArrayOf(0.01, -0.02, 0.03, -0.04).copyInto(layer.weightVelocity)
+            doubleArrayOf(0.05, -0.06).copyInto(layer.biasVelocity)
+            it.addTrainingSample(inputs, targets)
+        }
+        val expected = model().exportTrainingState()
+        // An independent one-layer derivative checks loss scaling, beta and momentum.
+        repeat(2) {
+            for (output in targets.indices) {
+                val offset = output * inputs.size
+                val sum = expected.biases[0][output] + inputs.indices.sumOf { expected.weights[0][offset + it] * inputs[it] }
+                val activation = 1.0 / (1.0 + Math.exp(-parameters.beta * sum))
+                val delta = (targets[output] - activation) * parameters.beta * activation * (1.0 - activation)
+                for (input in inputs.indices) {
+                    val index = offset + input
+                    val velocity = parameters.momentum * expected.weightVelocity[0][index] + parameters.learningRate * delta * inputs[input]
+                    expected.weightVelocity[0][index] = velocity
+                    expected.weights[0][index] += velocity
+                }
+                val velocity = parameters.momentum * expected.biasVelocity[0][output] + parameters.learningRate * delta
+                expected.biasVelocity[0][output] = velocity
+                expected.biases[0][output] += velocity
+            }
+        }
+        val bulk = model().also { it.train(2) }
+        val reopened = model().also { it.trainEpoch(); it.trainEpoch() }
+        val fp32 = model().also { it.trainMiniBatch(2, 1, 1, Neuro.BatchBackend.CPU, Neuro.TrainingPrecision.FP32) }
+        for ((actual, tolerance) in listOf(bulk to 1e-13, reopened to 1e-13, fp32 to 1e-7)) {
+            val state = actual.exportTrainingState()
+            assertArrayEquals(expected.weights[0], state.weights[0], tolerance)
+            assertArrayEquals(expected.biases[0], state.biases[0], tolerance)
+            assertArrayEquals(expected.weightVelocity[0], state.weightVelocity[0], tolerance)
+            assertArrayEquals(expected.biasVelocity[0], state.biasVelocity[0], tolerance)
+            assertEquals(2L, actual.statistics().epochsTrained)
+            assertEquals(2L, actual.statistics().samplesSeen)
+        }
+        val floatState = fp32.exportTrainingState()
+        assertTrue(floatState.weights[0].all { it == it.toFloat().toDouble() }, "FP32 must own float-rounded parameters")
+        assertFalse(floatState.weights[0].contentEquals(bulk.exportTrainingState().weights[0]),
+            "An explicit CPU FP32 request must execute float arithmetic")
+    }
+
+    @Test fun tensorFlowInferencePreservesOversizedBufferTailsAndDetachedFloatSnapshots() {
+        val model = prepared(intArrayOf(3, 5, 2))
+        val batch = 257 // Exercises multiple native inference workers and a partial final slice.
+        val input = DoubleArray(batch * 3 + 4) { (it % 7) / 7.0 }
+        val sequential = DoubleArray(batch * 2 + 3) { -7.0 }
+        val parallel = sequential.copyOf()
+        model.predictBatch(input, batch, sequential)
+        model.newParallelInferenceSession(3).use { it.predictBatch(input, batch, parallel) }
+        assertArrayEquals(sequential, parallel, 1e-12)
+        assertArrayEquals(doubleArrayOf(-7.0, -7.0, -7.0), sequential.takeLast(3).toDoubleArray())
+        model.predictBatch(doubleArrayOf(), 0, sequential)
+        assertArrayEquals(sequential, parallel, 0.0)
+
+        val snapshot = model.toFloatModel()
+        val floatInput = FloatArray(input.size) { input[it].toFloat() }
+        val before = snapshot.predict(floatInput.copyOf(3))
+        val floatOutput = FloatArray(batch * 2 + 3) { -8.0f }
+        snapshot.predictBatch(floatInput, batch, floatOutput)
+        assertArrayEquals(floatArrayOf(-8.0f, -8.0f, -8.0f), floatOutput.takeLast(3).toFloatArray())
+        snapshot.predictBatch(floatArrayOf(), 0, floatOutput)
+        model.train(2)
+        assertArrayEquals(before, snapshot.predict(floatInput.copyOf(3)), 0.0f)
     }
 
     @Test fun fastSigmoidAndSparseErrorChecksWork() {

@@ -80,13 +80,6 @@ internal class ArchitectureSearchConfig(
         require(nearBestTolerance.isFinite() && nearBestTolerance >= 0.0) { "Near-best tolerance must be finite and non-negative." }
         require(parallelism > 0) { "Parallelism must be positive." }
         require(batchSize > 0) { "Batch size must be positive." }
-        require(engine != TrainingEngine.SMALL || backend != TrainingBackend.CUBLAS) {
-            "SMALL supports CPU, CUDA or AUTO; select REFERENCE for CUBLAS."
-        }
-        require(precision == Neuro.TrainingPrecision.FP64 || engine == TrainingEngine.SMALL ||
-            backend in setOf(TrainingBackend.CUBLAS, TrainingBackend.AUTO)) {
-            "FP32 requires SMALL, CUBLAS or AUTO training."
-        }
         require(maxTrials >= this.seeds.size) { "Trial budget must fit at least one full seed group." }
         require(restartAfter > 0 && maxRestarts >= 0) { "Restart interval must be positive and restart count non-negative." }
         this.initialHidden?.let { NeuroTopologyConfig.topology(it.toIntArray()) }

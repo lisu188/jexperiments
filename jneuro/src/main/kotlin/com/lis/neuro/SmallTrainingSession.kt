@@ -31,11 +31,12 @@ internal class SmallTrainingSession(
         }
     }
 
-    private fun <T> run(operation: String, epochs: Int, batch: Int = batchSize, action: () -> T): T =
+    private fun <T> run(operation: String, epochs: Int, batch: Int = batchSize, parallelism: Int = 1,
+                        details: Map<String, Any?> = emptyMap(), action: () -> T): T =
         network.withTraining(this) {
             check(!closed) { "Training session is closed." }
             check(!failed) { "Training failed. Close this session before resuming from the last committed checkpoint." }
-            loggedTraining(network, sessionId, info, operation, epochs, batch, initialEpoch = initialEpoch, action = action)
+            loggedTraining(network, sessionId, info, operation, epochs, batch, parallelism, details, initialEpoch, action)
         }
 
     private fun execute(epochs: Int, batch: Int, online: Boolean, evaluateError: Boolean = true): Double {
@@ -58,7 +59,6 @@ internal class SmallTrainingSession(
 
     override fun advanceForSearch(request: TrainingChunkRequest): SearchAdvanceResult = run("advanceForSearch", request.maxEpochs) {
         require(request.targetError == null) { "Search must complete its full trial budget without target stopping" }
-        if (kernel is SmallCpuTraining) return@run advanceCpuForSearch(request, kernel)
         val started = clock()
         var completed = 0
         var error: Double? = null
@@ -68,9 +68,7 @@ internal class SmallTrainingSession(
             if (request.cancelled()) { termination = TrainingTermination.CANCELLED; break }
             val elapsed = clock() - started
             if (completed > 0 && elapsed >= request.maxNanos) { termination = TrainingTermination.BUDGET; break }
-            val remainingNanos = maxOf(1L, request.maxNanos - elapsed)
-            val adaptive = if (nanosPerEpoch == 0L) 1 else (remainingNanos / nanosPerEpoch).coerceIn(1, 64).toInt()
-            val count = minOf(limit - completed, adaptive)
+            val count = 1 // Poll cancellation between TensorFlow epochs on every device.
             val scoringBoundary = completed + count == request.maxEpochs
             val current = execute(count, batchSize, batchSize == 1, scoringBoundary)
             completed += count
@@ -84,45 +82,16 @@ internal class SmallTrainingSession(
         SearchAdvanceResult(completed, error, termination)
     }
 
-    private fun advanceCpuForSearch(request: TrainingChunkRequest, cpu: SmallCpuTraining): SearchAdvanceResult {
-        if (request.maxEpochs == 0) return SearchAdvanceResult(0, null, TrainingTermination.COMPLETED)
-        val started = clock()
-        var termination = TrainingTermination.COMPLETED
-        try {
-            val orders = network.reserveTrainingOrders(minOf(64, request.maxEpochs))
-            val result = cpu.advanceForSearch(orders, batchSize, batchSize == 1) { completed ->
-                when {
-                    request.cancelled() -> { termination = TrainingTermination.CANCELLED; false }
-                    completed > 0 && clock() - started >= request.maxNanos -> { termination = TrainingTermination.BUDGET; false }
-                    else -> true
-                }
-            }
-            val scoringBoundary = result.epochs == request.maxEpochs
-            val error = result.state?.let { state ->
-                val current = network.commitTrainingChunk(state, result.epochs, scoringBoundary)
-                nanosPerEpoch = maxOf(1L, (clock() - started) / result.epochs)
-                if (scoringBoundary) {
-                    check(current.isFinite()) { "Training produced a non-finite RMSE." }
-                    current
-                } else null
-            }
-            if (termination == TrainingTermination.COMPLETED && result.epochs < request.maxEpochs) termination = TrainingTermination.BUDGET
-            return SearchAdvanceResult(result.epochs, error, termination)
-        } catch (failure: Throwable) {
-            failed = true
-            throw failure
-        }
-    }
     override fun train(epochs: Int) = run("train", epochs) {
         require(epochs >= 0)
         repeat(epochs) { execute(1, batchSize, batchSize == 1) }
     }
-    override fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int) = run("trainMiniBatch", epochs, batchSize) {
+    override fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int) = run("trainMiniBatch", epochs, batchSize, parallelism) {
         require(epochs >= 0 && batchSize > 0 && parallelism > 0)
         repeat(epochs) { execute(1, batchSize, false) }
     }
 
-    override fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int): Neuro.TrainingResult = run("trainUntil", maxEpochs) {
+    override fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int): Neuro.TrainingResult = run("trainUntil", maxEpochs, details = mapOf("targetError" to targetError, "checkEvery" to checkEvery)) {
         require(targetError.isFinite() && targetError >= 0.0 && maxEpochs >= 0 && checkEvery > 0)
         check(network.trainingSampleCount() > 0) { "no training samples" }
         var error = currentRmse
@@ -170,7 +139,12 @@ internal class SmallTrainingSession(
         network.withTraining(this) {
             closed = true
             try { kernel.close() }
-            finally {
+            catch (failure: Throwable) {
+                NeuroLog.error("training", "session.close.failed", failure, "model" to network.logId,
+                    "session" to sessionId, "backend" to info.backend,
+                    "completedEpochs" to network.statistics().epochsTrained)
+                throw failure
+            } finally {
                 network.releaseTraining(this)
                 logSessionClosed(network, sessionId, info, openedNanos, failed)
             }

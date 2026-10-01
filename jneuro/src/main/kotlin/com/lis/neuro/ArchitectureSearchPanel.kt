@@ -37,7 +37,7 @@ internal class ArchitectureSearchPanel(
     private val strategy = JComboBox(ArchitectureSearchStrategy.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Search strategy" }
     private val execution = JComboBox(ArchitectureExecution.entries.toTypedArray()).apply {
         accessibleContext.accessibleName = "Search execution"
-        toolTipText = "REFERENCE retains the comparison route. OPTIMIZED advances between the same scoring checkpoints; CUDA SMALL uses a bounded shared queue."
+        toolTipText = "Both execution modes train with TensorFlow. OPTIMIZED advances between the same scoring checkpoints; CUDA SMALL uses a bounded shared queue."
     }
     private val searchSeed = JTextField("42", 10)
     private val restartAfter = NumericInputs.spinner(12, 1)
@@ -171,7 +171,7 @@ internal class ArchitectureSearchPanel(
             evaluation.selectedItem = if (config.dataset in BOOLEAN_SETS) ArchitectureEvaluation.TRAINING_FIT else ArchitectureEvaluation.VALIDATION
         }
         source = config; sourceSize = samples
-        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · ${source.backend} · ${source.precision} · ${source.engine} · ${source.sigmoid} · batch ${source.batchSize}"
+        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · TensorFlow ${source.backend} · ${source.precision} · ${source.engine} · ${source.sigmoid} · batch ${source.batchSize}"
         sourceLabel.toolTipText = if (source.engine == TrainingEngine.SMALL) "Search intersects these bounds with 1–4 hidden layers and widths 4, 8 or 16." else null
         start.isEnabled = !running && samples > 0
     }
@@ -246,7 +246,7 @@ internal class ArchitectureSearchPanel(
         val activeArchitectures = progress.running.map { it.architecture }.distinct().size
         val workers = "Active trials: ${progress.running.size}/${config?.concurrentModels} · $activeArchitectures architectures · peak ${progress.peakParallelTrials}" +
             " · CPU workers ${progress.activeWorkers}/${config?.parallelism}" +
-            if (config?.usesCudaQueue == true) " · GPU models ${progress.residentModels}/64 · queued ${progress.queuedGpuRequests} · launches ${progress.gpuBatches}" else ""
+            if (config?.usesCudaQueue == true) " · GPU models ${progress.residentModels}/64 · queued ${progress.queuedGpuRequests} · dispatches ${progress.gpuBatches}" else ""
         summary.text = if (trial == null) "$workers · Collecting results…" else "$workers · ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch}"
     }
 
@@ -366,7 +366,7 @@ internal class ArchitectureSearchPanel(
             trial.failure.isNotEmpty() -> "Seed ${trial.seed}: ${trial.failure}"
             else -> "Seed ${trial.seed}: best ${scoreMode.label} ${number(trial.bestRmse)} at epoch ${trial.bestEpoch}; trained ${trial.epochs}. Apply = fresh run; replay = scored training partition."
         }
-        details.toolTipText = trial?.deviceInfo?.let { "${trial.execution} · ${trial.route} · ${it.backend} · ${it.name} · ${it.precision} · ${it.engine} · ${it.sigmoid} · SIMD ${it.simdBits} · kernel ${it.kernelVersion} · ${it.identity}" }
+        details.toolTipText = trial?.deviceInfo?.let { "${trial.execution} · ${trial.route} · TensorFlow ${it.backend} · ${it.name} · ${it.precision} · ${it.engine} · ${it.sigmoid} · kernel ${it.kernelVersion} · ${it.identity}" }
         inspector.repaint(); plot.repaint()
     }
 

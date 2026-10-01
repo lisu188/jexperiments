@@ -31,8 +31,7 @@ class SmallCpuTrainingTest {
                 assertState(expected, actual)
                 assertTrue(actual.weights.all { row -> row.all { value -> value == value.toFloat().toDouble() } })
                 assertEquals("FP32", it.info.precision)
-                assertEquals(if (shape.drop(1).dropLast(1).all { it == 4 }) minOf(128, smallVectorBits(parameters, bits))
-                    else smallVectorBits(parameters, bits), it.info.simdBits)
+                assertEquals(0, it.info.simdBits)
                 assertEquals(TrainingEngine.SMALL, it.info.engine)
             }
             val exact = SmallCpuTraining(initial, parameters, Neuro.TrainingPrecision.FP64, 0).use { it.train(orders, 4, online) }
@@ -61,22 +60,6 @@ class SmallCpuTrainingTest {
                 assertState(actual, chunked.train(emptyArray(), 1, false))
             }
             assertState(state, model.exportTrainingState())
-        }
-    }
-
-    @Test fun activationModesAreStableAtTailsAndExtremeInputs() {
-        val values = doubleArrayOf(-1000.0, -745.0, -104.0, -16.0, -1.2, -0.5, 0.0, 0.5, 1.2, 16.0, 104.0, 745.0, 1000.0)
-        for (mode in Neuro.SigmoidMode.entries) for (bits in listOf(0, 128, 256)) {
-            val doubles = values.copyOf()
-            SmallDoubleActivation(mode, bits, values.size).apply(doubles, doubles.size)
-            val expected = DoubleArray(values.size) { Neuro.activate(values[it], mode) }
-            assertArrayEquals(expected, doubles, 0.0)
-            val floats = smallFloats(values)
-            SmallFloatActivation(mode, bits, values.size).apply(floats, floats.size)
-            for (i in floats.indices) {
-                assertTrue(floats[i].isFinite() && floats[i] in 0.0f..1.0f)
-                assertEquals(expected[i], floats[i].toDouble(), 2e-7)
-            }
         }
     }
 

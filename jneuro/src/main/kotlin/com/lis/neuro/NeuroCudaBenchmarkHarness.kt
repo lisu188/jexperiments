@@ -100,7 +100,7 @@ internal object NeuroCudaBenchmarkHarness {
         var trainingEnd = opened
         var primary: Throwable? = null
         try {
-            check(session.info.backend == engine.backend && session.info.precision == engine.precision.name) {
+            check((session.info.backend == engine.backend || engine.backend == TrainingBackend.CUBLAS && session.info.backend == TrainingBackend.CUDA) && session.info.precision == engine.precision.name) {
                 "Requested $engine but session resolved ${session.info.backend}/${session.info.precision}"
             }
             train(session, epochs, workload.batchSize, config.mode)
@@ -202,9 +202,6 @@ internal object NeuroCudaBenchmarkHarness {
         fun hash(resource: String): String? = NeuroCudaBenchmarkHarness::class.java.getResourceAsStream(resource)?.use {
             MessageDigest.getInstance("SHA-256").digest(it.readAllBytes()).joinToString("") { value -> "%02x".format(value) }
         }
-        val cudaBuild = java.util.Properties().also { properties ->
-            NeuroCudaBenchmarkHarness::class.java.getResourceAsStream("/com/lis/neuro/cuda/train.properties")?.use(properties::load)
-        }.entries.associate { it.key.toString() to it.value.toString() }
         return linkedMapOf("timestamp" to Instant.now().toString(), "javaVersion" to System.getProperty("java.runtime.version"),
             "processId" to ProcessHandle.current().pid(), "jvmStartMillis" to java.lang.management.ManagementFactory.getRuntimeMXBean().startTime,
             "jvmArguments" to java.lang.management.ManagementFactory.getRuntimeMXBean().inputArguments,
@@ -214,11 +211,9 @@ internal object NeuroCudaBenchmarkHarness {
             "maximumHeapBytes" to Runtime.getRuntime().maxMemory(), "loggingLevel" to Logger.getLogger("com.lis.neuro").level?.name,
             "sourceRevision" to (System.getProperty("jneuro.benchmark.sourceRevision") ?: "unspecified"),
             "benchmarkClassSha256" to hash("/com/lis/neuro/NeuroCudaBenchmarkHarness.class"),
-            "ptxSha256" to hash("/com/lis/neuro/cuda/train.ptx"), "cudaBuildPropertiesSha256" to hash("/com/lis/neuro/cuda/train.properties"),
-            "cublasKernelSourceSha256" to hash("/cuda/jneuro.cu"), "cudaBuild" to cudaBuild, "seed" to SEED,
-            "learningRate" to 0.05, "momentum" to 0.1, "beta" to 1.0, "sigmoid" to config.sigmoid.name, "cpuKernel" to "VECTOR",
-            "timingScope" to "fresh model/data preparation and numerical validation excluded; open, ${config.mode} training, close included; CPU parallelism=1",
-            "cublasTiming" to "Runtime allocation, NVRTC compilation, transfers and cleanup occur within the training call; open separately probes device metadata",
+            "mathRuntime" to TensorFlowMath.info(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64).kernelVersion,
+            "seed" to SEED, "learningRate" to 0.05, "momentum" to 0.1, "beta" to 1.0, "sigmoid" to config.sigmoid.name,
+            "timingScope" to "fresh model/data preparation and validation excluded; TensorFlow session open, training and close included",
             "order" to "measured backend order rotates once per repetition; all warmups excluded", "p95Definition" to "nearest rank")
     }
 }

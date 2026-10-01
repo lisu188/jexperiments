@@ -8,14 +8,14 @@ on:
       - 'build.gradle'
       - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
-      - '.github/workflows/jneuro-cuda-ptx.yml'
+      - '.github/workflows/jneuro-tensorflow.yml'
   pull_request:
     paths:
       - 'jneuro/**'
       - 'build.gradle'
       - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
-      - '.github/workflows/jneuro-cuda-ptx.yml'
+      - '.github/workflows/jneuro-tensorflow.yml'
 
 permissions:
   contents: read
@@ -46,20 +46,8 @@ jobs:
           test -z "$(find jneuro/src/main jneuro/src/test -name '*.java' -print -quit)"
           test -f jneuro/src/main/kotlin/com/lis/neuro/Neuro.kt
           test -f jneuro/src/jmh/kotlin/com/lis/neuro/NeuroInferenceJmhBenchmark.kt
-      - name: Install OpenBLAS for native verification
-        run: sudo apt-get update && sudo apt-get install -y libopenblas0-pthread
       - name: Verify JNeuro and coverage
         run: ./gradlew --no-daemon :jneuro:check :jneuro:jacocoTestReport
-      - name: Compile pinned Java baseline
-        shell: bash
-        run: |
-          set -euo pipefail
-          BASELINE="$RUNNER_TEMP/jneuro-java-baseline"
-          mkdir -p "$BASELINE/source" "$BASELINE/classes"
-          git archive 75f8d619975bca7d2cbac141fc8bfaff2d8ff03d jneuro/src/main/java | tar -x -C "$BASELINE/source"
-          "$JAVA_HOME/bin/javac" --add-modules jdk.incubator.vector -d "$BASELINE/classes" "$BASELINE/source/jneuro/src/main/java/com/lis/neuro/"*.java
-      - name: Differential Java and Kotlin verification
-        run: ./gradlew --no-daemon :jneuro:migrationParity -PneuroJavaBaseline="$RUNNER_TEMP/jneuro-java-baseline/classes"
       - name: Render implemented studio views
         run: ./gradlew --no-daemon :jneuro:renderStudio
       - name: JMH smoke
@@ -70,8 +58,6 @@ jobs:
         run: ./gradlew --no-daemon :jneuro:jmhBatchCompare
       - name: JMH training comparison
         run: ./gradlew --no-daemon :jneuro:jmhTrainingCompare
-      - name: Native BLAS comparison
-        run: ./gradlew --no-daemon :jneuro:nativeBlasBenchmark
       - name: Performance matrix smoke
         run: ./gradlew --no-daemon :jneuro:performanceMatrix -PneuroMatrixIterations=1000 -PneuroMatrixEpochs=2
       - name: Run example

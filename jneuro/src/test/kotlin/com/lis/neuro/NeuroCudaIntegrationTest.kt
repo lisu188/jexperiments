@@ -17,10 +17,10 @@ class NeuroCudaIntegrationTest {
             val gpu = NeuroTest.prepared(shape, Neuro.Kernel.SCALAR, mode)
             cpu.train(2); gpu.train(2) // Enter cuBLAS with non-zero optimizer momentum.
             gpu.newTrainingSession(TrainingBackend.CUBLAS, precision, 7).use { session ->
-                assertEquals(TrainingBackend.CUBLAS, session.info.backend)
+                assertEquals(TrainingBackend.CUDA, session.info.backend)
                 assertEquals(precision.name, session.info.precision)
                 assertTrue(session.info.identity.isNotBlank())
-                assertTrue(session.info.kernelVersion.contains("source-"))
+                assertTrue(session.info.kernelVersion.startsWith("tensorflow-"))
                 cpu.trainMiniBatch(2, 7, 1, Neuro.BatchBackend.CPU)
                 session.train(2)
                 assertState(cpu, gpu, precision)
@@ -77,7 +77,7 @@ class NeuroCudaIntegrationTest {
 
     private fun requireCublas() {
         assertTrue(NeuroCuda.isAvailable(),
-            "cuBLAS hardware acceptance requires CUDA Runtime, cuBLAS, NVRTC and a real GPU: " + NeuroCuda.status().reason)
+            "TensorFlow GPU acceptance requires a GPU-enabled TensorFlow runtime and a real GPU: " + NeuroCuda.status().reason)
     }
 
     private fun tolerance(precision: Neuro.TrainingPrecision): Double =

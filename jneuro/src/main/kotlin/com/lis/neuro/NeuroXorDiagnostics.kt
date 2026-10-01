@@ -27,6 +27,7 @@ internal object NeuroXorDiagnostics {
         private val weights = Array(weights.size) { weights[it].copyOf() }
         private val biases = Array(biases.size) { biases[it].copyOf() }
         private val count = weights.sumOf { it.size } + biases.sumOf { it.size }
+        private val parameters = Neuro.HyperParameters.defaults().copy(beta = beta, sigmoidMode = mode)
 
         fun epoch(): Int = epochValue
         fun error(): Double = errorValue
@@ -62,19 +63,26 @@ internal object NeuroXorDiagnostics {
         }
         fun newWorkspace(): Array<DoubleArray> = Array(shape.size) { DoubleArray(shape[it]) }
         fun evaluate(x: Double, y: Double, workspace: Array<DoubleArray>, throughLayer: Int = weights.lastIndex): Double {
-            workspace[0][0] = x
-            workspace[0][1] = y
-            for (layer in 0..throughLayer) {
-                val source = workspace[layer]
-                val destination = workspace[layer + 1]
-                for (output in destination.indices) {
-                    var sum = biases[layer][output]
-                    val offset = output * source.size
-                    for (input in source.indices) sum = Math.fma(source[input], weights[layer][offset + input], sum)
-                    destination[output] = Neuro.activate(sum * beta, mode)
-                }
-            }
+            val values = evaluateBatch(doubleArrayOf(x, y), 1, throughLayer)
+            for (layer in values.indices) values[layer].copyInto(workspace[layer])
             return workspace[throughLayer + 1][0]
+        }
+        fun evaluateBatch(inputs: DoubleArray, batchSize: Int, throughLayer: Int = weights.lastIndex): Array<DoubleArray> {
+            require(throughLayer in weights.indices) { "layer index out of range" }
+            return TensorFlowMath.evaluate(shape.copyOf(throughLayer + 2), weights.copyOfRange(0, throughLayer + 1),
+                biases.copyOfRange(0, throughLayer + 1), parameters, inputs, batchSize)
+        }
+        fun predictBatch(inputs: DoubleArray, batchSize: Int): DoubleArray =
+            TensorFlowMath.predict(shape, weights, biases, parameters, inputs, batchSize)
+        fun error(inputs: DoubleArray, targets: DoubleArray): Double =
+            TensorFlowMath.error(shape, weights, biases, parameters, inputs, targets)
+        fun contributions(inputs: DoubleArray): DoubleArray = TensorFlowMath.contributions(inputs, weights.last())
+        fun weightNorm(layer: Int): Double = TensorFlowMath.norm(weights[layer])
+        fun biasNorm(layer: Int): Double = TensorFlowMath.norm(biases[layer])
+        fun renderBatchSize(throughLayer: Int = weights.lastIndex): Int {
+            // Bound fetched layer activations, including very wide hidden layers, to about 8 MiB per tile.
+            val valuesPerSample = (0..throughLayer + 1).sumOf { shape[it].toLong() }
+            return (1_048_576L / valuesPerSample).coerceIn(1, 4096).toInt()
         }
     }
 
@@ -91,9 +99,8 @@ internal object NeuroXorDiagnostics {
         val workspace = snapshot.newWorkspace()
         val output = snapshot.evaluate(x, y, workspace)
         val lastHidden = workspace[workspace.lastIndex - 1]
-        val contributions = DoubleArray(lastHidden.size) { lastHidden[it] * snapshot.outputWeight(it) }
-        var preActivation = snapshot.outputBias()
-        for (part in contributions) preActivation += part
+        val contributions = snapshot.contributions(lastHidden)
+        val preActivation = TensorFlowMath.sum(contributions + snapshot.outputBias())
         return Probe(Array(snapshot.hiddenLayerCount()) { workspace[it + 1] }, output, contributions, preActivation)
     }
 
@@ -101,12 +108,9 @@ internal object NeuroXorDiagnostics {
         validateSize(size)
         val image = BufferedImage(size, size, BufferedImage.TYPE_INT_RGB)
         val pixels = (image.raster.dataBuffer as DataBufferInt).data
-        val workspace = snapshot.newWorkspace()
-        val scale = 1.0 / (size - 1)
-        for (row in 0 until size) {
-            for (column in 0 until size) {
-                pixels[row * size + column] = NeuroXorGrid.grayRgb(snapshot.evaluate(column * scale, 1.0 - row * scale, workspace))
-            }
+        gridBatches(size, snapshot.renderBatchSize()) { offset, inputs, samples ->
+            val values = snapshot.predictBatch(inputs, samples)
+            for (index in values.indices) pixels[offset + index] = NeuroXorGrid.grayRgb(values[index])
         }
         return image
     }
@@ -115,15 +119,10 @@ internal object NeuroXorDiagnostics {
         validateSize(size)
         val image = BufferedImage(size, size, BufferedImage.TYPE_INT_RGB)
         val pixels = (image.raster.dataBuffer as DataBufferInt).data
-        val first = before.newWorkspace()
-        val second = after.newWorkspace()
-        val scale = 1.0 / (size - 1)
-        for (row in 0 until size) {
-            for (column in 0 until size) {
-                val x = column * scale
-                val y = 1.0 - row * scale
-                pixels[row * size + column] = differenceRgb(after.evaluate(x, y, second) - before.evaluate(x, y, first))
-            }
+        gridBatches(size, minOf(before.renderBatchSize(), after.renderBatchSize())) { offset, inputs, samples ->
+            val first = before.predictBatch(inputs, samples)
+            val second = after.predictBatch(inputs, samples)
+            for (index in first.indices) pixels[offset + index] = differenceRgb(second[index] - first[index])
         }
         return image
     }
@@ -149,13 +148,11 @@ internal object NeuroXorDiagnostics {
         require(start >= 0 && count > 0 && start.toLong() + count <= snapshot.layerOutputCount(layer)) { "hidden neuron range is invalid" }
         val images = Array(count) { BufferedImage(size, size, BufferedImage.TYPE_INT_RGB) }
         val pixels = Array(count) { (images[it].raster.dataBuffer as DataBufferInt).data }
-        val workspace = snapshot.newWorkspace()
-        val scale = 1.0 / (size - 1)
-        for (row in 0 until size) {
-            for (column in 0 until size) {
-                snapshot.evaluate(column * scale, 1.0 - row * scale, workspace, layer)
-                for (neuron in 0 until count) pixels[neuron][row * size + column] = NeuroXorGrid.grayRgb(workspace[layer + 1][start + neuron])
-            }
+        val width = snapshot.layerOutputCount(layer)
+        gridBatches(size, snapshot.renderBatchSize(layer)) { offset, inputs, samples ->
+            val values = snapshot.evaluateBatch(inputs, samples, layer).last()
+            for (sample in 0 until samples) for (neuron in 0 until count)
+                pixels[neuron][offset + sample] = NeuroXorGrid.grayRgb(values[sample * width + start + neuron])
         }
         return images
     }
@@ -188,23 +185,27 @@ internal object NeuroXorDiagnostics {
     }
     fun weightNorm(snapshot: Snapshot, layer: Int): Double {
         require(layer in 0 until snapshot.layerCount()) { "layer index out of range" }
-        var sum = 0.0
-        for (output in 0 until snapshot.layerOutputCount(layer)) {
-            for (input in 0 until snapshot.layerInputCount(layer)) {
-                val value = snapshot.weight(layer, output, input)
-                sum += value * value
-            }
-        }
-        return Math.sqrt(sum)
+        return snapshot.weightNorm(layer)
     }
     fun biasNorm(snapshot: Snapshot, layer: Int): Double {
         require(layer in 0 until snapshot.layerCount()) { "layer index out of range" }
-        var sum = 0.0
-        for (output in 0 until snapshot.layerOutputCount(layer)) {
-            val value = snapshot.bias(layer, output)
-            sum += value * value
+        return snapshot.biasNorm(layer)
+    }
+    private inline fun gridBatches(size: Int, maximumBatch: Int, render: (Int, DoubleArray, Int) -> Unit) {
+        val scale = 1.0 / (size - 1)
+        val pixels = size * size
+        var offset = 0
+        while (offset < pixels) {
+            val count = minOf(maximumBatch, pixels - offset)
+            val inputs = DoubleArray(count * 2)
+            for (sample in 0 until count) {
+                val pixel = offset + sample
+                inputs[sample * 2] = (pixel % size) * scale
+                inputs[sample * 2 + 1] = 1.0 - (pixel / size) * scale
+            }
+            render(offset, inputs, count)
+            offset += count
         }
-        return Math.sqrt(sum)
     }
     private fun validateSize(size: Int) = require(size in 2..1024) { "map size must be in [2, 1024]" }
     private fun addIntersection(points: MutableList<Pair<Double, Double>>, x: Double, y: Double) {

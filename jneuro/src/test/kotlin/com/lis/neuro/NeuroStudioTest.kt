@@ -84,14 +84,11 @@ class NeuroStudioTest {
         assertEquals(Neuro.SigmoidMode.EXACT, StudioConfig().sigmoid)
         assertThrows(IllegalArgumentException::class.java) { StudioConfig(hidden = "6", engine = TrainingEngine.SMALL) }
         assertThrows(IllegalArgumentException::class.java) { StudioConfig(hidden = "4,4,4,4,4", engine = TrainingEngine.SMALL) }
-        for (backend in listOf(TrainingBackend.CPU, TrainingBackend.CUDA, TrainingBackend.AUTO)) {
+        for (backend in TrainingBackend.entries) {
             assertDoesNotThrow { StudioConfig(hidden = "4", backend = backend, engine = TrainingEngine.SMALL, precision = Neuro.TrainingPrecision.FP32) }
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            StudioConfig(backend = TrainingBackend.CUBLAS, engine = TrainingEngine.SMALL)
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            StudioConfig(backend = TrainingBackend.CPU, precision = Neuro.TrainingPrecision.FP32)
+        for (backend in TrainingBackend.entries) {
+            assertDoesNotThrow { StudioConfig(backend = backend, precision = Neuro.TrainingPrecision.FP32) }
         }
     }
 
@@ -115,7 +112,7 @@ class NeuroStudioTest {
             assertEquals("AUTO", ready["requestedBackend"].toString())
             assertEquals("FP32", ready["requestedPrecision"].toString())
             assertEquals("CPU", ready["effectiveBackend"].toString())
-            assertEquals("FP64", ready["effectivePrecision"].toString())
+            assertEquals("FP32", ready["effectivePrecision"].toString())
             assertEquals("3", ready["batchSize"].toString())
             assertEquals(runId, capture.fields(capture.events("studio.training.completed").single())["runId"])
             assertEquals(runId, capture.fields(capture.events("studio.session.released").single())["runId"])
@@ -354,12 +351,12 @@ class NeuroStudioTest {
         NeuroStudio(config, openSession = sessions::open).use { studio ->
             studio.step(4)
             assertEquals(4, studio.advance(10))
-            expected.trainMiniBatch(4, 3)
+            expected.trainMiniBatch(4, 3, 1, Neuro.BatchBackend.CPU, Neuro.TrainingPrecision.FP32)
             assertEquals(4, studio.epochs)
             assertEquals(expected.trainingError(), studio.currentError, 0.0)
             assertArrayEquals(NeuroXorDiagnostics.capture(expected, 4, expected.trainingError()).parameters(),
                 studio.frame().diagnostics.parameters(), 0.0)
-            assertEquals(TrainingBackend.CUBLAS, studio.frame().deviceInfo!!.backend)
+            assertEquals(TrainingBackend.CUDA, studio.frame().deviceInfo!!.backend)
             assertEquals("FP32", studio.frame().deviceInfo!!.precision)
             studio.setRunning(true)
             var checks = 0
@@ -397,8 +394,7 @@ class NeuroStudioTest {
         for (config in listOf<() -> StudioConfig>(
             { StudioConfig("2,") }, { StudioConfig(maxEpochs = 0) }, { StudioConfig(targetError = -1.0) },
             { StudioConfig(targetError = Double.NaN) }, { StudioConfig(learningRate = 0.0) }, { StudioConfig(momentum = 1.0) },
-            { StudioConfig(batchSize = 0) }, { StudioConfig(precision = Neuro.TrainingPrecision.FP32) },
-            { StudioConfig(backend = TrainingBackend.CUDA, precision = Neuro.TrainingPrecision.FP32) }))
+            { StudioConfig(batchSize = 0) }))
             assertThrows(IllegalArgumentException::class.java) { config() }
         val studio = NeuroStudio()
         assertThrows(IllegalArgumentException::class.java) { studio.step(0) }
