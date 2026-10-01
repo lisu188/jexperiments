@@ -220,7 +220,8 @@ internal class ArchitectureSearchPanel(
         changing = true; strategy.selectedItem = next.strategy; execution.selectedItem = next.execution
         policy.selectedItem = next.policy; evaluation.selectedItem = mode; changing = false
         running = true; config = next; scoreMode = mode; result = null; selected = null
-        results = emptyList(); lineage = emptyMap(); chosenTrial = null; surface = null
+        results = emptyList(); lineage = emptyMap(); shownLineage = null; chosenTrial = null; surface = null
+        clearRankingCache()
         tableModel.fireTableDataChanged(); selectedSeed.removeAllItems()
         strategy.isEnabled = false; execution.isEnabled = false; policy.isEnabled = false
         start.isEnabled = false; cancel.isEnabled = true; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false
@@ -282,6 +283,7 @@ internal class ArchitectureSearchPanel(
         if (result != null) NeuroLog.info("ui", "ui.search.results.invalidated", "searchId" to result?.logId)
         strategy.isEnabled = true; execution.isEnabled = true; policy.isEnabled = true; lineage = emptyMap(); shownLineage = null
         running = false; result = null; config = null; results = emptyList(); selected = null
+        clearRankingCache()
         chosenTrial = null; surface = null; tableModel.fireTableDataChanged()
         cancel.isEnabled = false; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false; start.isEnabled = sourceSize > 0
         summary.text = "Active configuration changed. Start a new search for this dataset."
@@ -309,6 +311,10 @@ internal class ArchitectureSearchPanel(
     }
 
     private fun selectedCandidate(): ArchitectureCandidate? = results.firstOrNull { it.architecture == selected }
+    private fun clearRankingCache() {
+        rankedCandidates = null; rankedPolicy = null; rankedConfig = null; cachedSelection = null
+    }
+
     private fun currentSelection(): ArchitectureSelection? = config?.let {
         val selectedPolicy = policy.selectedItem as ArchitecturePolicy
         if (rankedCandidates !== results || rankedPolicy != selectedPolicy || rankedConfig !== it) {

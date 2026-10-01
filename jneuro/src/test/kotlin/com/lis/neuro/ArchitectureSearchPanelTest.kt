@@ -10,6 +10,48 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class ArchitectureSearchPanelTest {
+    @Test fun invalidatingResultsReleasesCachedCandidatesAndSelection() {
+        val report = report()
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
+            panel.complete(report)
+            assertSame(report.candidates, field(panel, "rankedCandidates"))
+            assertNotNull(field(panel, "cachedSelection"))
+
+            panel.invalidateResults()
+            for (name in listOf("rankedCandidates", "rankedPolicy", "rankedConfig", "cachedSelection")) {
+                assertNull(field(panel, name), "Invalidated results must release $name")
+            }
+            render(panel, 1000, 750)
+            assertNull(field(panel, "rankedCandidates"))
+            assertNull(field(panel, "cachedSelection"))
+            assertEquals(0, (field(panel, "table") as JTable).rowCount)
+
+            panel.complete(report)
+            assertSame(report.candidates, field(panel, "rankedCandidates"))
+            assertEquals(report.selection.recommended?.architecture, field(panel, "selected"))
+        }
+    }
+
+    @Test fun startingAnotherSearchReleasesPreviousRankingBeforeProgressArrives() {
+        val report = report()
+        EventQueue.invokeAndWait {
+            val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
+            panel.complete(report)
+            assertSame(report.candidates, field(panel, "rankedCandidates"))
+            assertNotNull(field(panel, "cachedSelection"))
+
+            panel.started(report.config, report.data.evaluation)
+            for (name in listOf("rankedCandidates", "rankedPolicy", "rankedConfig", "cachedSelection")) {
+                assertNull(field(panel, name), "A new search must release $name before its first progress update")
+            }
+            render(panel, 1000, 750)
+            assertTrue((field(panel, "rankedCandidates") as List<*>?).isNullOrEmpty())
+            assertNull((field(panel, "cachedSelection") as ArchitectureSelection?)?.bestError)
+            assertEquals(0, (field(panel, "table") as JTable).rowCount)
+        }
+    }
+
     @Test fun searchShowsBackendInitializationFailureAndInheritsSelection() {
         val sessions = RecordingTrainingSessions().apply { unavailable = true }
         val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
