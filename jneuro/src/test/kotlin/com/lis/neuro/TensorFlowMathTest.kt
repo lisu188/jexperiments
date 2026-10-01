@@ -293,28 +293,27 @@ class TensorFlowMathTest {
         }
         val state = fixture()
         val available = TensorFlowMath.isGpuAvailable()
-        for (backend in listOf(TrainingBackend.CUDA, TrainingBackend.CUBLAS)) {
-            if (available) {
-                assertEquals("", TensorFlowMath.gpuFailure())
-                assertEquals(TrainingBackend.CUDA, TensorFlowMath.info(backend, Neuro.TrainingPrecision.FP32).backend)
-                assertArrayEquals(forward(state, parameters, state.inputs, state.samples).last(),
-                    TensorFlowMath.predict(state.topology, state.weights, state.biases, parameters,
-                        state.inputs, state.samples, Neuro.TrainingPrecision.FP32, backend), 5e-7)
-                TensorFlowMath.trainingKernel(state, parameters, Neuro.TrainingPrecision.FP32, backend).use {
-                    assertEquals(TrainingBackend.CUDA, it.info.backend)
-                    val order = arrayOf(intArrayOf(4, 2, 0, 1, 3))
-                    assertState(advance(state, parameters, order, 3, false), it.train(order, 3, false), 5e-7)
-                }
-            } else {
-                assertTrue(TensorFlowMath.gpuFailure().isNotBlank())
-                assertThrows(IllegalStateException::class.java) { TensorFlowMath.info(backend, Neuro.TrainingPrecision.FP32) }
-                assertThrows(IllegalStateException::class.java) {
-                    TensorFlowMath.predict(state.topology, state.weights, state.biases, parameters,
-                        state.inputs, state.samples, Neuro.TrainingPrecision.FP32, backend)
-                }
-                assertThrows(IllegalStateException::class.java) {
-                    TensorFlowMath.trainingKernel(state, parameters, Neuro.TrainingPrecision.FP32, backend).close()
-                }
+        val backend = TrainingBackend.GPU
+        if (available) {
+            assertEquals("", TensorFlowMath.gpuFailure())
+            assertEquals(TrainingBackend.GPU, TensorFlowMath.info(backend, Neuro.TrainingPrecision.FP32).backend)
+            assertArrayEquals(forward(state, parameters, state.inputs, state.samples).last(),
+                TensorFlowMath.predict(state.topology, state.weights, state.biases, parameters,
+                    state.inputs, state.samples, Neuro.TrainingPrecision.FP32, backend), 5e-7)
+            TensorFlowMath.trainingKernel(state, parameters, Neuro.TrainingPrecision.FP32, backend).use {
+                assertEquals(TrainingBackend.GPU, it.info.backend)
+                val order = arrayOf(intArrayOf(4, 2, 0, 1, 3))
+                assertState(advance(state, parameters, order, 3, false), it.train(order, 3, false), 5e-7)
+            }
+        } else {
+            assertTrue(TensorFlowMath.gpuFailure().isNotBlank())
+            assertThrows(IllegalStateException::class.java) { TensorFlowMath.info(backend, Neuro.TrainingPrecision.FP32) }
+            assertThrows(IllegalStateException::class.java) {
+                TensorFlowMath.predict(state.topology, state.weights, state.biases, parameters,
+                    state.inputs, state.samples, Neuro.TrainingPrecision.FP32, backend)
+            }
+            assertThrows(IllegalStateException::class.java) {
+                TensorFlowMath.trainingKernel(state, parameters, Neuro.TrainingPrecision.FP32, backend).close()
             }
         }
     }

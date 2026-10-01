@@ -56,16 +56,18 @@ class ArchitectureSearchPanelTest {
         val sessions = RecordingTrainingSessions().apply { unavailable = true }
         val config = ArchitectureSearchConfig(strategy = ArchitectureSearchStrategy.EXHAUSTIVE,
             maxLayers = 1, maxWidth = 1, seeds = listOf(42), requiredSuccesses = 1,
-            maxEpochs = 1, checkEvery = 1, backend = TrainingBackend.CUDA)
+            maxEpochs = 1, checkEvery = 1, backend = TrainingBackend.GPU)
         val report = NeuroArchitectureSearch(sessions::open).search(ArchitectureSearchData.fitting(xor()), config)
         EventQueue.invokeAndWait {
             val panel = ArchitectureSearchPanel({ _, _, _, _ -> }, {}, { _, _ -> }, { _, _, _ -> })
-            panel.setSource(StudioConfig(backend = TrainingBackend.CUBLAS, precision = Neuro.TrainingPrecision.FP32, batchSize = 7), 4)
-            assertEquals(TrainingBackend.CUBLAS, panel.readConfig().backend)
+            panel.setSource(StudioConfig(backend = TrainingBackend.GPU, precision = Neuro.TrainingPrecision.FP32, batchSize = 7), 4)
+            assertEquals(TrainingBackend.GPU, panel.readConfig().backend)
             assertEquals(Neuro.TrainingPrecision.FP32, panel.readConfig().precision)
             assertEquals(7, panel.readConfig().batchSize)
+            assertTrue((field(panel, "sourceLabel") as JLabel).text.contains("TensorFlow GPU"))
+            assertTrue((field(panel, "sourceLabel") as JLabel).text.contains("General topology"))
             panel.complete(report)
-            assertTrue((field(panel, "summary") as JLabel).text.contains("CUDA: CUDA fixture unavailable"))
+            assertTrue((field(panel, "summary") as JLabel).text.contains("TensorFlow GPU: GPU fixture unavailable"))
             assertFalse(button(panel, "Replay selected run").isEnabled)
         }
     }
@@ -79,12 +81,12 @@ class ArchitectureSearchPanelTest {
             val selection = field(panel, "selected")
             val trial = field(panel, "chosenTrial")
             val surface = field(panel, "surface")
-            panel.replayFailed("Recorded CUDA device differs")
+            panel.replayFailed("Recorded GPU device differs")
             assertSame(report, field(panel, "result"))
             assertSame(selection, field(panel, "selected"))
             assertSame(trial, field(panel, "chosenTrial"))
             assertSame(surface, field(panel, "surface"))
-            assertTrue((field(panel, "summary") as JLabel).text.contains("Replay error: Recorded CUDA device differs"))
+            assertTrue((field(panel, "summary") as JLabel).text.contains("Replay error: Recorded GPU device differs"))
             assertTrue((field(panel, "progressBar") as JProgressBar).string.contains("results retained"))
             assertTrue(button(panel, "Replay selected run").isEnabled)
         }

@@ -3,28 +3,28 @@ package com.lis.neuro
 import java.nio.file.Path
 
 /** Small repeatable comparison by default; opt into the larger matrix explicitly. */
-object NeuroCudaTrainingBenchmark {
-    @JvmStatic fun main(args: Array<String>) = NeuroLog.application("NeuroCudaTrainingBenchmark") {
+object TensorFlowTrainingBenchmark {
+    @JvmStatic fun main(args: Array<String>) = NeuroLog.application("TensorFlowTrainingBenchmark") {
         if (args.contentEquals(arrayOf("--help")) || args.contentEquals(arrayOf("-h"))) {
-            println(NeuroCudaBenchmarkConfig.usage())
+            println(TensorFlowBenchmarkConfig.usage())
             return@application
         }
-        val config = NeuroCudaBenchmarkConfig.parse(args)
+        val config = TensorFlowBenchmarkConfig.parse(args)
         println("Starting CPU/GPU benchmark: profile=${config.profile}, epochs=${config.epochs}, " +
             "warmups=${config.warmups}, repeats=${config.repeats}, CPU parallelism=1, " +
             "batches=${config.batches.joinToString(",")}, backends=${config.backends.joinToString(",")}, " +
             "topology=${config.topology?.joinToString("x") ?: "profile-default"}, samples=${config.sampleCount}")
         try {
             val service = if (config.retainedDevice) NeuroTrainingDeviceService() else null
-            val report = try { NeuroCudaBenchmarkHarness.run(config, sessionFactory = { model, engine, batch -> engine.open(model, batch, service) }, onWorkloadCompleted = { workload, completed, total ->
+            val report = try { TensorFlowBenchmarkHarness.run(config, sessionFactory = { model, engine, batch -> engine.open(model, batch, service) }, onWorkloadCompleted = { workload, completed, total ->
                 println("Completed $completed/$total: ${workload.name}, topology=${workload.topology.joinToString("x")}, " +
                     "samples=${workload.samples}, verified ${config.repeats * config.backends.size} measured rounds.")
             }) } finally { service?.close() }
-            NeuroCudaBenchmarkReports.write(report, config.output)
-            println(NeuroCudaBenchmarkReports.console(report))
+            TensorFlowBenchmarkReports.write(report, config.output)
+            println(TensorFlowBenchmarkReports.console(report))
             println("Reports: ${config.output.toAbsolutePath()}.json and .csv")
-        } catch (failure: NeuroCudaBenchmarkFailure) {
-            if (NeuroCudaBenchmarkReports.writeFailure(failure, config.output)) {
+        } catch (failure: TensorFlowBenchmarkFailure) {
+            if (TensorFlowBenchmarkReports.writeFailure(failure, config.output)) {
                 System.err.println("Failure reports: ${config.output.toAbsolutePath()}.json and .csv")
             }
             throw failure
@@ -32,36 +32,24 @@ object NeuroCudaTrainingBenchmark {
     }
 }
 
-internal enum class NeuroCudaBenchmarkBackend(val backend: TrainingBackend, val precision: Neuro.TrainingPrecision,
-                                              val engine: TrainingEngine = TrainingEngine.REFERENCE, val vectorBits: Int = 0) {
-    CPU(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64),
-    CUDA(TrainingBackend.CUDA, Neuro.TrainingPrecision.FP64),
-    CUBLAS_FP64(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP64),
-    CUBLAS_FP32(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32),
-    CPU_LEGACY(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64),
-    SMALL_SCALAR_FP64(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, TrainingEngine.SMALL),
-    SMALL_SCALAR_FP32(TrainingBackend.CPU, Neuro.TrainingPrecision.FP32, TrainingEngine.SMALL),
-    SMALL_128_FP64(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, TrainingEngine.SMALL, 128),
-    SMALL_256_FP64(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, TrainingEngine.SMALL, 256),
-    SMALL_128_FP32(TrainingBackend.CPU, Neuro.TrainingPrecision.FP32, TrainingEngine.SMALL, 128),
-    SMALL_256_FP32(TrainingBackend.CPU, Neuro.TrainingPrecision.FP32, TrainingEngine.SMALL, 256),
-    SMALL_CUDA_FP64(TrainingBackend.CUDA, Neuro.TrainingPrecision.FP64, TrainingEngine.SMALL),
-    SMALL_CUDA_FP32(TrainingBackend.CUDA, Neuro.TrainingPrecision.FP32, TrainingEngine.SMALL),
-    NATIVE_FP64(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, TrainingEngine.SMALL);
+internal enum class TensorFlowBenchmarkBackend(val backend: TrainingBackend, val precision: Neuro.TrainingPrecision) {
+    CPU_FP64(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64),
+    CPU_FP32(TrainingBackend.CPU, Neuro.TrainingPrecision.FP32),
+    GPU_FP64(TrainingBackend.GPU, Neuro.TrainingPrecision.FP64),
+    GPU_FP32(TrainingBackend.GPU, Neuro.TrainingPrecision.FP32);
 
     fun open(model: Neuro, batch: Int, service: NeuroTrainingDeviceService? = null): NeuroTrainingSession =
-        if (service != null) service.openSession(model, backend, precision, batch, engine)
-        else model.newTrainingSession(backend, precision, batch, engine)
+        if (service != null) service.openSession(model, backend, precision, batch, TrainingEngine.REFERENCE)
+        else model.newTrainingSession(backend, precision, batch, TrainingEngine.REFERENCE)
 
 }
 
 internal enum class NeuroBenchmarkMode { MINIBATCH, EPOCH, CHUNK }
 
-internal data class NeuroCudaBenchmarkConfig(
+internal data class TensorFlowBenchmarkConfig(
     val profile: String = "smoke", val epochs: Int = 2, val warmups: Int = 1, val repeats: Int = 3,
-    val batches: List<Int> = listOf(16, 64), val backends: List<NeuroCudaBenchmarkBackend> = listOf(
-        NeuroCudaBenchmarkBackend.CPU, NeuroCudaBenchmarkBackend.CUDA, NeuroCudaBenchmarkBackend.CUBLAS_FP64, NeuroCudaBenchmarkBackend.CUBLAS_FP32),
-    val output: Path = Path.of("build", "reports", "cuda-benchmark", "benchmark"),
+    val batches: List<Int> = listOf(16, 64), val backends: List<TensorFlowBenchmarkBackend> = TensorFlowBenchmarkBackend.entries,
+    val output: Path = Path.of("build", "reports", "tensorflow-benchmark", "benchmark"),
     val topology: List<Int>? = null, val samples: Int? = null,
     val mode: NeuroBenchmarkMode = NeuroBenchmarkMode.MINIBATCH,
     val sigmoid: Neuro.SigmoidMode = Neuro.SigmoidMode.EXACT,
@@ -84,9 +72,6 @@ internal data class NeuroCudaBenchmarkConfig(
             "batches must contain distinct sizes in 1..4096"
         }
         require(backends.isNotEmpty() && backends.distinct().size == backends.size) { "backends must be nonempty and distinct" }
-        require(mode == NeuroBenchmarkMode.MINIBATCH || NeuroCudaBenchmarkBackend.CPU_LEGACY !in backends) {
-            "CPU_LEGACY compares bulk mini-batch training; select --mode MINIBATCH."
-        }
         require(output.fileName != null && output.toString().isNotBlank()) { "output must be a report file prefix" }
     }
     companion object {
@@ -99,10 +84,8 @@ internal data class NeuroCudaBenchmarkConfig(
               --warmups N                  0..100; default 1, excluded from measurements
               --repeats N                  1..100; default 3
               --batches 16,64              Distinct sizes in 1..4096
-              --backends CPU,CUDA,CUBLAS_FP64,CUBLAS_FP32
-                         CPU_LEGACY,SMALL_SCALAR_FP64,SMALL_SCALAR_FP32,SMALL_128_FP64,SMALL_256_FP64,
-                         SMALL_128_FP32,SMALL_256_FP32,SMALL_CUDA_FP64,SMALL_CUDA_FP32
-                         Legacy backend names are compatibility aliases; every entry uses TensorFlow.
+              --backends CPU_FP64,CPU_FP32,GPU_FP64,GPU_FP32
+                         TensorFlow device and arithmetic precision; all four selected by default
               --mode MINIBATCH|EPOCH|CHUNK Publication per call, per UI epoch, or bounded chunks
               --sigmoid EXACT|FAST         Compare matching arithmetic; default EXACT
               --retained-device true|false Reuse the TensorFlow training service between sessions
@@ -113,8 +96,8 @@ internal data class NeuroCudaBenchmarkConfig(
             GPU selection is explicit: missing TensorFlow GPU support fails without CPU fallback.
         """.trimIndent()
 
-        fun parse(args: Array<String>): NeuroCudaBenchmarkConfig {
-            var result = NeuroCudaBenchmarkConfig()
+        fun parse(args: Array<String>): TensorFlowBenchmarkConfig {
+            var result = TensorFlowBenchmarkConfig()
             var index = 0
             while (index < args.size) {
                 val option = args[index++]
@@ -129,7 +112,7 @@ internal data class NeuroCudaBenchmarkConfig(
                     "--warmups" -> result.copy(warmups = value.toInt())
                     "--repeats" -> result.copy(repeats = value.toInt())
                     "--batches" -> result.copy(batches = value.split(',').map { it.trim().toInt() })
-                    "--backends" -> result.copy(backends = value.split(',').map { NeuroCudaBenchmarkBackend.valueOf(it.trim().uppercase(java.util.Locale.ROOT)) })
+                    "--backends" -> result.copy(backends = value.split(',').map { TensorFlowBenchmarkBackend.valueOf(it.trim().uppercase(java.util.Locale.ROOT)) })
                     "--output" -> result.copy(output = Path.of(value))
                     "--mode" -> result.copy(mode = NeuroBenchmarkMode.valueOf(value.uppercase(java.util.Locale.ROOT)))
                     "--sigmoid" -> result.copy(sigmoid = Neuro.SigmoidMode.valueOf(value.uppercase(java.util.Locale.ROOT)))

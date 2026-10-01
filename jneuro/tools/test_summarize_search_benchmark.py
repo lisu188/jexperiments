@@ -13,11 +13,11 @@ class SearchSummaryTest(unittest.TestCase):
                            batchSize=1, precision="FP64", sigmoid="EXACT", checkEvery=25,
                            warmups=1, repeats=3, pid=fork + 1, started=str(fork), sourceRevision="abc123",
                            java="27", vm="OpenJDK", os="Linux", osVersion="6.8", arch="amd64",
-                           cpuModel="test CPU", heapMaxBytes=1000000, jvmArguments=["--add-modules=jdk.incubator.vector"])
+                           cpuModel="test CPU", heapMaxBytes=1000000, jvmArguments=["--enable-native-access=ALL-UNNAMED"])
         trial = dict(seed=42, state="COMPLETED", epochs=2000, sampleUpdates=352000, bestEpoch=25,
                      parametersAtBest=[1.] * 33, bestRmse=.4, finalRmse=.5, failure="",
                      deviceIdentity="jvm-cpu", backend="CPU", precision="FP64", sigmoid="EXACT", engine="SMALL",
-                     kernel="small-cpu-v1", route="SESSION", simdBits=256)
+                     kernel="tensorflow-2.21.0-dense-loop-v2", route="SESSION")
         common = dict(type="round", workComplete=True, termination="TRIAL_BUDGET", failedTrials=0,
                       partialCandidates=0, evaluatedCandidates=1, completeTrials=1, committedEpochs=2000,
                       sampleUpdates=352000, candidates=[dict(hidden=[8], parameters=33, complete=True, trials=[trial])])
@@ -26,9 +26,9 @@ class SearchSummaryTest(unittest.TestCase):
             for execution, duration in (("REFERENCE", 2000000), ("OPTIMIZED", 1000000)):
                 row = dict(copy.deepcopy(common), case=f"SMALL/CPU/{execution}/workers=4/searchSeed=42",
                            round=number, totalNanos=duration)
-                # Hardware is the same; different execution kernels and names are legitimate.
+                # Hardware is the same; session/cohort routes and descriptive names may differ.
                 if execution == "REFERENCE":
-                    row["candidates"][0]["trials"][0].update(kernel="small-cpu-cohort-v1", route="COHORT", device="CPU model lanes")
+                    row["candidates"][0]["trials"][0].update(route="COHORT", device="TensorFlow CPU model lanes")
                 else:
                     row["candidates"][0]["trials"][0]["device"] = "CPU"
                 records.append(row)
@@ -174,38 +174,55 @@ class SearchSummaryTest(unittest.TestCase):
             for index, records in enumerate(reports):
                 for row in records[1:]:
                     if "/REFERENCE/" in row["case"] and (row["round"] + index) % 2 == 0:
-                        # Session and model-lane cohort kernels can legitimately use different widths.
-                        row["candidates"][0]["trials"][0].update(route="SESSION", kernel="small-cpu-v1", simdBits=128)
+                        # Slots can change the reference route while the TensorFlow math stays the same.
+                        row["candidates"][0]["trials"][0].update(route="SESSION", kernel="tensorflow-2.21.0-dense-loop-v2")
         result = self.run_reports(rerouted)["comparisons"][0]
         self.assertTrue(result["qualifies"])
         self.assertTrue(result["validExecutionRoutes"])
         routes = result["observedExecutionRoutes"]["REFERENCE"]
         self.assertEqual({"SESSION", "COHORT"}, {row["route"] for row in routes})
         self.assertEqual(9, sum(row["trials"] for row in routes))
-        for route, kernel, bits in (("COHORT", "small-cpu-v1", 256), ("SESSION", "unknown", 256),
-                                    ("SESSION", "small-cpu-v1", 512)):
+        for route, kernel in (("COHORT", "tensorflow-2.21.0-dense-loop-v2"),
+                              ("SESSION", "unknown"), ("SESSION", "small-cpu-v1")):
             result = self.run_reports(lambda reports: reports[0][-1]["candidates"][0]["trials"][0].update(
-                route=route, kernel=kernel, simdBits=bits))["comparisons"][0]
+                route=route, kernel=kernel))["comparisons"][0]
             self.assertFalse(result["qualifies"])
             self.assertFalse(result["validExecutionRoutes"])
+        self.assertTrue(all("simdBits" not in route for route in routes))
 
-    def test_cuda_and_general_reference_route_families(self):
-        def cuda(reports):
+    def test_gpu_and_general_reference_route_families(self):
+        def gpu(reports):
             for records in reports:
                 for row in records[1:]:
-                    row["case"] = row["case"].replace("/CPU/", "/CUDA/")
+                    row["case"] = row["case"].replace("/CPU/", "/GPU/")
                     reference = "/REFERENCE/" in row["case"]
-                    route = ("SESSION" if row["round"] % 2 else "COHORT") if reference else "CUDA_QUEUE"
-                    prefix = "small-v2" if reference else "small-search-v3"
-                    row["candidates"][0]["trials"][0].update(backend="CUDA", deviceIdentity="gpu-0", simdBits=0,
-                        route=route, kernel=prefix + "/packed-fp64/driver-sha")
-        self.assertTrue(self.run_reports(cuda)["comparisons"][0]["qualifies"])
+                    route = ("SESSION" if row["round"] % 2 else "COHORT") if reference else "TENSORFLOW_QUEUE"
+                    row["candidates"][0]["trials"][0].update(backend="GPU", deviceIdentity="tensorflow:/device:GPU:0",
+                        route=route, kernel="tensorflow-2.21.0-dense-loop-v2")
+        self.assertTrue(self.run_reports(gpu)["comparisons"][0]["qualifies"])
         def general(reports):
             for records in reports:
                 for row in records[1:]:
                     row["case"] = row["case"].replace("SMALL/", "REFERENCE/")
-                    row["candidates"][0]["trials"][0].update(engine="REFERENCE", route="SESSION", kernel="cpu-v1", simdBits=0)
+                    row["candidates"][0]["trials"][0].update(engine="REFERENCE", route="SESSION",
+                        kernel="tensorflow-2.21.0-dense-loop-v2")
         self.assertTrue(self.run_reports(general)["comparisons"][0]["qualifies"])
+        def general_gpu(reports):
+            gpu(reports)
+            general(reports)
+        self.assertTrue(self.run_reports(general_gpu)["comparisons"][0]["qualifies"])
+
+    def test_tensor_batches_require_real_tensorflow_kernel_and_device_metadata(self):
+        for engine in ("REFERENCE", "SMALL"):
+            for backend in ("CPU", "GPU"):
+                trial = dict(route="TENSOR_BATCH", kernel="tensorflow-2.21.0-batched-v1-t4")
+                self.assertTrue(summary.valid_execution_route(engine, backend, "BATCHED", {}, trial))
+                for invalid in (dict(route="SESSION", kernel=trial["kernel"]),
+                                dict(route="TENSOR_BATCH", kernel="tensorflow-2.21.0-dense-loop-v2"),
+                                dict(route="TENSOR_BATCH", kernel="tensorflow-2.21.0-batched-v1-t0"),
+                                dict(route="TENSOR_BATCH", kernel="small-cpu-v1")):
+                    self.assertFalse(summary.valid_execution_route(engine, backend, "BATCHED", {}, invalid))
+        self.assertFalse(summary.valid_execution_route("SMALL", "CUDA", "BATCHED", {}, trial))
 
     def test_literal_ten_percent_median_reduction_and_no_p95_regression(self):
         for duration, qualifies in ((1800000, True), (1810000, False)):

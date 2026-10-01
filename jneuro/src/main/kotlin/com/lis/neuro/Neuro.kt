@@ -10,7 +10,7 @@ class Neuro @JvmOverloads constructor(
     /** Legacy compatibility hint. TensorFlow selects its compute kernels for every value. */
     enum class Kernel { AUTO, SCALAR, VECTOR }
     enum class SigmoidMode { EXACT, FAST }
-    enum class BatchBackend { CPU, CUDA, AUTO }
+    enum class BatchBackend { CPU, GPU, AUTO }
     enum class TrainingPrecision { FP64, FP32 }
 
     @JvmRecord
@@ -476,7 +476,7 @@ class Neuro @JvmOverloads constructor(
         val effectiveBatch = minOf(batchSize, trainingSampleCount())
         val requested = when (backend) {
             BatchBackend.CPU -> TrainingBackend.CPU
-            BatchBackend.CUDA -> TrainingBackend.CUDA
+            BatchBackend.GPU -> TrainingBackend.GPU
             BatchBackend.AUTO -> TrainingBackend.AUTO
         }
         TensorFlowMath.trainingKernel(exportTrainingState(shareDataset = true), hyperParameters,

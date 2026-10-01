@@ -105,37 +105,37 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-095 | Reset validation replay restores the full Studio dataset | `validationSearchReplaysHeldOutPartition` |
 | GUI-096 | Adaptive result ancestry names an eligible, fully evaluated elite for each descendant | `searchResultsSupportNativeSelectionInspectionReplayAndApply` |
 | GUI-097 | Parallel trials set to 32 completes the initial seed's full budget, starts 32 concurrent elite offspring with controlled training, exposes 32 actual workers, and releases all sessions on cancellation | `parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization` |
-| GUI-098 | CPU is the default; editing the backend selection alone does not change the active run | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
-| GUI-099 | Applying an unavailable CUDA backend shows a failure and never falls back to CPU | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
-| GUI-100 | Select CPU after CUDA failure and complete a training epoch | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
-| GUI-101 | Selected CUDA device and FP64 precision appear after training starts | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
+| GUI-098 | Offer exactly TensorFlow CPU, TensorFlow GPU and TensorFlow AUTO (CPU), with one GPU choice; CPU is the default and edits remain unapplied | `backendSelectionRequiresApplyAndUnavailableGpuRecovers` |
+| GUI-099 | Applying an unavailable TensorFlow GPU backend shows a failure and never falls back to CPU | `backendSelectionRequiresApplyAndUnavailableGpuRecovers` |
+| GUI-100 | Select CPU after TensorFlow GPU failure and complete a training epoch | `backendSelectionRequiresApplyAndUnavailableGpuRecovers` |
+| GUI-101 | Selected TensorFlow GPU device and FP64 precision appear after training starts | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
 | GUI-102 | One epoch, ten epochs, train and pause route through the selected backend | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
 | GUI-103 | Seed comparison uses the active backend and closes all study sessions | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
 | GUI-104 | Architecture search inherits the active backend and records device metadata for each trial | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
 | GUI-105 | Replay preserves the scored trial backend and Reset prepares a fresh model | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
 | GUI-106 | Native window close releases an active backend session | `selectedBackendRoutesControlsStudySearchReplayAndShutdown` |
-| GUI-107 | Unavailable CUDA search reports its backend failure and cannot replay failed trials | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
-| GUI-108 | Reject a replay on a different CUDA device while retaining scored results, selection and the paused main model | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
-| GUI-109 | Unavailable CUDA replay keeps completed search snapshots inspectable and permits retry | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
-| GUI-110 | Retry after CUDA recovers installs the recorded checkpoint and only then invalidates the completed search | `rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
+| GUI-107 | Unavailable TensorFlow GPU search reports its backend failure and cannot replay failed trials | `backendSelectionRequiresApplyAndUnavailableGpuRecovers` |
+| GUI-108 | Reject a replay on a different TensorFlow GPU device while retaining scored results, selection and the paused main model | `rejectedGpuReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
+| GUI-109 | Unavailable TensorFlow GPU replay keeps completed search snapshots inspectable and permits retry | `rejectedGpuReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
+| GUI-110 | Retry after TensorFlow GPU recovers installs the recorded checkpoint and only then invalidates the completed search | `rejectedGpuReplayRetainsResultsAndMainModelUntilSuccessfulRetry` |
 | GUI-111 | Select AUTO training backend and apply a custom batch size | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
 | GUI-112 | Reset after Apply and train exactly one epoch through the AUTO batch backend, reporting its resolved CPU device | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
 | GUI-113 | Select FP32 for AUTO and retain the requested precision while reporting actual TensorFlow CPU FP32 execution | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
 | GUI-114 | Changing from AUTO to the TensorFlow GPU backend preserves the enabled FP32 editor without changing the active run before apply | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
-| GUI-115 | Select CUBLAS with FP32 and train a configured mini-batch epoch | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
-| GUI-116 | Architecture search inherits CUBLAS, FP32 and batch size and records its resolved device | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
-| GUI-117 | Replay reopens the CUBLAS alias's recorded CUDA device while preserving its scored FP32 precision and batch size | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
-| GUI-118 | Reject zero batch size without changing the active model | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-115 | Select TensorFlow GPU with FP32 and train a configured mini-batch epoch | `tensorflowGpuBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-116 | Architecture search inherits TensorFlow GPU, FP32 and batch size and records its resolved device | `tensorflowGpuBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-117 | Replay reopens the recorded TensorFlow GPU device while preserving its scored FP32 precision and batch size | `tensorflowGpuBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-118 | Reject zero batch size without changing the active model | `tensorflowGpuBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
 | GUI-119 | Applying settings and stepping through native controls writes correlated configuration, run and effective-device events | `detailedLogsFollowNativeControlsExportAndShutdown` |
 | GUI-120 | Native tab navigation and PNG file-dialog export log the selected view, destination and completed artifact | `detailedLogsFollowNativeControlsExportAndShutdown` |
 | GUI-121 | Native window close logs shutdown and worker completion after releasing the active training session | `detailedLogsFollowNativeControlsExportAndShutdown` |
-| GUI-122 | Select SMALL, AUTO, FP32 and FAST sigmoid; edits remain unapplied until restart and actual TensorFlow CPU metadata is shown without a custom SIMD claim | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
-| GUI-123 | SMALL one-epoch and ten-epoch commands preserve exact counts and the epoch-ten checkpoint | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
-| GUI-124 | SMALL search inherits precision and sigmoid, trains its full budget and replays the scored engine/device checkpoint | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
-| GUI-125 | Returning to REFERENCE CPU preserves the enabled FP32 selection; apply the SMALL/CUBLAS TensorFlow GPU compatibility configuration and train one epoch through the recording provider | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
-| GUI-126 | SMALL rejects unsupported hidden widths and search bounds before altering the run or starting trials | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
+| GUI-122 | Select Compact topology, AUTO, FP32 and FAST sigmoid; edits remain unapplied until restart and actual TensorFlow CPU metadata is shown | `topologyFamilyPrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
+| GUI-123 | Compact topology one-epoch and ten-epoch commands preserve exact counts and the epoch-ten checkpoint | `topologyFamilyPrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
+| GUI-124 | Compact topology search inherits precision and sigmoid, trains its full budget and replays the scored topology-family/device checkpoint | `topologyFamilyPrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
+| GUI-125 | Returning to General topology on CPU preserves the enabled FP32 selection; apply Compact topology on TensorFlow GPU and train one epoch through the recording provider | `topologyFamilyPrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
+| GUI-126 | Compact topology rejects unsupported hidden widths and search bounds before altering the run or starting trials | `topologyFamilyPrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
 | GUI-127 | Resize to a small window, reach lower advanced numeric editors, scroll them out of view and back with the mouse wheel, and apply their values | `lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow` |
-| GUI-128 | Select optimized search execution independently of strategy and training engine, and return to reference execution | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
+| GUI-128 | Select optimized search execution independently of strategy and topology family, and return to reference execution | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
 | GUI-129 | Read the epoch control's full-budget and initial-seed explanation, then complete an optimized Spiral validation search preserving full seed budgets, scoring checkpoints and the paused main model | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
 | GUI-130 | Replay the optimized Spiral checkpoint and reset from its held-out partition to the full 220-point dataset | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
 | GUI-131 | Observe current epoch / requested epoch budget, cancel optimized Spiral training after progress and retain partial results without enabling incomplete-candidate application or replay | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
@@ -150,7 +150,7 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-139 | Select batched Full budget and complete every seed's requested epochs and scoring checkpoints despite already meeting the target | `batchedFullBudgetKeepsEverySeedAndCancellationRetainsPartialResults` |
 | GUI-140 | Cancel batched training after committed progress, retain partial results, disable incomplete-candidate actions and re-enable search controls | `batchedFullBudgetKeepsEverySeedAndCancellationRetainsPartialResults` |
 
-The CUDA/CUBLAS compatibility-backend GUI scenarios use an injected session provider with TensorFlow CPU execution and explicit fixture device metadata. They verify native controls, error recovery and resource lifecycle deterministically on CPU-only CI. The SMALL controls exercise actual TensorFlow CPU FP32 training, cohort search and replay. Actual GPU execution and numerical parity require a GPU-enabled TensorFlow runtime and separate hardware checks; a passing fixture scenario is not GPU acceptance. The stable path IDs above retain precision selection and configuration validation coverage while reflecting that TensorFlow supports FP32 for CPU and the GPU compatibility aliases.
+The TensorFlow GPU GUI scenarios use an injected session provider with TensorFlow CPU execution and explicit GPU fixture metadata. They verify native controls, error recovery and resource lifecycle deterministically on CPU-only CI. General and Compact are topology families, not alternative numerical implementations; Compact retains the documented shape restrictions. The Compact controls exercise actual TensorFlow CPU FP32 training, cohort search and replay. Actual GPU execution and numerical parity require a GPU-enabled TensorFlow runtime and separate hardware checks; a passing fixture scenario is not GPU acceptance. All precision selection and configuration validation paths remain covered without a duplicate GPU alias.
 
 GUI-097 uses a controlled training session to count all 100,000 initial-seed epochs without numerical updates, then holds 32 offspring on distinct production search workers until native-control cancellation. This isolates worker admission and utilization from hardware training speed; numerical training remains exercised by the other TensorFlow GUI scenarios and unit tests.
 

@@ -9,48 +9,48 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 
-internal data class NeuroCudaBenchmarkWorkload(val name: String, val topology: List<Int>, val samples: Int, val batchSize: Int)
-internal data class NeuroCudaBenchmarkValidation(val elements: Int, val absoluteTolerance: Double, val relativeTolerance: Double,
+internal data class TensorFlowBenchmarkWorkload(val name: String, val topology: List<Int>, val samples: Int, val batchSize: Int)
+internal data class TensorFlowBenchmarkValidation(val elements: Int, val absoluteTolerance: Double, val relativeTolerance: Double,
                                              val maximumAbsoluteError: Double, val maximumScaledError: Double, val rmseError: Double)
-internal data class NeuroCudaBenchmarkRound(val workload: String, val backend: NeuroCudaBenchmarkBackend, val round: Int,
+internal data class TensorFlowBenchmarkRound(val workload: String, val backend: TensorFlowBenchmarkBackend, val round: Int,
     val openNanos: Long, val trainingNanos: Long, val closeNanos: Long, val totalNanos: Long,
-    val rmse: Double, val epochs: Long, val samplesSeen: Long, val device: TrainingDeviceInfo, val validation: NeuroCudaBenchmarkValidation)
-internal data class NeuroCudaBenchmarkDistribution(val minimum: Double, val median: Double, val p95: Double)
-internal data class NeuroCudaBenchmarkSummary(val workload: String, val backend: NeuroCudaBenchmarkBackend,
-    val opening: NeuroCudaBenchmarkDistribution, val training: NeuroCudaBenchmarkDistribution,
-    val closing: NeuroCudaBenchmarkDistribution, val total: NeuroCudaBenchmarkDistribution,
+    val rmse: Double, val epochs: Long, val samplesSeen: Long, val device: TrainingDeviceInfo, val validation: TensorFlowBenchmarkValidation)
+internal data class TensorFlowBenchmarkDistribution(val minimum: Double, val median: Double, val p95: Double)
+internal data class TensorFlowBenchmarkSummary(val workload: String, val backend: TensorFlowBenchmarkBackend,
+    val opening: TensorFlowBenchmarkDistribution, val training: TensorFlowBenchmarkDistribution,
+    val closing: TensorFlowBenchmarkDistribution, val total: TensorFlowBenchmarkDistribution,
     val trainingSpeedup: Double?, val totalSpeedup: Double?)
-internal data class NeuroCudaBenchmarkReport(val config: NeuroCudaBenchmarkConfig, val workloads: List<NeuroCudaBenchmarkWorkload>,
-    val rounds: List<NeuroCudaBenchmarkRound>, val summaries: List<NeuroCudaBenchmarkSummary>,
+internal data class TensorFlowBenchmarkReport(val config: TensorFlowBenchmarkConfig, val workloads: List<TensorFlowBenchmarkWorkload>,
+    val rounds: List<TensorFlowBenchmarkRound>, val summaries: List<TensorFlowBenchmarkSummary>,
     val environment: Map<String, Any?>, val failure: Map<String, Any?>? = null)
-internal class NeuroCudaBenchmarkFailure(val report: NeuroCudaBenchmarkReport, cause: Throwable) :
+internal class TensorFlowBenchmarkFailure(val report: TensorFlowBenchmarkReport, cause: Throwable) :
     IllegalStateException("CPU/GPU benchmark failed: ${cause.message}", cause)
 
-internal object NeuroCudaBenchmarkHarness {
+internal object TensorFlowBenchmarkHarness {
     private const val SEED = 1234L
-    fun workloads(config: NeuroCudaBenchmarkConfig): List<NeuroCudaBenchmarkWorkload> {
+    fun workloads(config: TensorFlowBenchmarkConfig): List<TensorFlowBenchmarkWorkload> {
         val shapes = if (config.topology != null) listOf("custom" to config.topology)
             else if (config.profile == "smoke") listOf("smoke" to listOf(32, 64, 32, 4)) else listOf(
             "medium" to listOf(128, 256, 128, 32), "large" to listOf(256, 512, 256, 32))
         return shapes.flatMap { (name, shape) -> config.batches.map { batch ->
-            NeuroCudaBenchmarkWorkload("$name-batch-$batch", shape, config.sampleCount, batch)
+            TensorFlowBenchmarkWorkload("$name-batch-$batch", shape, config.sampleCount, batch)
         } }
     }
 
-    fun run(config: NeuroCudaBenchmarkConfig, clock: () -> Long = System::nanoTime,
-            sessionFactory: (Neuro, NeuroCudaBenchmarkBackend, Int) -> NeuroTrainingSession = { model, engine, batch ->
+    fun run(config: TensorFlowBenchmarkConfig, clock: () -> Long = System::nanoTime,
+            sessionFactory: (Neuro, TensorFlowBenchmarkBackend, Int) -> NeuroTrainingSession = { model, engine, batch ->
                 engine.open(model, batch)
             }, environment: Map<String, Any?> = environment(config),
-            onWorkloadCompleted: (NeuroCudaBenchmarkWorkload, Int, Int) -> Unit = { _, _, _ -> }): NeuroCudaBenchmarkReport {
+            onWorkloadCompleted: (TensorFlowBenchmarkWorkload, Int, Int) -> Unit = { _, _, _ -> }): TensorFlowBenchmarkReport {
         val cases = workloads(config)
-        val rounds = ArrayList<NeuroCudaBenchmarkRound>()
+        val rounds = ArrayList<TensorFlowBenchmarkRound>()
         var stage = "reference"
         var currentWorkload: String? = null
-        var currentBackend: NeuroCudaBenchmarkBackend? = null
+        var currentBackend: TensorFlowBenchmarkBackend? = null
         try {
             for ((workloadIndex, workload) in cases.withIndex()) {
                 currentWorkload = workload.name
-                currentBackend = NeuroCudaBenchmarkBackend.CPU
+                currentBackend = TensorFlowBenchmarkBackend.CPU_FP64
                 stage = "reference"
                 val reference = prepared(workload, config.sigmoid)
                 // The reference is always CPU, including GPU-only selections, and is outside measured data.
@@ -80,16 +80,16 @@ internal object NeuroCudaBenchmarkHarness {
                 onWorkloadCompleted(workload, workloadIndex + 1, cases.size)
             }
         } catch (failure: Throwable) {
-            throw NeuroCudaBenchmarkFailure(NeuroCudaBenchmarkReport(config, cases, rounds.toList(), summaries(rounds), environment,
+            throw TensorFlowBenchmarkFailure(TensorFlowBenchmarkReport(config, cases, rounds.toList(), summaries(rounds), environment,
                 mapOf("stage" to stage, "workload" to currentWorkload, "backend" to currentBackend?.name,
                     "type" to failure.javaClass.name, "message" to failure.message)), failure)
         }
-        return NeuroCudaBenchmarkReport(config, cases, rounds.toList(), summaries(rounds), environment)
+        return TensorFlowBenchmarkReport(config, cases, rounds.toList(), summaries(rounds), environment)
     }
 
-    private fun measure(workload: NeuroCudaBenchmarkWorkload, engine: NeuroCudaBenchmarkBackend, round: Int, config: NeuroCudaBenchmarkConfig,
+    private fun measure(workload: TensorFlowBenchmarkWorkload, engine: TensorFlowBenchmarkBackend, round: Int, config: TensorFlowBenchmarkConfig,
                         referenceStatistics: Neuro.Statistics, reference: NeuroTrainingState, referenceError: Double,
-                        clock: () -> Long, factory: (Neuro, NeuroCudaBenchmarkBackend, Int) -> NeuroTrainingSession): NeuroCudaBenchmarkRound {
+                        clock: () -> Long, factory: (Neuro, TensorFlowBenchmarkBackend, Int) -> NeuroTrainingSession): TensorFlowBenchmarkRound {
         val epochs = config.epochs
         val model = prepared(workload, config.sigmoid)
         NeuroLog.debug("benchmark", "benchmark.round.started") { mapOf("workload" to workload.name,
@@ -100,7 +100,7 @@ internal object NeuroCudaBenchmarkHarness {
         var trainingEnd = opened
         var primary: Throwable? = null
         try {
-            check((session.info.backend == engine.backend || engine.backend == TrainingBackend.CUBLAS && session.info.backend == TrainingBackend.CUDA) && session.info.precision == engine.precision.name) {
+            check(session.info.backend == engine.backend && session.info.precision == engine.precision.name) {
                 "Requested $engine but session resolved ${session.info.backend}/${session.info.precision}"
             }
             train(session, epochs, workload.batchSize, config.mode)
@@ -123,7 +123,7 @@ internal object NeuroCudaBenchmarkHarness {
         check(validation.maximumScaledError <= 1.0) {
             "Backend $engine state differs from CPU beyond tolerance: scaled=${validation.maximumScaledError}, absolute=${validation.maximumAbsoluteError}"
         }
-        return NeuroCudaBenchmarkRound(workload.name, engine, round, opened - start, trainingEnd - opened,
+        return TensorFlowBenchmarkRound(workload.name, engine, round, opened - start, trainingEnd - opened,
             closed - trainingEnd, closed - start, rmse, statistics.epochsTrained, statistics.samplesSeen, session.info, validation)
     }
 
@@ -143,7 +143,7 @@ internal object NeuroCudaBenchmarkHarness {
     }
 
     internal fun validate(expected: NeuroTrainingState, actual: NeuroTrainingState, expectedError: Double,
-                          actualError: Double, precision: Neuro.TrainingPrecision): NeuroCudaBenchmarkValidation {
+                          actualError: Double, precision: Neuro.TrainingPrecision): TensorFlowBenchmarkValidation {
         check(expected.topology.contentEquals(actual.topology)) { "Backend changed topology" }
         val absolute = if (precision == Neuro.TrainingPrecision.FP64) 1e-10 else 5e-5
         val relative = if (precision == Neuro.TrainingPrecision.FP64) 1e-8 else 2e-3
@@ -165,41 +165,41 @@ internal object NeuroCudaBenchmarkHarness {
             for (element in expectedArrays[index].indices) compare(expectedArrays[index][element], actualArrays[index][element])
         }
         compare(expectedError, actualError)
-        return NeuroCudaBenchmarkValidation(count, absolute, relative, maxAbsolute, maxScaled, abs(expectedError - actualError))
+        return TensorFlowBenchmarkValidation(count, absolute, relative, maxAbsolute, maxScaled, abs(expectedError - actualError))
     }
 
-    internal fun distribution(values: List<Long>): NeuroCudaBenchmarkDistribution {
+    internal fun distribution(values: List<Long>): TensorFlowBenchmarkDistribution {
         require(values.isNotEmpty() && values.all { it >= 0 }) { "Timings must be nonempty and nonnegative" }
         val sorted = values.sorted()
         val median = if (sorted.size % 2 == 0) sorted[sorted.size / 2 - 1] / 2.0 + sorted[sorted.size / 2] / 2.0
             else sorted[sorted.size / 2].toDouble()
-        return NeuroCudaBenchmarkDistribution(sorted.first().toDouble(), median, sorted[ceil(sorted.size * 0.95).toInt() - 1].toDouble())
+        return TensorFlowBenchmarkDistribution(sorted.first().toDouble(), median, sorted[ceil(sorted.size * 0.95).toInt() - 1].toDouble())
     }
 
-    private fun summaries(rounds: List<NeuroCudaBenchmarkRound>): List<NeuroCudaBenchmarkSummary> {
+    private fun summaries(rounds: List<TensorFlowBenchmarkRound>): List<TensorFlowBenchmarkSummary> {
         val grouped = rounds.groupBy { it.workload to it.backend }
         return grouped.map { (key, values) ->
-            val cpu = grouped[key.first to NeuroCudaBenchmarkBackend.CPU]
+            val cpu = grouped[key.first to TensorFlowBenchmarkBackend.CPU_FP64]
             val training = distribution(values.map { it.trainingNanos })
             val total = distribution(values.map { it.totalNanos })
-            NeuroCudaBenchmarkSummary(key.first, key.second, distribution(values.map { it.openNanos }), training,
+            TensorFlowBenchmarkSummary(key.first, key.second, distribution(values.map { it.openNanos }), training,
                 distribution(values.map { it.closeNanos }), total,
                 if (cpu == null || training.median == 0.0) null else distribution(cpu.map { it.trainingNanos }).median / training.median,
                 if (cpu == null || total.median == 0.0) null else distribution(cpu.map { it.totalNanos }).median / total.median)
         }
     }
 
-    internal fun prepared(workload: NeuroCudaBenchmarkWorkload, sigmoid: Neuro.SigmoidMode = Neuro.SigmoidMode.EXACT): Neuro =
-        Neuro(workload.topology.toIntArray(), Neuro.HyperParameters(0.05, 0.1, 1.0, SEED, Neuro.Kernel.VECTOR, sigmoid)).also { model ->
+    internal fun prepared(workload: TensorFlowBenchmarkWorkload, sigmoid: Neuro.SigmoidMode = Neuro.SigmoidMode.EXACT): Neuro =
+        Neuro(workload.topology.toIntArray(), Neuro.HyperParameters(0.05, 0.1, 1.0, SEED, sigmoidMode = sigmoid)).also { model ->
             repeat(workload.samples) { sample ->
                 model.addTrainingSample(DoubleArray(workload.topology.first()) { ((sample * 17 + it * 13) and 255) / 255.0 },
                     DoubleArray(workload.topology.last()) { ((sample + it) and 1).toDouble() })
             }
         }
 
-    private fun environment(config: NeuroCudaBenchmarkConfig): Map<String, Any?> {
+    private fun environment(config: TensorFlowBenchmarkConfig): Map<String, Any?> {
         NeuroLog.initialize()
-        fun hash(resource: String): String? = NeuroCudaBenchmarkHarness::class.java.getResourceAsStream(resource)?.use {
+        fun hash(resource: String): String? = TensorFlowBenchmarkHarness::class.java.getResourceAsStream(resource)?.use {
             MessageDigest.getInstance("SHA-256").digest(it.readAllBytes()).joinToString("") { value -> "%02x".format(value) }
         }
         return linkedMapOf("timestamp" to Instant.now().toString(), "javaVersion" to System.getProperty("java.runtime.version"),
@@ -210,7 +210,7 @@ internal object NeuroCudaBenchmarkHarness {
             "availableProcessors" to Runtime.getRuntime().availableProcessors(), "cpu" to System.getenv("PROCESSOR_IDENTIFIER"),
             "maximumHeapBytes" to Runtime.getRuntime().maxMemory(), "loggingLevel" to Logger.getLogger("com.lis.neuro").level?.name,
             "sourceRevision" to (System.getProperty("jneuro.benchmark.sourceRevision") ?: "unspecified"),
-            "benchmarkClassSha256" to hash("/com/lis/neuro/NeuroCudaBenchmarkHarness.class"),
+            "benchmarkClassSha256" to hash("/com/lis/neuro/TensorFlowBenchmarkHarness.class"),
             "mathRuntime" to TensorFlowMath.info(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64).kernelVersion,
             "seed" to SEED, "learningRate" to 0.05, "momentum" to 0.1, "beta" to 1.0, "sigmoid" to config.sigmoid.name,
             "timingScope" to "fresh model/data preparation and validation excluded; TensorFlow session open, training and close included",
@@ -218,16 +218,16 @@ internal object NeuroCudaBenchmarkHarness {
     }
 }
 
-internal object NeuroCudaBenchmarkReports {
-    fun write(report: NeuroCudaBenchmarkReport, prefix: Path) {
+internal object TensorFlowBenchmarkReports {
+    fun write(report: TensorFlowBenchmarkReport, prefix: Path) {
         prefix.toAbsolutePath().parent?.let(Files::createDirectories)
         Files.writeString(Path.of("$prefix.json"), json(report) + "\n")
         Files.writeString(Path.of("$prefix.csv"), csv(report))
     }
 
     /** Failure evidence is best effort; a report write must never replace the native/training failure. */
-    fun writeFailure(failure: NeuroCudaBenchmarkFailure, prefix: Path,
-                     writer: (NeuroCudaBenchmarkReport, Path) -> Unit = ::write): Boolean = try {
+    fun writeFailure(failure: TensorFlowBenchmarkFailure, prefix: Path,
+                     writer: (TensorFlowBenchmarkReport, Path) -> Unit = ::write): Boolean = try {
         writer(failure.report, prefix)
         true
     } catch (reportFailure: Throwable) {
@@ -236,7 +236,7 @@ internal object NeuroCudaBenchmarkReports {
         false
     }
 
-    fun console(report: NeuroCudaBenchmarkReport): String {
+    fun console(report: TensorFlowBenchmarkReport): String {
         fun format(pattern: String, vararg values: Any?) = String.format(java.util.Locale.ROOT, pattern, *values)
         fun speedup(value: Double?): String = when {
             value == null -> "n/a"
@@ -255,15 +255,15 @@ internal object NeuroCudaBenchmarkReports {
                     format("%.3f", summary.total.median / 1_000_000.0),
                     speedup(summary.trainingSpeedup), speedup(summary.totalSpeedup)))
             }
-            appendLine("Speedup = CPU median / backend median; >1 means faster than CPU.")
+            appendLine("Speedup = CPU_FP64 median / backend median; >1 means faster than CPU_FP64.")
             appendLine("Train includes the selected training API; total includes session open, train and close. Mode=${report.config.mode}, sigmoid=${report.config.sigmoid}, retained-device=${report.config.retainedDevice}.")
             if (report.failure == null) append("Numerical verification: passed (${report.rounds.size} measured rounds; weights, biases, momentum buffers and RMSE).")
             else append("Numerical verification: incomplete (benchmark failed).")
         }
     }
 
-    fun json(report: NeuroCudaBenchmarkReport): String {
-        fun distribution(value: NeuroCudaBenchmarkDistribution) = mapOf("minNanos" to value.minimum, "medianNanos" to value.median, "p95Nanos" to value.p95)
+    fun json(report: TensorFlowBenchmarkReport): String {
+        fun distribution(value: TensorFlowBenchmarkDistribution) = mapOf("minNanos" to value.minimum, "medianNanos" to value.median, "p95Nanos" to value.p95)
         return encode(linkedMapOf("schemaVersion" to 1, "status" to if (report.failure == null) "passed" else "failed",
             "environment" to report.environment, "configuration" to mapOf("profile" to report.config.profile,
                 "epochs" to report.config.epochs, "warmups" to report.config.warmups, "repeats" to report.config.repeats,
@@ -277,7 +277,7 @@ internal object NeuroCudaBenchmarkReports {
                 "epochs" to round.epochs, "samplesSeen" to round.samplesSeen,
                 "device" to mapOf("name" to round.device.name, "identity" to round.device.identity,
                     "backend" to round.device.backend.name, "precision" to round.device.precision, "kernelVersion" to round.device.kernelVersion,
-                    "engine" to round.device.engine, "simdBits" to round.device.simdBits, "sigmoid" to round.device.sigmoid),
+                    "engine" to round.device.engine, "sigmoid" to round.device.sigmoid),
                 "validation" to mapOf("elements" to round.validation.elements, "absoluteTolerance" to round.validation.absoluteTolerance,
                     "relativeTolerance" to round.validation.relativeTolerance, "maxAbsoluteError" to round.validation.maximumAbsoluteError,
                     "maxScaledError" to round.validation.maximumScaledError, "rmseError" to round.validation.rmseError)) },
@@ -287,7 +287,7 @@ internal object NeuroCudaBenchmarkReports {
             "failure" to report.failure))
     }
 
-    fun csv(report: NeuroCudaBenchmarkReport): String {
+    fun csv(report: TensorFlowBenchmarkReport): String {
         val header = listOf("workload", "backend", "round", "open_ns", "training_ns", "close_ns", "total_ns", "rmse",
             "epochs", "samples_seen", "device", "identity", "precision", "kernel", "max_absolute_error", "max_scaled_error",
             "training_median_ns", "training_min_ns", "training_p95_ns", "total_median_ns", "training_speedup", "end_to_end_speedup", "report_status")

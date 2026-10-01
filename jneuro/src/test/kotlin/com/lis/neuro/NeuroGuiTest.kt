@@ -67,9 +67,10 @@ class NeuroGuiTest {
         }
     }
 
-    @Test fun smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls() {
+    @Test fun topologyFamilyPrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls() {
         assertEquals(TrainingEngine.REFERENCE, edt { current.config.engine })
-        choose(combo("Training engine"), TrainingEngine.SMALL.ordinal)
+        assertEquals(listOf("General topology", "Compact topology"), choiceLabels("Topology family"))
+        choose(combo("Topology family"), TrainingEngine.SMALL.ordinal)
         choose(combo("Training backend"), TrainingBackend.AUTO.ordinal)
         advanced()
         assertTrue(edt { combo("Training precision").isEnabled })
@@ -78,7 +79,7 @@ class NeuroGuiTest {
         assertEquals(TrainingEngine.REFERENCE, edt { current.config.engine })
         configure("4", 100, 0.0)
         click(button("1 epoch"))
-        await("SMALL FP32 exact one epoch") { current.diagnostics.epoch() == 1 }
+        await("Compact FP32 exact one epoch") { current.diagnostics.epoch() == 1 }
         val device = edt { current.deviceInfo!! }
         assertEquals(TrainingEngine.SMALL, device.engine)
         assertEquals(TrainingBackend.CPU, device.backend)
@@ -88,44 +89,44 @@ class NeuroGuiTest {
         assertTrue(device.name.contains("TensorFlow"))
         assertTrue(edt { (field(ui, "deviceStatus") as JLabel).toolTipText.contains("TensorFlow") })
         click(button("10 epochs"))
-        await("SMALL ten epoch command") { current.diagnostics.epoch() == 11 }
+        await("Compact ten epoch command") { current.diagnostics.epoch() == 11 }
         assertTrue(edt { current.checkpoints.any { it.epoch == 10 } })
         tab("Architecture search"); searchSettings(25)
         click(button("Start search"))
-        await("SMALL search rejects unsupported bounds") {
-            (field(panel, "summary") as JLabel).text.contains("SMALL search bounds")
+        await("Compact search rejects unsupported bounds") {
+            (field(panel, "summary") as JLabel).text.contains("Compact search bounds")
         }
         number("Max width", "4", panel)
         click(button("Start search"))
-        await("SMALL search result") { field(panel, "result") != null }
+        await("Compact search result") { field(panel, "result") != null }
         val report = edt { field(panel, "result") as ArchitectureSearchResult }
         assertEquals(TrainingEngine.SMALL, report.config.engine)
         assertEquals(Neuro.SigmoidMode.FAST, report.config.hyperParameters.sigmoidMode)
         assertTrue(report.candidates.all { it.valid && it.trials.all { trial -> trial.epochs == 25 && trial.cohort && trial.deviceInfo?.engine == TrainingEngine.SMALL } })
         val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
         click(button("Replay selected run"))
-        await("SMALL scored replay") { current.replayNote.isNotEmpty() }
+        await("Compact scored replay") { current.replayNote.isNotEmpty() }
         assertEquals(trial.deviceInfo, edt { current.deviceInfo })
         assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
-        choose(combo("Training engine"), TrainingEngine.REFERENCE.ordinal)
+        choose(combo("Topology family"), TrainingEngine.REFERENCE.ordinal)
         choose(combo("Training backend"), TrainingBackend.CPU.ordinal)
         assertTrue(edt { combo("Training precision").isEnabled })
         assertEquals(Neuro.TrainingPrecision.FP32, edt { combo("Training precision").selectedItem })
         assertEquals(TrainingEngine.SMALL, edt { current.config.engine })
         val sessions = RecordingTrainingSessions()
         edt { ui.trainingSessionFactory = sessions::open }
-        choose(combo("Training engine"), TrainingEngine.SMALL.ordinal)
-        choose(combo("Training backend"), TrainingBackend.CUBLAS.ordinal)
+        choose(combo("Topology family"), TrainingEngine.SMALL.ordinal)
+        choose(combo("Training backend"), TrainingBackend.GPU.ordinal)
         configure("4", 25, 0.0)
         click(button("1 epoch"))
-        await("SMALL TensorFlow GPU alias accepted") { current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUDA }
+        await("Compact TensorFlow GPU configuration accepted") { current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.GPU }
         assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
-        assertTrue(sessions.configurations.any { it.first == TrainingBackend.CUBLAS && it.second == Neuro.TrainingPrecision.FP32 })
+        assertTrue(sessions.configurations.any { it.first == TrainingBackend.GPU && it.second == Neuro.TrainingPrecision.FP32 })
         val aliasDevice = edt { current.deviceInfo }
         choose(combo("Training backend"), TrainingBackend.CPU.ordinal)
         text(input("Hidden layers"), "6")
         shortcut(KeyEvent.VK_ENTER)
-        await("SMALL rejects unsupported hidden width") { errorText().contains("width 4, 8 or 16") }
+        await("Compact rejects unsupported hidden width") { errorText().contains("width 4, 8 or 16") }
         assertEquals("4", edt { current.config.hidden })
         assertEquals(aliasDevice, edt { current.deviceInfo })
     }
@@ -165,27 +166,31 @@ class NeuroGuiTest {
         }
     }
 
-    @Test fun backendSelectionRequiresApplyAndUnavailableCudaRecovers() {
+    @Test fun backendSelectionRequiresApplyAndUnavailableGpuRecovers() {
         val sessions = RecordingTrainingSessions().apply { unavailable = true }
         edt { ui.trainingSessionFactory = sessions::open }
         assertEquals(TrainingBackend.CPU, edt { current.config.backend })
-        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        val choices = edt { val selector = combo("Training backend"); (0 until selector.itemCount).map { selector.getItemAt(it) } }
+        assertEquals(listOf(TrainingBackend.CPU, TrainingBackend.GPU, TrainingBackend.AUTO), choices)
+        assertEquals(1, choices.count { it == TrainingBackend.GPU }, "GPU must have one unambiguous selection")
+        assertEquals(listOf("TensorFlow CPU", "TensorFlow GPU", "TensorFlow AUTO (CPU)"), choiceLabels("Training backend"))
+        choose(combo("Training backend"), TrainingBackend.GPU.ordinal)
         assertEquals(TrainingBackend.CPU, edt { current.config.backend })
         assertEquals(0, sessions.opened.get())
         shortcut(KeyEvent.VK_ENTER)
-        await("explicit CUDA unavailable error") {
-            current.state == StudioState.FAILED && current.config.backend == TrainingBackend.CUDA &&
-                errorText().contains("CUDA fixture unavailable")
+        await("explicit GPU unavailable error") {
+            current.state == StudioState.FAILED && current.config.backend == TrainingBackend.GPU &&
+                errorText().contains("GPU fixture unavailable")
         }
         assertEquals(0, edt { current.diagnostics.epoch() })
         assertFalse(edt { button("Train").isEnabled })
-        assertEquals("CUDA · unavailable", edt { (field(ui, "deviceStatus") as JLabel).text })
-        assertEquals(listOf(TrainingBackend.CUDA), sessions.requested.toList())
-        screenshot("cuda-unavailable")
+        assertEquals("TensorFlow GPU · unavailable", edt { (field(ui, "deviceStatus") as JLabel).text })
+        assertEquals(listOf(TrainingBackend.GPU), sessions.requested.toList())
+        screenshot("tensorflow-gpu-unavailable")
         tab("Architecture search"); searchSettings(25)
         click(button("Start search"))
-        await("CUDA search exposes unavailable backend") {
-            field(panel, "result") != null && (field(panel, "summary") as JLabel).text.contains("CUDA fixture unavailable")
+        await("GPU search exposes unavailable backend") {
+            field(panel, "result") != null && (field(panel, "summary") as JLabel).text.contains("GPU fixture unavailable")
         }
         val unavailableReport = edt { field(panel, "result") as ArchitectureSearchResult }
         assertTrue(unavailableReport.candidates.all { !it.valid })
@@ -201,13 +206,13 @@ class NeuroGuiTest {
         assertEquals(1, edt { current.diagnostics.epoch() })
         assertTrue(edt { (field(ui, "deviceStatus") as JLabel).text.contains("CPU") })
         assertEquals(TrainingBackend.CPU, sessions.requested.last())
-        assertTrue(sessions.requested.dropLast(1).all { it == TrainingBackend.CUDA })
+        assertTrue(sessions.requested.dropLast(1).all { it == TrainingBackend.GPU })
     }
 
-    @Test fun rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry() {
+    @Test fun rejectedGpuReplayRetainsResultsAndMainModelUntilSuccessfulRetry() {
         val sessions = RecordingTrainingSessions()
         edt { ui.trainingSessionFactory = sessions::open }
-        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        choose(combo("Training backend"), TrainingBackend.GPU.ordinal)
         configure("2", 25, 0.0)
         click(button("1 epoch")); await("main model before replay search") { current.diagnostics.epoch() == 1 }
         val original = edt { current }
@@ -234,59 +239,59 @@ class NeuroGuiTest {
         sessions.identity = "fixture-device"; sessions.unavailable = true
         click(button("Replay selected run"))
         await("unavailable replay keeps completed search") {
-            field(ui, "searchRunning") == false && (field(panel, "summary") as JLabel).text.contains("CUDA fixture unavailable")
+            field(ui, "searchRunning") == false && (field(panel, "summary") as JLabel).text.contains("GPU fixture unavailable")
         }
         assertSame(report, edt { field(panel, "result") })
         assertSame(surface, edt { field(panel, "surface") })
         assertEquals(original.state, edt { current.state })
         assertArrayEquals(original.diagnostics.parameters(), edt { current.diagnostics.parameters() })
         assertEquals(sessions.opened.get(), sessions.closed.get())
-        screenshot("cuda-replay-rejected")
+        screenshot("tensorflow-gpu-replay-rejected")
         sessions.unavailable = false
         click(button("Replay selected run"))
-        await("replay retries after CUDA recovers") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
+        await("replay retries after GPU recovers") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
         assertEquals("Overview", edt { tabs.getTitleAt(tabs.selectedIndex) })
         assertEquals(trial.deviceInfo, edt { current.deviceInfo })
         assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
         assertNull(edt { field(panel, "result") })
-        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+        assertTrue(sessions.requested.all { it == TrainingBackend.GPU })
     }
 
     @Test fun selectedBackendRoutesControlsStudySearchReplayAndShutdown() {
         val sessions = RecordingTrainingSessions()
         edt { ui.trainingSessionFactory = sessions::open }
-        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        choose(combo("Training backend"), TrainingBackend.GPU.ordinal)
         configure("2", 100_000, 0.0)
         click(button("1 epoch"))
-        await("CUDA selected for epoch stepping") {
-            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUDA
+        await("GPU selected for epoch stepping") {
+            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.GPU
         }
-        assertEquals("CUDA · CUDA test fixture · FP64", edt { (field(ui, "deviceStatus") as JLabel).text })
-        click(button("10 epochs")); await("CUDA ten epoch step") { current.diagnostics.epoch() == 11 }
-        click(button("Train")); await("CUDA training") { current.state == StudioState.RUNNING }
-        click(button("Pause")); await("CUDA pause") { current.state == StudioState.PAUSED }
+        assertEquals("GPU · GPU test fixture · FP64", edt { (field(ui, "deviceStatus") as JLabel).text })
+        click(button("10 epochs")); await("GPU ten epoch step") { current.diagnostics.epoch() == 11 }
+        click(button("Train")); await("GPU training") { current.state == StudioState.RUNNING }
+        click(button("Pause")); await("GPU pause") { current.state == StudioState.PAUSED }
         configure("2", 25, 0.0)
         tab("Seeds"); click(button("Compare 4 seeds"))
-        await("CUDA seed study completed") { current.seeds.size == 4 && field(ui, "studyRunning") == false }
+        await("GPU seed study completed") { current.seeds.size == 4 && field(ui, "studyRunning") == false }
         val studyCompleted = sessions.closed.get()
         assertTrue(studyCompleted >= 4)
         tab("Architecture search"); searchSettings(25)
         number("Target RMSE", "0", panel)
-        assertEquals(TrainingBackend.CUDA, edt { panel.readConfig().backend })
-        click(button("Start search")); await("CUDA search completed") { field(panel, "result") != null }
+        assertEquals(TrainingBackend.GPU, edt { panel.readConfig().backend })
+        click(button("Start search")); await("GPU search completed") { field(panel, "result") != null }
         val report = edt { field(panel, "result") as ArchitectureSearchResult }
-        assertTrue(report.candidates.all { it.valid && it.trials.all { trial -> trial.deviceInfo?.backend == TrainingBackend.CUDA } })
+        assertTrue(report.candidates.all { it.valid && it.trials.all { trial -> trial.deviceInfo?.backend == TrainingBackend.GPU } })
         assertTrue(sessions.closed.get() >= studyCompleted + report.candidates.sumOf { it.trials.size })
         click(button("Replay selected run"))
-        await("CUDA replay installed") { current.replayNote.isNotEmpty() && current.deviceInfo?.backend == TrainingBackend.CUDA }
-        assertEquals(TrainingBackend.CUDA, edt { current.config.backend })
-        click(button("Reset")); await("CUDA reset") { current.state == StudioState.READY && current.diagnostics.epoch() == 0 }
-        click(button("1 epoch")); await("CUDA session open before close") { current.diagnostics.epoch() == 1 }
+        await("GPU replay installed") { current.replayNote.isNotEmpty() && current.deviceInfo?.backend == TrainingBackend.GPU }
+        assertEquals(TrainingBackend.GPU, edt { current.config.backend })
+        click(button("Reset")); await("GPU reset") { current.state == StudioState.READY && current.diagnostics.epoch() == 0 }
+        click(button("1 epoch")); await("GPU session open before close") { current.diagnostics.epoch() == 1 }
         assertTrue(sessions.opened.get() > sessions.closed.get())
         robot.keyPress(KeyEvent.VK_ALT); key(KeyEvent.VK_F4); robot.keyRelease(KeyEvent.VK_ALT)
-        await("native close releases CUDA session") { !window.isDisplayable && sessions.opened.get() == sessions.closed.get() }
+        await("native close releases GPU session") { !window.isDisplayable && sessions.opened.get() == sessions.closed.get() }
         assertTrue(sessions.epochCalls.get() > 0)
-        assertTrue(sessions.requested.all { it == TrainingBackend.CUDA })
+        assertTrue(sessions.requested.all { it == TrainingBackend.GPU })
     }
 
     @Test fun opensAndNavigatesEveryView() {
@@ -342,17 +347,17 @@ class NeuroGuiTest {
         }
     }
 
-    @Test fun cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize() {
+    @Test fun tensorflowGpuBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize() {
         val sessions = RecordingTrainingSessions()
         edt { ui.trainingSessionFactory = sessions::open }
-        choose(combo("Training backend"), TrainingBackend.CUBLAS.ordinal)
+        choose(combo("Training backend"), TrainingBackend.GPU.ordinal)
         advanced()
         choose(combo("Training precision"), Neuro.TrainingPrecision.FP32.ordinal)
         number("Batch size", "3")
         configure("2", 25, 0.0)
         click(button("1 epoch"))
-        await("CUBLAS FP32 mini-batch epoch") {
-            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUDA
+        await("TensorFlow GPU FP32 mini-batch epoch") {
+            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.GPU
         }
         assertEquals("FP32", edt { current.deviceInfo!!.precision })
         assertEquals(3, sessions.miniBatches.last())
@@ -365,29 +370,29 @@ class NeuroGuiTest {
         tab("Architecture search"); searchSettings(25)
         number("Target RMSE", "0", panel)
         val searchConfig = edt { panel.readConfig() }
-        assertEquals(TrainingBackend.CUBLAS, searchConfig.backend)
+        assertEquals(TrainingBackend.GPU, searchConfig.backend)
         assertEquals(Neuro.TrainingPrecision.FP32, searchConfig.precision)
         assertEquals(3, searchConfig.batchSize)
-        click(button("Start search")); await("CUBLAS batch search completed") { field(panel, "result") != null }
+        click(button("Start search")); await("TensorFlow GPU batch search completed") { field(panel, "result") != null }
         val report = edt { field(panel, "result") as ArchitectureSearchResult }
         assertTrue(report.candidates.all { candidate -> candidate.valid && candidate.trials.all {
-            it.deviceInfo?.backend == TrainingBackend.CUDA && it.deviceInfo.precision == "FP32"
+            it.deviceInfo?.backend == TrainingBackend.GPU && it.deviceInfo.precision == "FP32"
         } })
         val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
         val openedBeforeReplay = sessions.configurations.size
         click(button("Replay selected run"))
-        await("CUBLAS batch replay installed") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
-        assertEquals(TrainingBackend.CUDA, edt { current.config.backend })
+        await("TensorFlow GPU batch replay installed") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
+        assertEquals(TrainingBackend.GPU, edt { current.config.backend })
         assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
         assertEquals(3, edt { current.config.batchSize })
         assertEquals(trial.deviceInfo, edt { current.deviceInfo })
         assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
         assertTrue(sessions.configurations.take(openedBeforeReplay).all {
-            it == Triple(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32, 3)
+            it == Triple(TrainingBackend.GPU, Neuro.TrainingPrecision.FP32, 3)
         })
         assertTrue(sessions.configurations.size > openedBeforeReplay)
         assertTrue(sessions.configurations.drop(openedBeforeReplay).all {
-            it == Triple(TrainingBackend.CUDA, Neuro.TrainingPrecision.FP32, 3)
+            it == Triple(TrainingBackend.GPU, Neuro.TrainingPrecision.FP32, 3)
         })
         assertTrue(sessions.miniBatches.all { it == 3 })
         assertEquals(sessions.opened.get(), sessions.closed.get())
@@ -442,7 +447,7 @@ class NeuroGuiTest {
         assertTrue(edt { current.deviceInfo!!.name.contains("TensorFlow") })
         assertEquals(7, edt { current.config.batchSize })
         assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
-        choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
+        choose(combo("Training backend"), TrainingBackend.GPU.ordinal)
         assertTrue(edt { combo("Training precision").isEnabled })
         assertEquals(Neuro.TrainingPrecision.FP32, edt { combo("Training precision").selectedItem })
         assertEquals(TrainingBackend.AUTO, edt { current.config.backend })
@@ -1134,6 +1139,13 @@ class NeuroGuiTest {
     }
     private fun combo(label: String, scope: Container = root): JComboBox<*> = edt {
         descendants(scope).filterIsInstance<JComboBox<*>>().first { it.accessibleContext?.accessibleName == label }
+    }
+    private fun choiceLabels(label: String): List<String> = edt {
+        @Suppress("UNCHECKED_CAST")
+        val selector = combo(label) as JComboBox<Any?>
+        (0 until selector.itemCount).map { index ->
+            (selector.renderer.getListCellRendererComponent(JList<Any?>(), selector.getItemAt(index), index, false, false) as JLabel).text
+        }
     }
     private fun button(label: String): AbstractButton = edt {
         descendants(root).filterIsInstance<AbstractButton>().first { it.text == label }

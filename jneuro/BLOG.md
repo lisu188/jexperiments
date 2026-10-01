@@ -12,7 +12,7 @@ The official [TensorFlow Java project](https://github.com/tensorflow/java) docum
 
 Kotlin 2.4.20 and JDK 27 remain the application toolchain, with JVM bytecode targeting 26. The repository's existing Gradle wrapper is retained. Swing, Java2D and FlatLaf continue to provide the desktop interface; numerical work needs no display.
 
-## Public model and compatibility
+## Public model and TensorFlow device selection
 
 A model still accepts a topology and explicit hyperparameters:
 
@@ -35,7 +35,9 @@ try (NeuroTrainingSession session = network.newTrainingSession(
 }
 ```
 
-`CPU` explicitly places the graph on `/device:CPU:0`. `CUDA` and the retained `CUBLAS` compatibility value select TensorFlow's GPU device. `AUTO` initially chooses CPU. `REFERENCE` and `SMALL` no longer identify separate numerical implementations; SMALL keeps its supported topology-family validation for existing experiment configurations. Likewise, old SCALAR/VECTOR kernel hints remain source-compatible but TensorFlow selects its own CPU kernels.
+`CPU` explicitly places the graph on `/device:CPU:0`; `GPU` selects `/device:GPU:0`. `AUTO` currently chooses CPU. These are the three supported device selections. The old `CUDA` and `CUBLAS` enum values have been removed, so callers must use `GPU` for TensorFlow device placement.
+
+Studio presents `REFERENCE` and `SMALL` as the **General** and **Compact** topology families. Both use the same TensorFlow implementation. Compact retains the small-network shape validation used by the architecture experiment. Old SCALAR/VECTOR inference hints remain source-compatible, while TensorFlow selects its own CPU kernels; they do not select an application-owned vector implementation.
 
 Session metadata reports `tensorflow-<runtime-version>-dense-loop-v2`, the actual CPU/GPU device, precision, activation mode and zero application-managed SIMD bits. The version distinguishes the functional training loop from the earlier `dense-v1` graph that executed each mini-batch through a separate JVM call. Zero SIMD bits does not mean TensorFlow uses no SIMD; JNeuro does not inspect or claim the implementation details of TensorFlow's native kernels. Device identity is currently the logical TensorFlow placement, such as `GPU:0`, rather than a physical GPU UUID. Replay checks the recorded runtime/settings and reproduced score, but metadata alone does not establish identical physical hardware across machines.
 
@@ -281,7 +283,15 @@ GPU execution additionally requires a compatible NVIDIA driver, CUDA and cuDNN f
 
 The capability probe runs an explicitly placed TensorFlow matrix multiplication with soft placement disabled. Selecting GPU fails when that operation cannot run on the device; it does not silently fall back to CPU. CPU and GPU artifacts for the same platform must not both be placed on the runtime classpath.
 
-`CUBLAS` remains a legacy API value; it does not load JNeuro's former cuBLAS adapter. Similarly, old command-line benchmark variant names are accepted as compatibility aliases, and reports identify the actual TensorFlow runtime and selected device. The current JMH benchmarks compare TensorFlow call patterns, precision and activation choices.
+The source tree contains no application-owned C/C++, CUDA kernels, PTX, native loaders or CUDA compilation tasks. TensorFlow's native library remains a required third-party dependency, including for CPU execution. TensorFlow GPU uses its own device runtime and operations. The obsolete `NeuroCuda` capability facade and the `cudaTest` / `cudaBenchmark` task aliases have been removed. Hardware acceptance uses `gpuCheck` and the `tensorflow-gpu` test tag.
+
+The CPU/GPU benchmark exposes exactly four numerical configurations: `CPU_FP64`, `CPU_FP32`, `GPU_FP64` and `GPU_FP32`. Removed cuBLAS, native AVX2, scalar and fixed-vector-width benchmark aliases are rejected. Call/publication patterns remain a separate choice through `MINIBATCH`, `EPOCH` and `CHUNK`; they all execute TensorFlow operations. For example, this CPU-only command needs no GPU runtime:
+
+```text
+./gradlew :jneuro:cpuGpuBenchmark --args='--topology 2,8,8,8,1 --backends CPU_FP64,CPU_FP32 --mode CHUNK --epochs 5'
+```
+
+The JVM entrypoint is `TensorFlowTrainingBenchmark`; its default report prefix is `build/reports/tensorflow-benchmark/benchmark`. Architecture-search comparisons use the distinct `architectureSearchBenchmark` command with device names `CPU` and `GPU`. Historical report schemas and their original backend names remain unchanged in `benchmarks/`; the old custom-engine aggregation utility is archived with its measurements. Current JMH benchmarks exercise TensorFlow call patterns, precision and activation choices.
 
 ## Validation and reproducibility
 

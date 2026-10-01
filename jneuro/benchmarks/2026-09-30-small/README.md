@@ -36,6 +36,8 @@ Local CLI: three independent JVMs, 100 warmups/30 rounds for five-epoch bulk and
 
 ## Reproduce
 
+This section describes the historical revisions listed above; its native tasks and kernels are no longer part of the current TensorFlow application. The original report aggregator and regression tests are retained unchanged in [analysis](analysis/aggregate_small_benchmarks.py). To analyze matching historical reports, run `python3 jneuro/benchmarks/2026-09-30-small/analysis/aggregate_small_benchmarks.py` with the original report arguments.
+
 Use Java 27 and the existing Gradle wrapper. CPU checks need no CUDA toolkit or native DLL. The [BLOG commands](../../BLOG.md#reproducing-the-comparisons) select each boundary explicitly. Run at least three fresh JVMs, retain the environment sidecars and do not merge data across different source/runtime/hardware configurations.
 
 ```text
@@ -47,7 +49,7 @@ Use Java 27 and the existing Gradle wrapper. CPU checks need no CUDA toolkit or 
 
 `guiCheck` operates real windows and requires a display; Linux CI uses Xvfb and Openbox. The last two tasks require the actual requested hardware/library and fail if absent. Ordinary tests, real GPU tests and native acceptance establish different claims and are reported independently.
 
-For the bounded CI experiment, dispatch **JNeuro native SMALL experiment** with `benchmarks=true`. It builds with existing MSVC/Java/Gradle toolchains, checks the real DLL and runs direct Java commands after Gradle exits. Its artifact includes commands, class/library/source provenance, numerical checks and raw rounds. The runner validates every engine has three identified JVM forks. `aggregate_small_benchmarks.py` treats missing evidence as a failed gate and includes median plus p95 against the fastest applicable FP64 baseline. The eight-engine JMH matrix is validated separately.
+For the bounded CI experiment, dispatch **JNeuro native SMALL experiment** with `benchmarks=true`. It builds with existing MSVC/Java/Gradle toolchains, checks the real DLL and runs direct Java commands after Gradle exits. Its artifact includes commands, class/library/source provenance, numerical checks and raw rounds. The runner validates every engine has three identified JVM forks. [`aggregate_small_benchmarks.py`](analysis/aggregate_small_benchmarks.py) treats missing evidence as a failed gate and includes median plus p95 against the fastest applicable FP64 baseline. The eight-engine JMH matrix is validated separately.
 
 For instruction inspection, use HotSpot diagnostic `CompileCommand=print` for the concrete `SmallCpuTraining` and `SmallCpuCohort` methods, retain their complete C2 byte ranges, and pass the output to `jneuro/tools/inspect_small_assembly.py`. `objdump` decodes bytes even when a local hsdis plugin is absent. Never infer packed training instructions merely from `simdBits` metadata or JVM flags.
 

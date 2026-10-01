@@ -17,7 +17,7 @@ class ArchitectureSearchBenchmarkTest {
             SearchBenchmarkOptions.parse(arrayOf("--executions", "BATCHED")).executions)
         assertEquals(1_000_000, SearchBenchmarkOptions.parse(arrayOf("--mode", "quality")).epochs)
         val options = SearchBenchmarkOptions.parse(arrayOf("--mode", "fixed", "--manifest", "small", "--epochs", "25",
-            "--workers", "1,4,8", "--backends", "CPU,CUDA", "--executions", "OPTIMIZED", "--warmups", "0",
+            "--workers", "1,4,8", "--backends", "CPU,GPU", "--executions", "OPTIMIZED", "--warmups", "0",
             "--repeats", "2", "--order-offset", "2", "--limit-seconds", "60", "--search-seeds", "42,123", "--trials", "10",
             "--output", temporary.resolve("report.jsonl").toString()))
         assertEquals(listOf(1, 4, 8), options.workers)
@@ -25,7 +25,7 @@ class ArchitectureSearchBenchmarkTest {
         assertTrue(SearchBenchmarkOptions.usage().contains("1000000"))
         for (args in listOf(arrayOf("--bad", "1"), arrayOf("--workers"), arrayOf("--workers", "1", "--workers", "2"),
             arrayOf("--epochs", "0"), arrayOf("--workers", "0"), arrayOf("--workers", "1,1"), arrayOf("--mode", "bad"),
-            arrayOf("--backends", "AUTO"), arrayOf("--manifest", "general", "--backends", "CUDA"),
+            arrayOf("--backends", "AUTO"), arrayOf("--backends", "CUDA"), arrayOf("--backends", "CUBLAS"),
             arrayOf("--mode", "quality", "--manifest", "general"), arrayOf("--trials", "6"), arrayOf("--search-seeds", "1,1"))) {
             assertThrows(IllegalArgumentException::class.java) { SearchBenchmarkOptions.parse(args) }
         }
@@ -37,6 +37,18 @@ class ArchitectureSearchBenchmarkTest {
         assertEquals(123L, config.searchSeed)
         assertEquals(176, ArchitectureSearchData.split(NeuroLearningSets.create(NeuroLearningSets.Kind.SPIRAL, 42)).training.size)
         assertEquals(listOf(2, 8, 8, 8, 1), SearchBenchmarkHarness.manifest("small")[2].topology().toList())
+    }
+
+    @Test fun explicitTensorFlowGpuSupportsBothTopologyFamilies() {
+        for (manifest in listOf("small", "general")) for (engine in TrainingEngine.entries) {
+            val options = SearchBenchmarkOptions.parse(arrayOf("--manifest", manifest, "--engine", engine.name,
+                "--backends", "GPU", "--executions", "BATCHED"))
+            val config = SearchBenchmarkHarness.configuration(options, 1, options.backends.single(),
+                options.executions.single(), 42)
+            assertEquals(TrainingBackend.GPU, config.backend)
+            assertEquals(if (manifest == "general") TrainingEngine.REFERENCE else engine, config.engine)
+            assertTrue(SearchBenchmarkHarness.manifest(manifest).all(config::acceptsArchitecture))
+        }
     }
 
     @Test fun fixedManifestMeasuresAllSeedEpochsAndReportsEquivalentParameters() {
@@ -54,7 +66,8 @@ class ArchitectureSearchBenchmarkTest {
             assertEquals("FULL", round["budgetPolicy"])
             assertTrue(round.containsKey("nativeTrainingCalls") && round.containsKey("modelsPerBatch"))
             assertTrue((round["totalNanos"] as Long) > 0)
-            assertFalse(NeuroCudaBenchmarkReports.encode(round).contains("Infinity"))
+            assertFalse(TensorFlowBenchmarkReports.encode(round).contains("Infinity"))
+            assertFalse(TensorFlowBenchmarkReports.encode(round).contains("simdBits"))
         }
         val measured = rounds.filter { it["round"] == 0 }
         fun parameters(record: Map<String, Any?>): List<List<Double>> = (record["candidates"] as List<*>).flatMap { candidate ->

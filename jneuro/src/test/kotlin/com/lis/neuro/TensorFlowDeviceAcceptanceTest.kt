@@ -5,17 +5,17 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 
-/** This suite requires a real CUDA device. Missing hardware is a failure, never a skipped test. */
-@Tag("cuda")
+/** This suite requires a real GPU device. Missing hardware is a failure, never a skipped test. */
+@Tag("tensorflow-gpu")
 @Timeout(120)
-class NeuroCudaAcceptanceTest {
+class TensorFlowDeviceAcceptanceTest {
     @Test fun onlineGpuTrainingMatchesCpuParametersMomentumAndContinuation() {
         for (mode in Neuro.SigmoidMode.entries) {
             for (shape in listOf(intArrayOf(2, 1), intArrayOf(3, 5, 2), intArrayOf(2, 33, 17, 2), intArrayOf(3, 257, 2))) {
                 val expected = NeuroTest.prepared(shape, Neuro.Kernel.SCALAR, mode)
                 val actual = NeuroTest.prepared(shape, Neuro.Kernel.SCALAR, mode)
                 expected.train(2); actual.train(2)
-                actual.newTrainingSession(TrainingBackend.CUDA).use { session ->
+                actual.newTrainingSession(TrainingBackend.GPU).use { session ->
                     assertGpu(session.info)
                     assertEquals(expected.trainEpoch(), session.trainEpoch(), TOLERANCE)
                     assertModelsEqual(expected, actual)
@@ -31,7 +31,7 @@ class NeuroCudaAcceptanceTest {
                 val input = DoubleArray(shape.first()) { 0.25 }
                 val target = DoubleArray(shape.last()) { 0.75 }
                 expected.addTrainingSample(input, target); actual.addTrainingSample(input, target)
-                actual.newTrainingSession(TrainingBackend.CUDA).use { session ->
+                actual.newTrainingSession(TrainingBackend.GPU).use { session ->
                     assertEquals(expected.trainEpoch(), session.trainEpoch(), TOLERANCE)
                     assertModelsEqual(expected, actual)
                 }
@@ -43,7 +43,7 @@ class NeuroCudaAcceptanceTest {
         for (batchSize in listOf(1, 7, 64)) {
             val expected = NeuroTest.prepared(intArrayOf(3, 7, 2), Neuro.Kernel.SCALAR)
             val actual = NeuroTest.prepared(intArrayOf(3, 7, 2), Neuro.Kernel.SCALAR)
-            actual.newTrainingSession(TrainingBackend.CUDA).use { session ->
+            actual.newTrainingSession(TrainingBackend.GPU).use { session ->
                 assertGpu(session.info)
                 expected.trainMiniBatch(3, batchSize)
                 session.trainMiniBatch(3, batchSize, 2)
@@ -69,7 +69,7 @@ class NeuroCudaAcceptanceTest {
             }
             val expected = model()
             val actual = model()
-            actual.newTrainingSession(TrainingBackend.CUDA).use { session ->
+            actual.newTrainingSession(TrainingBackend.GPU).use { session ->
                 expected.train(3); session.train(3)
                 assertModelsEqual(expected, actual)
                 expected.trainMiniBatch(2, 3); session.trainMiniBatch(2, 3)
@@ -81,7 +81,7 @@ class NeuroCudaAcceptanceTest {
     @Test fun gpuConvergesWithSparseChecksAndCanBeReopened() {
         val expected = NeuroTest.xor(Neuro.Kernel.SCALAR)
         val actual = NeuroTest.xor(Neuro.Kernel.SCALAR)
-        val session = actual.newTrainingSession(TrainingBackend.CUDA)
+        val session = actual.newTrainingSession(TrainingBackend.GPU)
         session.use {
             assertGpu(it.info)
             val cpuStart = System.nanoTime()
@@ -94,19 +94,19 @@ class NeuroCudaAcceptanceTest {
             assertEquals(cpuResult.epochs, gpuResult.epochs)
             assertEquals(cpuResult.error, gpuResult.error, TOLERANCE)
             assertModelsEqual(expected, actual)
-            println("CUDA acceptance: ${it.info}; epochs=${gpuResult.epochs}; samples=${actual.statistics().samplesSeen}; " +
+            println("GPU acceptance: ${it.info}; epochs=${gpuResult.epochs}; samples=${actual.statistics().samplesSeen}; " +
                 "rmse=${gpuResult.error}; cpuTrainingMs=$cpuMillis; gpuTrainingMs=$gpuMillis")
         }
         session.close()
         assertThrows(IllegalStateException::class.java) { session.trainEpoch() }
-        actual.newTrainingSession(TrainingBackend.CUDA).use {
+        actual.newTrainingSession(TrainingBackend.GPU).use {
             assertEquals(expected.trainEpoch(), it.trainEpoch(), TOLERANCE)
             assertModelsEqual(expected, actual)
         }
     }
 
     private fun assertGpu(info: TrainingDeviceInfo) {
-        assertEquals(TrainingBackend.CUDA, info.backend)
+        assertEquals(TrainingBackend.GPU, info.backend)
         assertEquals("FP64", info.precision)
         assertTrue(info.name.isNotBlank())
         assertTrue(info.identity.isNotBlank())

@@ -1,7 +1,11 @@
 package com.lis.neuro
 
-enum class TrainingBackend { CPU, CUDA, CUBLAS, AUTO }
-enum class TrainingEngine { REFERENCE, SMALL }
+enum class TrainingBackend(val displayName: String) {
+    CPU("TensorFlow CPU"), GPU("TensorFlow GPU"), AUTO("TensorFlow AUTO (CPU)")
+}
+enum class TrainingEngine(val displayName: String) {
+    REFERENCE("General topology"), SMALL("Compact topology")
+}
 
 enum class TrainingTermination { COMPLETED, CONVERGED, CANCELLED, BUDGET }
 
@@ -84,7 +88,7 @@ internal data class NeuroTrainingState(
 internal fun openTrainingSession(network: Neuro, backend: TrainingBackend): NeuroTrainingSession =
     openConfiguredTrainingSession(network, backend, Neuro.TrainingPrecision.FP64, 1)
 
-/** Legacy backend and engine selections share TensorFlow's numerical implementation. */
+/** Device and topology-family selections share TensorFlow's numerical implementation. */
 internal fun openConfiguredTrainingSession(
     network: Neuro, backend: TrainingBackend, precision: Neuro.TrainingPrecision, batchSize: Int,
     engine: TrainingEngine = TrainingEngine.REFERENCE,
@@ -97,7 +101,7 @@ internal fun openConfiguredTrainingSession(
     return try {
         require(batchSize > 0) { "batchSize must be > 0" }
         require(engine != TrainingEngine.SMALL || SmallNetworkShape.supports(network.topology())) {
-            "SMALL requires 2 inputs, 1 output, and 1–4 hidden layers of width 4, 8 or 16."
+            "Compact topology requires 2 inputs, 1 output, and 1–4 hidden layers of width 4, 8 or 16."
         }
         val session = SmallTrainingSession(network, batchSize, kernelFactory)
         NeuroLog.info("training", "session.resolved", "model" to network.logId,
@@ -151,7 +155,7 @@ internal fun <T> loggedTraining(network: Neuro, sessionId: String?, info: Traini
         if (!logProgress) return result
         val after = network.statistics()
         fun completedFields() = fields(after).apply {
-            put("gpuWorkCompleted", (info.backend == TrainingBackend.CUDA || info.backend == TrainingBackend.CUBLAS) &&
+            put("gpuWorkCompleted", info.backend == TrainingBackend.GPU &&
                 after.epochsTrained > beforeEpoch)
             when (result) {
                 is Double -> put("rmse", result)

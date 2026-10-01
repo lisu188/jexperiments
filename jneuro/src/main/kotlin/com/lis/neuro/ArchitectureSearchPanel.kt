@@ -192,8 +192,8 @@ internal class ArchitectureSearchPanel(
             evaluation.selectedItem = if (config.dataset in BOOLEAN_SETS) ArchitectureEvaluation.TRAINING_FIT else ArchitectureEvaluation.VALIDATION
         }
         source = config; sourceSize = samples
-        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · TensorFlow ${source.backend} · ${source.precision} · ${source.engine} · ${source.sigmoid} · batch ${source.batchSize}"
-        sourceLabel.toolTipText = if (source.engine == TrainingEngine.SMALL) "Search intersects these bounds with 1–4 hidden layers and widths 4, 8 or 16." else null
+        sourceLabel.text = "Active: ${source.dataset} · $samples samples · learning rate ${source.learningRate} · momentum ${source.momentum} · ${source.backend.displayName} · ${source.precision} · ${source.engine.displayName} · ${source.sigmoid} · batch ${source.batchSize}"
+        sourceLabel.toolTipText = if (source.engine == TrainingEngine.SMALL) "Compact topology restricts search to 1–4 hidden layers and widths 4, 8 or 16." else null
         start.isEnabled = !running && samples > 0
     }
 
@@ -294,7 +294,7 @@ internal class ArchitectureSearchPanel(
         val workers = "Active trials: ${progress.running.size}/${config?.concurrentModels} · $activeArchitectures architectures · peak ${progress.peakParallelTrials}" +
             (if (config?.execution == ArchitectureExecution.BATCHED) " · TensorFlow batch execution"
             else " · CPU workers ${progress.activeWorkers}/${config?.parallelism}") +
-            if (config?.usesCudaQueue == true) " · GPU models ${progress.residentModels}/64 · queued ${progress.queuedGpuRequests} · dispatches ${progress.gpuBatches}" else ""
+            if (config?.usesTensorFlowQueue == true) " · GPU models ${progress.residentModels}/64 · queued ${progress.queuedGpuRequests} · dispatches ${progress.gpuBatches}" else ""
         summary.text = if (trial == null) "$workers · Collecting results…" else "$workers · ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch}/${config?.maxEpochs}"
     }
 
@@ -390,10 +390,10 @@ internal class ArchitectureSearchPanel(
         summary.text = if (winner != null) "Recommended: ${winner.architecture} · ${winner.architecture.parameters} parameters · median ${scoreMode.label} ${number(winner.medianRmse)} · ${winner.successes}/${winner.expectedSeeds} successful seeds"
             else if (selection.bestError == null) "No fully evaluated finite candidate. " +
                 (report.candidates.asSequence().flatMap { it.trials.asSequence() }.firstOrNull { it.failure.isNotEmpty() }?.let {
-                    "${report.config.backend}: ${it.failure}"
+                    "${report.config.backend.displayName}: ${it.failure}"
                 } ?: "The search was incomplete or every completed architecture had a failed seed.")
             else "No evaluated architecture met the target reliably. Best completed RMSE: ${number(selection.bestError.medianRmse)}."
-        summary.toolTipText = "${report.environment}; backend ${report.config.backend}; execution ${report.config.execution}; strategy ${report.config.strategy}; search seed ${report.config.searchSeed}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
+        summary.toolTipText = "${report.environment}; backend ${report.config.backend.displayName}; execution ${report.config.execution}; strategy ${report.config.strategy}; search seed ${report.config.searchSeed}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
     }
 
     private fun updateInspection() {
@@ -426,7 +426,7 @@ internal class ArchitectureSearchPanel(
             trial.failure.isNotEmpty() -> "Seed ${trial.seed}: ${trial.failure}"
             else -> "Seed ${trial.seed}: best ${scoreMode.label} ${number(trial.bestRmse)} at epoch ${trial.bestEpoch}; trained ${trial.epochs}. Apply = fresh run; replay = scored training partition."
         }
-        details.toolTipText = trial?.deviceInfo?.let { "${trial.execution} · ${trial.route} · TensorFlow ${it.backend} · ${it.name} · ${it.precision} · ${it.engine} · ${it.sigmoid} · kernel ${it.kernelVersion} · ${it.identity}" }
+        details.toolTipText = trial?.deviceInfo?.let { "${trial.execution} · ${trial.route} · ${it.backend.displayName} · ${it.name} · ${it.precision} · ${it.engine.displayName} · ${it.sigmoid} · kernel ${it.kernelVersion} · ${it.identity}" }
         inspector.repaint(); plot.repaint()
     }
 

@@ -7,7 +7,7 @@ internal object SmallNetworkShape {
 }
 
 internal fun validateSmallState(state: NeuroTrainingState) {
-    require(SmallNetworkShape.supports(state.topology)) { "SMALL requires 2 inputs, 1 output and 1..4 hidden layers of 4, 8 or 16 neurons" }
+    require(SmallNetworkShape.supports(state.topology)) { "Compact topology requires 2 inputs, 1 output, and 1–4 hidden layers of width 4, 8 or 16." }
     val layers = state.topology.size - 1
     require(state.weights.size == layers && state.biases.size == layers &&
         state.weightVelocity.size == layers && state.biasVelocity.size == layers) { "Invalid state layer count" }

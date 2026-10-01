@@ -10,12 +10,12 @@ import org.junit.jupiter.api.Timeout
 
 /** TensorFlow CPU exercises the queue without requiring a GPU on ordinary CI. */
 @Timeout(60)
-class SearchCudaServiceTest {
+class TensorFlowSearchServiceTest {
     @Test fun heterogeneousModelsShareBoundedAdmissionAndPublishIndependentCheckpoints() {
         val fixture = SearchTensorFlowKernels()
         val shapes = listOf(intArrayOf(2, 4, 1), intArrayOf(2, 8, 4, 1), intArrayOf(2, 4, 8, 4, 1))
         val models = shapes.mapIndexed { index, shape -> model(shape, index.toLong()) }
-        SearchCudaService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 3).use { service ->
+        TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 3).use { service ->
             val sessions = models.map(service::openSession)
             try {
                 assertEquals(3, service.residentModels)
@@ -43,7 +43,7 @@ class SearchCudaServiceTest {
         for (precision in Neuro.TrainingPrecision.entries) {
             val actual = model(); val expected = model()
             val fixture = SearchTensorFlowKernels(precision)
-            SearchCudaService(precision, 3, fixture::open).use { service ->
+            TensorFlowSearchService(precision, 3, fixture::open).use { service ->
                 service.openSession(actual).use { session ->
                     assertEquals(precision.name, session.info.precision)
                     session.train(2); session.trainMiniBatch(2, 3, 1)
@@ -68,7 +68,7 @@ class SearchCudaServiceTest {
             val fixture = SearchTensorFlowKernels().apply { if (corrupt) corruptSlots += 0 else failedSlots += 0 }
             val bad = model(); val good = model(seed = 3)
             val before = bad.exportTrainingState()
-            SearchCudaService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 2).use { service ->
+            TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 2).use { service ->
                 val first = service.openSession(bad); val second = service.openSession(good)
                 try {
                     assertThrows(Exception::class.java) { first.advanceForSearch(request(2)) }
@@ -90,7 +90,7 @@ class SearchCudaServiceTest {
         val clock = AtomicLong()
         val fixture = SearchTensorFlowKernels().apply { beforeTrain = { clock.addAndGet(10) } }
         val actual = model()
-        SearchCudaService(Neuro.TrainingPrecision.FP64, 1, fixture::open, 1, clock::get).use { service ->
+        TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 1, fixture::open, 1, clock::get).use { service ->
             service.openSession(actual).use { session ->
                 assertEquals(TrainingTermination.CANCELLED, session.advanceForSearch(TrainingChunkRequest(8, cancelled = { true })).termination)
                 assertEquals(SearchAdvanceResult(0, null, TrainingTermination.COMPLETED), session.advanceForSearch(request(0)))
@@ -107,7 +107,7 @@ class SearchCudaServiceTest {
     @Test fun closeDrainsNativeWorkEvenWhenFutureIsCancelledAndRestoresInterrupt() {
         val entered = CountDownLatch(1); val release = CountDownLatch(1)
         val fixture = SearchTensorFlowKernels().apply { beforeTrain = { entered.countDown(); check(release.await(30, TimeUnit.SECONDS)) } }
-        val service = SearchCudaService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 1)
+        val service = TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 1)
         val actual = model(); val session = service.openSession(actual)
         val result = session.advanceForSearchAsync(request(8))
         assertTrue(entered.await(30, TimeUnit.SECONDS))
@@ -126,15 +126,15 @@ class SearchCudaServiceTest {
     }
 
     @Test fun invalidAdmissionFactoryFailureAndCleanupFailureReleaseOwnership() {
-        assertThrows(IllegalArgumentException::class.java) { SearchCudaService(Neuro.TrainingPrecision.FP64, 0) }
-        assertThrows(IllegalArgumentException::class.java) { SearchCudaService(Neuro.TrainingPrecision.FP64, 1, maximumModels = 65) }
+        assertThrows(IllegalArgumentException::class.java) { TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 0) }
+        assertThrows(IllegalArgumentException::class.java) { TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 1, maximumModels = 65) }
         val actual = model()
-        SearchCudaService(Neuro.TrainingPrecision.FP64, 3, { _, _ -> error("factory") }, 1).use { service ->
+        TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 3, { _, _ -> error("factory") }, 1).use { service ->
             assertThrows(IllegalStateException::class.java) { service.openSession(actual) }
             actual.trainEpoch()
         }
         val fixture = SearchTensorFlowKernels()
-        SearchCudaService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 2).use { service ->
+        TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 2).use { service ->
             service.openSession(model()).use {
                 val different = model(samples = 3)
                 assertThrows(IllegalArgumentException::class.java) { service.openSession(different) }
@@ -149,7 +149,7 @@ class SearchCudaServiceTest {
 
     @Test fun cancellationCallbackFailureFailsOnlyItsSession() {
         val fixture = SearchTensorFlowKernels()
-        SearchCudaService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 1).use { service ->
+        TensorFlowSearchService(Neuro.TrainingPrecision.FP64, 3, fixture::open, 1).use { service ->
             service.openSession(model()).use { session ->
                 assertThrows(IllegalStateException::class.java) { session.advanceForSearch(TrainingChunkRequest(2, cancelled = { error("callback") })) }
                 assertThrows(IllegalStateException::class.java) { session.advanceForSearch(request(1)) }

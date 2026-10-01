@@ -11,12 +11,12 @@ internal interface AsyncSearchEpochAdvancer {
     fun advanceForSearchAsync(request: TrainingChunkRequest): CompletableFuture<SearchAdvanceResult>
 }
 
-/** Bounded TensorFlow model admission and one numerical worker; the legacy queue API supports replay. */
-internal class SearchCudaService(
+/** Bounded TensorFlow model admission and one numerical worker; the same queue supports replay. */
+internal class TensorFlowSearchService(
     private val precision: Neuro.TrainingPrecision,
     private val batchSize: Int,
     private val kernelFactory: (NeuroTrainingState, Neuro.HyperParameters) -> SmallTrainingKernel = { state, hp ->
-        TensorFlowMath.trainingKernel(state, hp, precision, TrainingBackend.CUDA, TrainingEngine.SMALL)
+        TensorFlowMath.trainingKernel(state, hp, precision, TrainingBackend.GPU, TrainingEngine.SMALL)
     },
     private val maximumModels: Int = 64,
     private val clock: () -> Long = System::nanoTime
@@ -27,7 +27,7 @@ internal class SearchCudaService(
     private val executor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "jneuro-search-tensorflow").apply { isDaemon = true; nativeThread = this }
     }
-    private val sessions = arrayOfNulls<SearchCudaSession>(maximumModels)
+    private val sessions = arrayOfNulls<TensorFlowSearchSession>(maximumModels)
     private val requests = ArrayDeque<Pending>()
     private var scheduled = false
     private var closed = false
@@ -43,8 +43,8 @@ internal class SearchCudaService(
     val batchesLaunched: Long get() = synchronized(lock) { launches }
     internal val configuredBatchSize: Int get() = batchSize
 
-    fun openSession(model: Neuro): SearchCudaSession {
-        val session = SearchCudaSession(this, model)
+    fun openSession(model: Neuro): TensorFlowSearchSession {
+        val session = TensorFlowSearchSession(this, model)
         val slot = synchronized(lock) {
             checkAvailable()
             val index = sessions.indexOfFirst { it == null }
@@ -83,7 +83,7 @@ internal class SearchCudaService(
         failure?.let { throw IllegalStateException("Search service failed; reopen from committed checkpoints.", it) }
     }
 
-    internal fun submit(session: SearchCudaSession, request: TrainingChunkRequest): CompletableFuture<SearchAdvanceResult> {
+    internal fun submit(session: TensorFlowSearchSession, request: TrainingChunkRequest): CompletableFuture<SearchAdvanceResult> {
         require(request.targetError == null) { "Search scoring belongs to the evaluator." }
         val pending = Pending(session, request, clock())
         synchronized(lock) {
@@ -170,7 +170,7 @@ internal class SearchCudaService(
         pending.result.completeExceptionally(problem)
     }
 
-    internal fun release(session: SearchCudaSession) {
+    internal fun release(session: TensorFlowSearchSession) {
         onNative {
             try { session.kernel.close() }
             finally { synchronized(lock) { check(sessions[session.slot] === session); sessions[session.slot] = null } }
@@ -178,7 +178,7 @@ internal class SearchCudaService(
     }
 
     private fun <T> onNative(action: () -> T): T = if (Thread.currentThread() === nativeThread) action()
-        else awaitSearchCuda(executor.submit<T> { action() })
+        else awaitTensorFlowSearch(executor.submit<T> { action() })
 
     override fun close() {
         synchronized(lock) {
@@ -198,7 +198,7 @@ internal class SearchCudaService(
         }
     }
 
-    internal class Pending(val session: SearchCudaSession, val request: TrainingChunkRequest, val started: Long) {
+    internal class Pending(val session: TensorFlowSearchSession, val request: TrainingChunkRequest, val started: Long) {
         val result = CompletableFuture<SearchAdvanceResult>()
         val drained = CompletableFuture<Unit>()
         val limit = minOf(64, request.maxEpochs)
@@ -209,7 +209,7 @@ internal class SearchCudaService(
 }
 
 /** Public-style synchronous calls exist for strict same-route replay, not CPU search dispatch. */
-internal class SearchCudaSession(private val service: SearchCudaService, internal val model: Neuro) :
+internal class TensorFlowSearchSession(private val service: TensorFlowSearchService, internal val model: Neuro) :
     NeuroTrainingSession, SearchEpochAdvancer, AsyncSearchEpochAdvancer {
     internal var slot = -1
         private set
@@ -223,29 +223,29 @@ internal class SearchCudaSession(private val service: SearchCudaService, interna
     private var acquired = false
     private var closed = false
     private var failure: Throwable? = null
-    private var pending: SearchCudaService.Pending? = null
+    private var pending: TensorFlowSearchService.Pending? = null
     override val currentRmse: Double get() = model.statistics().lastTrainingError.let { if (it.isNaN()) model.trainingError() else it }
 
     internal fun acquire(index: Int) {
-        model.acquireTraining(this, NeuroLog.id("search-cuda-session"))
+        model.acquireTraining(this, NeuroLog.id("search-tensorflow-session"))
         acquired = true
         slot = index
     }
     internal fun ready(compute: SmallTrainingKernel) { kernel = compute; info = compute.info }
     internal fun releaseAcquisition() { if (acquired) { model.releaseTraining(this); acquired = false } }
     @Synchronized private fun checkUsable() {
-        check(!closing && !closed) { "CUDA search session is closed." }
-        failure?.let { throw IllegalStateException("CUDA search session failed; close and reopen from its committed checkpoint.", it) }
+        check(!closing && !closed) { "GPU search session is closed." }
+        failure?.let { throw IllegalStateException("GPU search session failed; close and reopen from its committed checkpoint.", it) }
     }
-    @Synchronized internal fun install(next: SearchCudaService.Pending) {
+    @Synchronized internal fun install(next: TensorFlowSearchService.Pending) {
         checkUsable()
-        check(pending == null) { "Only one CUDA search request may be pending per model." }
+        check(pending == null) { "Only one GPU search request may be pending per model." }
         pending = next
     }
-    @Synchronized internal fun finished(value: SearchCudaService.Pending) { if (pending === value) pending = null }
+    @Synchronized internal fun finished(value: TensorFlowSearchService.Pending) { if (pending === value) pending = null }
     @Synchronized internal fun failed(problem: Throwable) { if (failure == null) failure = problem }
     override fun advanceForSearchAsync(request: TrainingChunkRequest): CompletableFuture<SearchAdvanceResult> = service.submit(this, request)
-    override fun advanceForSearch(request: TrainingChunkRequest): SearchAdvanceResult = awaitSearchCuda(advanceForSearchAsync(request))
+    override fun advanceForSearch(request: TrainingChunkRequest): SearchAdvanceResult = awaitTensorFlowSearch(advanceForSearchAsync(request))
     override fun trainChunk(request: TrainingChunkRequest): TrainingChunkResult {
         require(request.targetError == null) { "Search session target scoring must run on the CPU evaluator." }
         val result = advanceForSearch(request)
@@ -272,7 +272,7 @@ internal class SearchCudaSession(private val service: SearchCudaService, interna
     }
     override fun close() {
         val active = synchronized(this) { if (closed) return; closing = true; pending }
-        if (active != null) awaitSearchCuda(active.drained)
+        if (active != null) awaitTensorFlowSearch(active.drained)
         synchronized(this) {
             if (closed) return
             closed = true
@@ -281,7 +281,7 @@ internal class SearchCudaSession(private val service: SearchCudaService, interna
     }
 }
 
-private fun <T> awaitSearchCuda(future: java.util.concurrent.Future<T>): T {
+private fun <T> awaitTensorFlowSearch(future: java.util.concurrent.Future<T>): T {
     var interrupted = false
     try {
         while (true) {

@@ -39,7 +39,7 @@ class NeuroLogTest {
     @Test fun structuredEventsPreserveScalarTypesAndEscapeUntrustedText() {
         val failure = IllegalStateException("failed\nline", IOException("native cause"))
         failure.addSuppressed(IOException("cleanup failure"))
-        NeuroLog.info("training", "session.open", "backend" to "CUDA", "epochs" to 7,
+        NeuroLog.info("training", "session.open", "backend" to "GPU", "epochs" to 7,
             "rmse" to 0.25, "active" to true, "missing" to null, "note" to "quoted \"text\"\\\r\n\t\u0001 🌍")
         NeuroLog.debug("training", "epoch.completed") { mapOf("value" to Float.NaN) }
         NeuroLog.trace("native", "kernel.launch") { mapOf("bytes" to 32L, "delta" to 0.5f) }

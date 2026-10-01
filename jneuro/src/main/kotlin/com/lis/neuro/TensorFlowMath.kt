@@ -53,7 +53,7 @@ internal object TensorFlowMath {
              engine: TrainingEngine = TrainingEngine.REFERENCE,
              sigmoid: Neuro.SigmoidMode = Neuro.SigmoidMode.EXACT): TrainingDeviceInfo {
         val device = device(backend)
-        return TrainingDeviceInfo(if (device == CPU) TrainingBackend.CPU else TrainingBackend.CUDA,
+        return TrainingDeviceInfo(if (device == CPU) TrainingBackend.CPU else TrainingBackend.GPU,
             "TensorFlow ${TensorFlow.version()} ${if (device == CPU) "CPU" else "GPU 0"}",
             "tensorflow:$device", precision.name, "tensorflow-${TensorFlow.version()}-dense-loop-v2",
             engine, 0, sigmoid.name)

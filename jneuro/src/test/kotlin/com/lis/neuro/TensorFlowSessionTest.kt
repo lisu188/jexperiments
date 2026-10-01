@@ -23,14 +23,11 @@ class TensorFlowSessionTest {
         }
     }
 
-    @Test fun searchConfigurationAcceptsAllTensorFlowAliasesAndPrecisions() {
+    @Test fun searchConfigurationAcceptsAllTensorFlowDevicesAndPrecisions() {
         for (backend in TrainingBackend.entries) for (engine in TrainingEngine.entries) for (precision in Neuro.TrainingPrecision.entries) {
             val config = ArchitectureSearchConfig(backend = backend, precision = precision, engine = engine)
             assertEquals(backend, config.backend)
             assertEquals(precision, config.precision)
         }
-        assertEquals(Neuro.BatchBackend.CPU, NeuroCuda.resolveBackend(Neuro.BatchBackend.AUTO, intArrayOf(4096, 4096), 1024, true))
-        assertEquals(Neuro.BatchBackend.CPU, NeuroCuda.resolveBackend(Neuro.BatchBackend.CPU, intArrayOf(2, 1), 1))
-        assertEquals(Neuro.BatchBackend.CUDA, NeuroCuda.resolveBackend(Neuro.BatchBackend.CUDA, intArrayOf(2, 1), 1))
     }
 }
