@@ -40,6 +40,15 @@ jobs:
         run: python3 jneuro/tools/build_cuda.py build --check
       - name: Verify packaged hashes and ABI
         run: python3 jneuro/tools/build_cuda.py verify
+      - name: Inspect target GPU instructions and resource usage
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          mkdir -p /tmp/jneuro-cuda-inspection
+          nvcc --cubin --std=c++17 --gpu-architecture=sm_89 --fmad=false --prec-div=true --prec-sqrt=true --ftz=false --ptxas-options=-v --output-file /tmp/jneuro-cuda-inspection/train.cubin jneuro/src/main/cuda/train.cu 2>/tmp/jneuro-cuda-inspection/resources.txt
+          cuobjdump --dump-sass /tmp/jneuro-cuda-inspection/train.cubin > /tmp/jneuro-cuda-inspection/sass.txt
+          cuobjdump --dump-resource-usage /tmp/jneuro-cuda-inspection/train.cubin >> /tmp/jneuro-cuda-inspection/resources.txt
+          sha256sum jneuro/src/main/cuda/train.cu /tmp/jneuro-cuda-inspection/train.cubin > /tmp/jneuro-cuda-inspection/hashes.txt
+          gzip /tmp/jneuro-cuda-inspection/sass.txt
       - name: Upload compiled PTX and provenance
         uses: actions/upload-artifact@v4
         with:
@@ -47,5 +56,13 @@ jobs:
           path: |
             jneuro/src/main/resources/com/lis/neuro/cuda/train.ptx
             jneuro/src/main/resources/com/lis/neuro/cuda/train.properties
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload bounded assembly inspection
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-cuda-sm89-instructions
+          path: /tmp/jneuro-cuda-inspection/*
           if-no-files-found: error
           retention-days: 7

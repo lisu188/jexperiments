@@ -71,7 +71,7 @@ class ResourceVerificationTest(unittest.TestCase):
         build_cuda.verify(self.directory)
 
     def test_heterogeneous_search_requires_new_abi_and_both_precisions(self):
-        self.assertEqual("3", build_cuda.source_metadata()["kernel.abi"])
+        self.assertEqual("4", build_cuda.source_metadata()["kernel.abi"])
         self.assertIn("search_train_fp64", build_cuda.KERNELS)
         self.assertIn("search_train_fp32", build_cuda.KERNELS)
         self.metadata["kernel.abi"] = "2"

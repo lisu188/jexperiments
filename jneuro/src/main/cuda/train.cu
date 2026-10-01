@@ -170,11 +170,13 @@ template <typename Real> __device__ Real small_activate(Real value, int mode) {
     return exponential / (Real(1) + exponential);
 }
 
-template <typename Real> __device__ void small_train(
-    double* packed, const double* inputs, const double* targets, const int* orders,
+template <typename Real, typename Storage = double, int Parameters = SMALL_PARAMETERS,
+          int Activations = SMALL_ACTIVATIONS, int Deltas = SMALL_DELTAS>
+__device__ void small_train(
+    Storage* packed, const Storage* inputs, const Storage* targets, const int* orders,
     const int* topology, const int* active, int models, int layers, int samples,
     int epochs, int batch_size, double learning_rate_double, double momentum_double,
-    double beta_double, int mode, int online, const int* requests = nullptr, double* checkpoint = nullptr) {
+    double beta_double, int mode, int online, const int* requests = nullptr, Storage* checkpoint = nullptr) {
     const int model = blockIdx.x;
     if (model >= models || (requests == nullptr && !active[model])) return;
     // Search ABI 3: [state offset, topology offset, order offset, layers,
@@ -189,22 +191,28 @@ template <typename Real> __device__ void small_train(
         checkpoint += request[5];
     }
     const int thread = threadIdx.x;
-    __shared__ Real state[2 * SMALL_PARAMETERS];
-    __shared__ Real activation[SMALL_TILE * SMALL_ACTIVATIONS];
-    __shared__ Real delta[SMALL_TILE * SMALL_DELTAS];
-    __shared__ Real gradient[SMALL_PARAMETERS];
+    __shared__ Real state[2 * Parameters];
+    __shared__ Real activation[SMALL_TILE * Activations];
+    __shared__ Real delta[SMALL_TILE * Deltas];
+    __shared__ Real gradient[Parameters];
     __shared__ int invalid;
-    int parameter_offset[5], activation_offset[6], delta_offset[5];
-    int parameters = 0, activation_count = topology[0], delta_count = 0;
-    activation_offset[0] = 0;
-    for (int layer = 0; layer < layers; ++layer) {
+    // Block-uniform metadata belongs to shared storage, not a per-thread
+    // dynamically indexed array that spills to CUDA local memory.
+    __shared__ int parameter_offset[5], activation_offset[6], delta_offset[5];
+    __shared__ int parameters, activation_count, delta_count;
+    if (thread == 0) {
+      parameters = 0; activation_count = topology[0]; delta_count = 0;
+      activation_offset[0] = 0;
+      for (int layer = 0; layer < layers; ++layer) {
         parameter_offset[layer] = parameters;
         parameters += topology[layer + 1] * (topology[layer] + 1);
         activation_offset[layer + 1] = activation_count;
         activation_count += topology[layer + 1];
         delta_offset[layer] = delta_count;
         delta_count += topology[layer + 1];
+      }
     }
+    __syncthreads();
     const std::size_t base = requests == nullptr ? static_cast<std::size_t>(model) * parameters * 2 : 0;
     const std::size_t order_base = requests == nullptr ? static_cast<std::size_t>(model) * epochs * samples : 0;
     for (int index = thread; index < parameters * 2; index += blockDim.x)
@@ -293,12 +301,12 @@ template <typename Real> __device__ void small_train(
         // intact and let unrelated models complete; driver errors remain fatal.
         if (thread == 0) checkpoint[0] = invalid ? 1.0 : 0.0;
         for (int index = thread; index < parameters * 2; index += blockDim.x) {
-            checkpoint[index + 1] = invalid ? packed[base + index] : double(state[index]);
-            if (!invalid) packed[base + index] = double(state[index]);
+            checkpoint[index + 1] = invalid ? packed[base + index] : Storage(state[index]);
+            if (!invalid) packed[base + index] = Storage(state[index]);
         }
     } else {
         for (int index = thread; index < parameters * 2; index += blockDim.x)
-            packed[base + index] = invalid ? NAN : double(state[index]);
+            packed[base + index] = invalid ? Storage(NAN) : Storage(state[index]);
     }
 }
 } // namespace
@@ -329,5 +337,132 @@ extern "C" __global__ void search_train_fp32(double* packed, const double* input
     const int* orders, const int* topology, const int* requests, double* checkpoint,
     int models, int samples, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) {
     small_train<float>(packed, inputs, targets, orders, topology, nullptr, models, 0, samples,
+        0, batch_size, learning_rate, momentum, beta, mode, online, requests, checkpoint);
+}
+
+// General FP32 ABI: all tensors and floating scalar arguments are true float.
+// FP64 entrypoints above retain their original operation order.
+extern "C" __global__ void forward_fp32(
+    const float* source, const float* weights, const float* biases,
+    float* output, int inputs, int outputs, int count, float beta,
+    int sigmoid_mode) {
+    const std::size_t index = thread_index();
+    if (index >= static_cast<std::size_t>(count) * outputs) return;
+    const std::size_t source_offset = index / outputs * inputs;
+    const int neuron = static_cast<int>(index % outputs);
+    const std::size_t weight_offset = static_cast<std::size_t>(neuron) * inputs;
+    float sum = biases[neuron];
+    for (int input = 0; input < inputs; ++input) {
+        sum = fmaf(source[source_offset + input], weights[weight_offset + input], sum);
+    }
+    output[index] = small_activate<float>(sum * beta, sigmoid_mode);
+}
+
+extern "C" __global__ void output_delta_fp32(
+    const float* activations, const float* targets, float* delta,
+    int outputs, int count, float beta) {
+    const std::size_t index = thread_index();
+    if (index >= static_cast<std::size_t>(count) * outputs) return;
+    const float activation = activations[index];
+    delta[index] = (targets[index] - activation) * beta * activation * (1.0f - activation);
+}
+
+extern "C" __global__ void hidden_delta_fp32(
+    const float* next_weights, const float* next_delta,
+    const float* activations, float* delta, int current_width,
+    int next_width, int count, float beta) {
+    const std::size_t index = thread_index();
+    if (index >= static_cast<std::size_t>(count) * current_width) return;
+    const std::size_t next_offset = index / current_width * next_width;
+    const int neuron = static_cast<int>(index % current_width);
+    float sum = next_delta[next_offset] * next_weights[neuron];
+    for (int next = 1; next < next_width; ++next) {
+        sum = fmaf(next_delta[next_offset + next],
+            next_weights[static_cast<std::size_t>(next) * current_width + neuron], sum);
+    }
+    const float activation = activations[index];
+    delta[index] = sum * (beta * activation * (1.0f - activation));
+}
+
+// Launch inputs*outputs + outputs threads: one owner per weight or bias.
+// online must be 0 or 1; online=1 requires count=1. Host validates dimensions.
+extern "C" __global__ void update_fp32(
+    const float* source, const float* delta, float* weights, float* biases,
+    float* weight_velocity, float* bias_velocity, int inputs, int outputs,
+    int count, float learning_rate, float momentum, int online) {
+    const std::size_t index = thread_index();
+    const std::size_t weight_count = static_cast<std::size_t>(inputs) * outputs;
+    if (index >= weight_count + outputs) return;
+    if (index < weight_count) {
+        const int neuron = static_cast<int>(index / inputs);
+        const int input = static_cast<int>(index % inputs);
+        float scaled_gradient;
+        if (online) {
+            const float scale = learning_rate * delta[neuron];
+            scaled_gradient = scale * source[input];
+        } else {
+            float gradient = 0.0f;
+            for (int sample = 0; sample < count; ++sample) {
+                gradient = fmaf(source[static_cast<std::size_t>(sample) * inputs + input],
+                    delta[static_cast<std::size_t>(sample) * outputs + neuron], gradient);
+            }
+            scaled_gradient = (learning_rate / count) * gradient;
+        }
+        const float velocity = fmaf(momentum, weight_velocity[index], scaled_gradient);
+        weight_velocity[index] = velocity;
+        weights[index] += velocity;
+    } else {
+        const int neuron = static_cast<int>(index - weight_count);
+        float scaled_gradient;
+        if (online) {
+            scaled_gradient = learning_rate * delta[neuron];
+        } else {
+            float gradient = 0.0f;
+            for (int sample = 0; sample < count; ++sample) {
+                gradient += delta[static_cast<std::size_t>(sample) * outputs + neuron];
+            }
+            scaled_gradient = (learning_rate / count) * gradient;
+        }
+        const float velocity = fmaf(momentum, bias_velocity[neuron], scaled_gradient);
+        bias_velocity[neuron] = velocity;
+        biases[neuron] += velocity;
+    }
+}
+
+// Launch count*max(inputs, outputs) threads. Order is the JVM-generated shuffle.
+extern "C" __global__ void gather_fp32(
+    const float* all_inputs, const float* all_targets, const int* order,
+    float* batch_inputs, float* batch_targets, int inputs, int outputs,
+    int start, int count) {
+    const std::size_t index = thread_index();
+    if (index < static_cast<std::size_t>(count) * inputs) {
+        const std::size_t sample = static_cast<std::size_t>(order[start + index / inputs]);
+        batch_inputs[index] = all_inputs[sample * inputs + index % inputs];
+    }
+    if (index < static_cast<std::size_t>(count) * outputs) {
+        const std::size_t sample = static_cast<std::size_t>(order[start + index / outputs]);
+        batch_targets[index] = all_targets[sample * outputs + index % outputs];
+    }
+}
+
+
+// Typed transport ABI 4. FP32 state/data remain float on the device and wire.
+// Small fixed-shape entrypoints bound shared storage to the actual topology.
+#define SMALL_FLOAT_ENTRY(Name, Parameters, Activations, Deltas) \
+extern "C" __global__ void Name(float* packed, const float* inputs, const float* targets, \
+    const int* orders, const int* topology, const int* active, int models, int layers, int samples, \
+    int epochs, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) { \
+    small_train<float, float, Parameters, Activations, Deltas>(packed, inputs, targets, orders, topology, active, \
+        models, layers, samples, epochs, batch_size, learning_rate, momentum, beta, mode, online); \
+}
+SMALL_FLOAT_ENTRY(small_train_fp32_packed, SMALL_PARAMETERS, SMALL_ACTIVATIONS, SMALL_DELTAS)
+SMALL_FLOAT_ENTRY(small_train_fp32_2_4_1, 17, 7, 5)
+SMALL_FLOAT_ENTRY(small_train_fp32_2_8_8_8_1, 177, 27, 25)
+#undef SMALL_FLOAT_ENTRY
+
+extern "C" __global__ void search_train_fp32_packed(float* packed, const float* inputs, const float* targets,
+    const int* orders, const int* topology, const int* requests, float* checkpoint,
+    int models, int samples, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) {
+    small_train<float, float>(packed, inputs, targets, orders, topology, nullptr, models, 0, samples,
         0, batch_size, learning_rate, momentum, beta, mode, online, requests, checkpoint);
 }
