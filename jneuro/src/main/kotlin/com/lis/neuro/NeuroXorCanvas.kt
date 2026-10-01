@@ -106,10 +106,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         bind("control RIGHT", "Single epoch") { if (!searchRunning && !studyRunning) post(false) { it.step(1) } }
         bind("control R", "Reset model") { post { it.apply(it.activeConfig) } }
         dataset.addActionListener { updateDescription() }
-        backend.addActionListener { updateTrainingPrecision() }
-        engine.addActionListener { updateTrainingPrecision() }
         updateDescription()
-        updateTrainingPrecision()
         if (initial != null) {
             hidden.text = initial.config.hidden
             dataset.selectedItem = initial.config.dataset
@@ -119,7 +116,6 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
             sigmoid.selectedItem = initial.config.sigmoid
             trainingPrecision.selectedItem = initial.config.precision
             batchSize.value = initial.config.batchSize
-            updateTrainingPrecision()
             epochLimit.value = initial.config.maxEpochs
             refresh()
         }
@@ -162,8 +158,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         section("03  TRAINING")
         field("Training backend", backend)
         field("Training engine", engine)
-        engine.toolTipText = "REFERENCE retains the established engine. SMALL uses optimized CPU or CUDA kernels; AUTO selects CPU for SMALL."
-        backend.toolTipText = "CPU is the default. CUDA uses FP64 driver kernels. CUBLAS enables batch acceleration; AUTO selects CPU or CUBLAS."
+        engine.toolTipText = "Both choices use TensorFlow. SMALL retains its restricted topology family; REFERENCE accepts general topologies."
+        backend.toolTipText = "TensorFlow CPU is the default; AUTO selects CPU. CUDA and the CUBLAS compatibility alias require an available TensorFlow GPU runtime."
         field("Random seed", seed)
         field("Maximum epochs", epochLimit)
         val advanced = JPanel().apply { layout = BoxLayout(this, BoxLayout.Y_AXIS); isOpaque = false; alignmentX = 0f }
@@ -172,9 +168,9 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         field("Target RMSE", target, advanced)
         field("Training precision", trainingPrecision, advanced)
         field("Sigmoid", sigmoid, advanced)
-        sigmoid.toolTipText = "EXACT uses the exponential sigmoid. FAST explicitly selects the existing approximation."
+        sigmoid.toolTipText = "TensorFlow evaluates EXACT sigmoid or the explicitly selected FAST approximation."
         field("Batch size", batchSize, advanced)
-        trainingPrecision.toolTipText = "SMALL supports FP64 and FP32 on CPU/CUDA. REFERENCE supports FP32 through CUBLAS and AUTO."
+        trainingPrecision.toolTipText = "TensorFlow supports FP64 and FP32 on CPU and available GPU devices. Precision changes apply when the run is restarted."
         batchSize.toolTipText = "1 keeps online training; larger values average a mini-batch before each update."
         advanced.isVisible = false
         sidebar.add(JCheckBox("Advanced settings").apply {
@@ -322,13 +318,6 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
     private fun updateDescription() {
         val kind = dataset.selectedItem as NeuroLearningSets.Kind
         description.text = "<html><div style='width:174px'>${kind.description}</div></html>"
-    }
-
-    private fun updateTrainingPrecision() {
-        val supportsFp32 = if (engine.selectedItem == TrainingEngine.SMALL) backend.selectedItem != TrainingBackend.CUBLAS
-            else backend.selectedItem in setOf(TrainingBackend.CUBLAS, TrainingBackend.AUTO)
-        if (!supportsFp32) trainingPrecision.selectedItem = Neuro.TrainingPrecision.FP64
-        trainingPrecision.isEnabled = supportsFp32
     }
 
     private fun editLayers(add: Boolean) {
@@ -568,7 +557,7 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
         status.foreground = if (next.state == StudioState.FAILED) ERROR else ACCENT
         deviceStatus.text = next.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision}" }
             ?: "${next.config.backend} · ${if (next.state == StudioState.FAILED) "unavailable" else "awaiting training"}"
-        deviceStatus.toolTipText = next.deviceInfo?.let { "${it.identity} · ${it.engine} · ${it.sigmoid} · SIMD ${it.simdBits} · kernel ${it.kernelVersion}" }
+        deviceStatus.toolTipText = next.deviceInfo?.let { "${it.identity} · TensorFlow · ${it.engine} · ${it.sigmoid} · kernel ${it.kernelVersion}" }
         activeTopology.text = "${next.config.dataset}   ·   ${next.config.description()}   ·   seed ${next.config.seed}   ·   batch ${next.config.batchSize}" + if (next.replayNote.isEmpty()) "" else "   ·   ${next.replayNote}"
         metrics[0].text = "%,d".format(Locale.ROOT, next.diagnostics.epoch())
         metricDetails[0].text = "of %,d epochs".format(Locale.ROOT, next.config.maxEpochs)

@@ -25,11 +25,10 @@ internal class RecordingTrainingSessions {
         engines += engine
         configurations += Triple(backend, precision, batchSize)
         check(backend !in setOf(TrainingBackend.CUDA, TrainingBackend.CUBLAS) || !unavailable) { "CUDA fixture unavailable" }
-        val delegate = if (engine == TrainingEngine.SMALL) model.newTrainingSession(TrainingBackend.CPU, precision, batchSize, engine)
-            else model.newTrainingSession(TrainingBackend.CPU)
+        val delegate = model.newTrainingSession(TrainingBackend.CPU, precision, batchSize, engine)
         opened.incrementAndGet()
         val device = if (backend in setOf(TrainingBackend.CPU, TrainingBackend.AUTO)) delegate.info else
-            TrainingDeviceInfo(backend, "$backend test fixture", identity, precision.name, kernelVersion = "fixture-v1",
+            TrainingDeviceInfo(TrainingBackend.CUDA, "CUDA test fixture", identity, precision.name, kernelVersion = "fixture-v1",
                 engine = engine, sigmoid = model.hyperParameters().sigmoidMode.name)
         return object : NeuroTrainingSession by delegate {
             private val released = AtomicBoolean()

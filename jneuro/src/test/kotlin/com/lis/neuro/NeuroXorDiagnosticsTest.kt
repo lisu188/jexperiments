@@ -4,10 +4,51 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
 class NeuroXorDiagnosticsTest {
+    @Test fun batchedLayersAndTiledMapsRetainPixelOrderAndDetachedState() {
+        val model = Neuro(intArrayOf(2, 4, 3, 1), Neuro.HyperParameters.defaults().copy(beta = 1.4, seed = 42))
+        val snapshot = NeuroXorDiagnostics.capture(model, 0, 0.5)
+        val inputs = doubleArrayOf(0.0, 1.0, 0.3, 0.7, 1.0, 0.0)
+        val layers = snapshot.evaluateBatch(inputs, 3)
+        assertArrayEquals(inputs, layers[0], 0.0)
+        assertEquals(listOf(6, 12, 9, 3), layers.map { it.size })
+        val predictions = snapshot.predictBatch(inputs, 3)
+        val targets = doubleArrayOf(1.0, 0.0, 0.5)
+        assertEquals(kotlin.math.sqrt(predictions.indices.sumOf { val difference = targets[it] - predictions[it]; difference * difference } / 3),
+            snapshot.error(inputs, targets), 1e-12)
+        for (sample in 0..2) {
+            val workspace = snapshot.newWorkspace()
+            assertEquals(predictions[sample], snapshot.evaluate(inputs[sample * 2], inputs[sample * 2 + 1], workspace), 1e-12)
+            for (layer in workspace.indices) assertArrayEquals(workspace[layer],
+                layers[layer].copyOfRange(sample * workspace[layer].size, (sample + 1) * workspace[layer].size), 1e-12)
+        }
+        val partial = snapshot.evaluateBatch(inputs, 3, 0)
+        assertEquals(2, partial.size)
+        assertArrayEquals(layers[1], partial[1], 0.0)
+        layers[1].fill(-999.0)
+        inputs.fill(0.0)
+        val map = NeuroXorDiagnostics.renderOutputMap(snapshot, 65)
+        val hidden = NeuroXorDiagnostics.renderHiddenMaps(snapshot, 65, 1, 1, 2)
+        val difference = NeuroXorDiagnostics.renderDifferenceMap(snapshot, snapshot, 65)
+        assertEquals(4096, snapshot.renderBatchSize())
+        for (pixel in listOf(0, 4095, 4096, 4224)) {
+            val column = pixel % 65; val row = pixel / 65
+            val probe = NeuroXorDiagnostics.probe(snapshot, column / 64.0, 1.0 - row / 64.0)
+            assertEquals(NeuroXorGrid.grayRgb(probe.output()), map.getRGB(column, row) and 0xffffff)
+            for (neuron in hidden.indices) assertEquals(NeuroXorGrid.grayRgb(probe.hiddenLayer(1)[neuron + 1]),
+                hidden[neuron].getRGB(column, row) and 0xffffff)
+            assertEquals(NeuroXorDiagnostics.differenceRgb(0.0), difference.getRGB(column, row) and 0xffffff)
+        }
+        val wide = NeuroXorDiagnostics.capture(Neuro(intArrayOf(2, 512, 1)), 0, 0.5)
+        assertTrue(wide.renderBatchSize() in 1..4095)
+        val baseline = NeuroXorDiagnostics.capture(Neuro(intArrayOf(2, 1)), 0, 0.5)
+        assertTrue(NeuroXorDiagnostics.probe(baseline, 0.2, 0.8).hiddenLayers().isEmpty())
+        assertThrows(IllegalArgumentException::class.java) { snapshot.evaluateBatch(doubleArrayOf(0.0, 1.0), 1, -1) }
+    }
+
     @Test fun capturesAllLayersAndMatchesTheActualKernel() {
         for (shape in listOf(intArrayOf(2, 6, 1), intArrayOf(2, 4, 3, 2, 1), intArrayOf(2, 32, 16, 1))) {
             for (mode in Neuro.SigmoidMode.entries) {
-                val network = Neuro(shape, Neuro.HyperParameters(0.6, 0.2, 1.4, 42, Neuro.Kernel.AUTO, mode))
+                val network = Neuro(shape, Neuro.HyperParameters(0.6, 0.2, 1.4, 42, sigmoidMode = mode))
                 NeuroLearningSets.addTo(network, NeuroLearningSets.create(NeuroLearningSets.Kind.XOR, 42))
                 network.train(20)
                 val snapshot = NeuroXorDiagnostics.capture(network, 20, network.trainingError())

@@ -139,9 +139,6 @@ class SmallTrainingSessionTest {
             }
         }
         assertThrows(IllegalArgumentException::class.java) {
-            model().newTrainingSession(TrainingBackend.CUBLAS, engine = TrainingEngine.SMALL)
-        }
-        assertThrows(IllegalArgumentException::class.java) {
             Neuro(intArrayOf(2, 3, 1)).newTrainingSession(engine = TrainingEngine.SMALL)
         }
         val actual = model()

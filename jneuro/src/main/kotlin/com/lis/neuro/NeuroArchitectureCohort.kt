@@ -48,7 +48,7 @@ internal fun evaluateArchitectureCohort(
         if (cancelled()) records.forEach { it.state = ArchitectureTrialState.CANCELLED }
         else {
             records.forEach { it.model = data.newNetwork(architecture, config.hyperParameters, it.seed) }
-            // Search already owns a bounded executor. One vector group runs on this worker, with no nested pool.
+            // Search already owns a bounded executor. The TensorFlow cohort runs on this worker, with no nested pool.
             openCohort(records.map { checkNotNull(it.model) }, config.backend, config.precision, config.batchSize, 1).use { cohort ->
                 device = cohort.info
                 val active = BooleanArray(records.size) { true }

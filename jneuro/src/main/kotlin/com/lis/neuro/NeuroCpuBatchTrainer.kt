@@ -4,148 +4,15 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.Future
 
+/** Compatibility entrypoint: TensorFlow owns matrix arithmetic and its intra-operation workers. */
 internal object NeuroCpuBatchTrainer {
-    internal class Workspace(val topology: IntArray, val capacity: Int) {
-        val activations = Array(topology.size) { DoubleArray(Math.multiplyExact(capacity, topology[it])) }
-        val targets = DoubleArray(Math.multiplyExact(capacity, topology.last()))
-        val deltas = Array(topology.size - 1) { DoubleArray(Math.multiplyExact(capacity, topology[it + 1])) }
-    }
-
-    // Exclusive model ownership serializes use. Model lifetime also owns its primitive scratch buffers.
-    private fun workspace(network: Neuro, capacity: Int): Workspace {
-        val previous = network.cpuBatchWorkspace
-        return if (previous != null && previous.capacity >= capacity) previous
-        else Workspace(previous?.topology ?: network.topology(), capacity).also { network.cpuBatchWorkspace = it }
-    }
-
     fun train(network: Neuro, data: Neuro.PackedDataset, epochs: Int, batchSize: Int, parallelism: Int) {
-        val layers = network.backendLayers()
-        val workspace = workspace(network, minOf(batchSize, data.size))
-        val topology = workspace.topology
-        val pool = if (parallelism > 1) ForkJoinPool(parallelism) else null
-        try {
-            repeat(epochs) {
-                val started = System.nanoTime()
-                val order = network.backendNextTrainingOrder(data.size)
-                var start = 0
-                while (start < data.size) {
-                    val count = minOf(batchSize, data.size - start)
-                    gather(data, order, start, count, workspace, topology)
-                    forward(network, layers, workspace, count, parallelism, pool)
-                    backward(network, layers, workspace, count, parallelism, pool)
-                    update(network, layers, workspace, count, parallelism, pool)
-                    start += count
-                }
-                network.backendCompleteEpoch(data.size)
-                network.logCpuEpochCompleted(started, batchSize)
-            }
-        } finally {
-            pool?.shutdown()
-        }
-    }
-
-    private fun gather(data: Neuro.PackedDataset, order: IntArray, start: Int, count: Int,
-                       workspace: Workspace, topology: IntArray) {
-        val inputs = workspace.activations[0]
-        for (position in 0 until count) {
-            val sample = order[start + position]
-            data.inputs.copyInto(inputs, position * topology[0], sample * data.inputSize,
-                sample * data.inputSize + data.inputSize)
-            data.targets.copyInto(workspace.targets, position * topology.last(), sample * data.outputSize,
-                sample * data.outputSize + data.outputSize)
-        }
-    }
-
-    private fun forward(network: Neuro, layers: Array<Neuro.Layer>, workspace: Workspace, count: Int,
-                        parallelism: Int, pool: ForkJoinPool?) {
-        val beta = network.hyperParameters().beta
-        val mode = network.hyperParameters().sigmoidMode
-        for (layerIndex in layers.indices) {
-            val layer = layers[layerIndex]
-            val source = workspace.activations[layerIndex]
-            val destination = workspace.activations[layerIndex + 1]
-            parallelFor(Math.multiplyExact(count, layer.outputs), parallelism, pool) { from, to ->
-                for (index in from until to) {
-                    val sample = index / layer.outputs
-                    val output = index - sample * layer.outputs
-                    val sourceOffset = sample * layer.inputs
-                    val weightOffset = output * layer.inputs
-                    var sum = layer.biases[output]
-                    for (input in 0 until layer.inputs) {
-                        sum = Math.fma(source[sourceOffset + input], layer.weights[weightOffset + input], sum)
-                    }
-                    destination[index] = Neuro.activate(sum * beta, mode)
-                }
-            }
-        }
-    }
-
-    private fun backward(network: Neuro, layers: Array<Neuro.Layer>, workspace: Workspace, count: Int,
-                         parallelism: Int, pool: ForkJoinPool?) {
-        val beta = network.hyperParameters().beta
-        val outputActivation = workspace.activations.last()
-        val outputDelta = workspace.deltas.last()
-        parallelFor(Math.multiplyExact(count, layers.last().outputs), parallelism, pool) { from, to ->
-            for (index in from until to) {
-                val activation = outputActivation[index]
-                outputDelta[index] = (workspace.targets[index] - activation) * beta * activation * (1.0 - activation)
-            }
-        }
-        for (layerIndex in layers.lastIndex - 1 downTo 0) {
-            val currentWidth = layers[layerIndex].outputs
-            val nextLayer = layers[layerIndex + 1]
-            val currentActivation = workspace.activations[layerIndex + 1]
-            val currentDelta = workspace.deltas[layerIndex]
-            val nextDelta = workspace.deltas[layerIndex + 1]
-            parallelFor(Math.multiplyExact(count, currentWidth), parallelism, pool) { from, to ->
-                for (index in from until to) {
-                    val sample = index / currentWidth
-                    val current = index - sample * currentWidth
-                    val nextOffset = sample * nextLayer.outputs
-                    var sum = 0.0
-                    for (output in 0 until nextLayer.outputs) {
-                        sum = Math.fma(nextDelta[nextOffset + output],
-                            nextLayer.weights[output * nextLayer.inputs + current], sum)
-                    }
-                    val activation = currentActivation[index]
-                    currentDelta[index] = sum * beta * activation * (1.0 - activation)
-                }
-            }
-        }
-    }
-
-    private fun update(network: Neuro, layers: Array<Neuro.Layer>, workspace: Workspace, count: Int,
-                       parallelism: Int, pool: ForkJoinPool?) {
-        val learningRate = network.hyperParameters().learningRate
-        val momentum = network.hyperParameters().momentum
-        val scale = learningRate / count
-        for (layerIndex in layers.indices) {
-            val layer = layers[layerIndex]
-            val source = workspace.activations[layerIndex]
-            val delta = workspace.deltas[layerIndex]
-            parallelFor(layer.weights.size, parallelism, pool) { from, to ->
-                for (weightIndex in from until to) {
-                    val output = weightIndex / layer.inputs
-                    val input = weightIndex - output * layer.inputs
-                    var gradient = 0.0
-                    for (sample in 0 until count) {
-                        gradient = Math.fma(delta[sample * layer.outputs + output],
-                            source[sample * layer.inputs + input], gradient)
-                    }
-                    val velocity = Math.fma(momentum, layer.weightVelocity[weightIndex], scale * gradient)
-                    layer.weightVelocity[weightIndex] = velocity
-                    layer.weights[weightIndex] += velocity
-                }
-            }
-            parallelFor(layer.outputs, parallelism, pool) { from, to ->
-                for (output in from until to) {
-                    var gradient = 0.0
-                    for (sample in 0 until count) gradient += delta[sample * layer.outputs + output]
-                    val velocity = Math.fma(momentum, layer.biasVelocity[output], scale * gradient)
-                    layer.biasVelocity[output] = velocity
-                    layer.biases[output] += velocity
-                }
-            }
+        require(epochs >= 0 && batchSize > 0 && parallelism > 0)
+        if (epochs == 0) return
+        require(data.size == network.trainingSampleCount()) { "Dataset does not match the model" }
+        TensorFlowMath.trainingKernel(network.exportTrainingState(shareDataset = true), network.hyperParameters(),
+            Neuro.TrainingPrecision.FP64, TrainingBackend.CPU).use { kernel ->
+            repeat(epochs) { network.trainTensorFlowEpoch(kernel, batchSize, false, false) }
         }
     }
 
@@ -166,8 +33,8 @@ internal object NeuroCpuBatchTrainer {
         fun record(problem: IllegalStateException) {
             if (failure == null) failure = problem else failure.addSuppressed(problem)
         }
-        // Workers can write live parameters. Drain all submitted work before releasing model ownership,
-        // even when the caller is interrupted or another worker fails.
+        // Drain every inference slice before releasing the caller's output arrays,
+        // including when another worker fails or the caller is interrupted.
         for (future in futures) {
             while (true) {
                 try {
@@ -175,9 +42,9 @@ internal object NeuroCpuBatchTrainer {
                     break
                 } catch (exception: InterruptedException) {
                     interrupted = true // get() cleared the flag; restore it only after draining.
-                    record(IllegalStateException("parallel matrix training interrupted", exception))
+                    record(IllegalStateException("parallel TensorFlow inference interrupted", exception))
                 } catch (exception: ExecutionException) {
-                    record(IllegalStateException("parallel matrix training failed", exception.cause))
+                    record(IllegalStateException("parallel TensorFlow inference failed", exception.cause))
                     break
                 }
             }

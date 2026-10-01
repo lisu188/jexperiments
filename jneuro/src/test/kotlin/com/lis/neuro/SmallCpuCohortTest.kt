@@ -7,7 +7,7 @@ import com.lis.neuro.SmallCpuTrainingTest.Companion.model
 import com.lis.neuro.SmallCpuTrainingTest.Companion.orders
 
 class SmallCpuCohortTest {
-    @Test fun modelLanesMatchIndependentKernelsForEveryShapeAndPrecision() {
+    @Test fun cohortsMatchIndependentKernelsForEveryShapePrecisionAndBatchMode() {
         for (shape in SmallCpuTrainingTest.shapes()) for (precision in Neuro.TrainingPrecision.entries) for (online in listOf(true, false)) {
             val models = Array(3) { model(shape, 19L + it) }
             val states = Array(models.size) { models[it].exportTrainingState() }
@@ -16,16 +16,16 @@ class SmallCpuCohortTest {
             val expected = Array(models.size) { model ->
                 SmallCpuTraining(states[model], hp, precision, 0).use { it.train(orders[model], 3, online) }
             }
-            for (bits in listOf(0, 128, 256)) SmallCpuCohort(states, hp, precision, bits).use { cohort ->
+            SmallCpuCohort(states, hp, precision).use { cohort ->
                 val actual = cohort.train(orders, 3, online)
-                for (model in actual.indices) assertState(expected[model], actual[model], context = "${shape.contentToString()} $precision $online $bits model=$model")
-                assertEquals(smallVectorBits(hp, bits), cohort.info.simdBits)
+                for (model in actual.indices) assertState(expected[model], actual[model], context = "${shape.contentToString()} $precision online=$online model=$model")
+                assertEquals(0, cohort.info.simdBits)
                 assertEquals(TrainingEngine.SMALL, cohort.info.engine)
             }
         }
     }
 
-    @Test fun tailsInactiveLanesAndContinuationPreserveWeightsMomentumAndPerModelData() {
+    @Test fun unevenCohortsInactiveModelsAndContinuationPreserveWeightsMomentumAndPerModelData() {
         for (precision in Neuro.TrainingPrecision.entries) for (mode in Neuro.SigmoidMode.entries) for (online in listOf(true, false)) {
             val models = Array(11) { model(intArrayOf(2, 4, 8, 1), it.toLong(), mode) }
             val states = Array(models.size) { index -> models[index].exportTrainingState().let { state ->
@@ -35,7 +35,7 @@ class SmallCpuCohortTest {
             val orders = Array(models.size) { orders(states[it].samples, 2, it) }
             val active = BooleanArray(models.size) { it % 3 != 1 }
             val firstOrders = Array(models.size) { if (active[it]) arrayOf(orders[it][0]) else emptyArray() }
-            for (bits in listOf(0, 128, 256)) SmallCpuCohort(states, hp, precision, bits).use { cohort ->
+            SmallCpuCohort(states, hp, precision).use { cohort ->
                 val first = cohort.train(firstOrders, 64, online, active)
                 for (i in states.indices) if (!active[i]) assertState(states[i], first[i])
                 first[0].weights[0].fill(999.0)
@@ -49,6 +49,26 @@ class SmallCpuCohortTest {
                 }
                 val idle = cohort.train(Array(models.size) { emptyArray() }, 1, false, BooleanArray(models.size))
                 for (i in states.indices) assertState(second[i], idle[i])
+            }
+        }
+    }
+
+    @Test fun legacyVectorWidthsAliasTensorFlowCohortsForBothPrecisionsAndMomentumContinuation() {
+        val models = Array(3) { model(intArrayOf(2, 4, 8, 1), 19L + it) }
+        models.forEach { it.trainMiniBatch(1, 3, 1, Neuro.BatchBackend.CPU) }
+        val states = Array(models.size) { models[it].exportTrainingState() }
+        assertTrue(states.all { state -> state.weightVelocity.any { row -> row.any { it != 0.0 } } })
+        val hp = models[0].hyperParameters().copy(kernel = Neuro.Kernel.VECTOR)
+        val orders = Array(models.size) { orders(states[it].samples, 2, it) }
+        for (precision in Neuro.TrainingPrecision.entries) for (online in listOf(true, false)) {
+            val expected = SmallCpuCohort(states, hp, precision, 0).use { it.train(orders, 3, online) }
+            for (bits in listOf(128, 256)) SmallCpuCohort(states, hp, precision, bits).use { cohort ->
+                val actual = cohort.train(orders, 3, online)
+                for (model in actual.indices)
+                    assertState(expected[model], actual[model], context = "$precision online=$online legacyBits=$bits model=$model")
+                assertEquals(0, cohort.info.simdBits)
+                assertEquals(precision.name, cohort.info.precision)
+                assertTrue(cohort.info.kernelVersion.startsWith("tensorflow-"))
             }
         }
     }

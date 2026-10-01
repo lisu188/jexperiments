@@ -5,7 +5,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.math.ceil
-import kotlin.math.sqrt
 
 /** End-to-end search measurements. Each invocation is one JVM fork. */
 object ArchitectureSearchBenchmark {
@@ -219,17 +218,15 @@ internal object SearchBenchmarkHarness {
     }
     fun independentScore(snapshot: NeuroXorDiagnostics.Snapshot): Map<String, Any> {
         val data = independentSpiral()
-        val workspace = snapshot.newWorkspace()
-        var squared = 0.0
+        val inputs = DoubleArray(data.size * 2) { index -> if (index % 2 == 0) data[index / 2].x else data[index / 2].y }
+        val targets = DoubleArray(data.size) { data[it].target }
+        val outputs = snapshot.predictBatch(inputs, data.size)
         var correct = 0
-        for (sample in data) {
-            val output = snapshot.evaluate(sample.x, sample.y, workspace)
-            val error = sample.target - output
-            squared += error * error
-            if ((output >= 0.5) == (sample.target >= 0.5)) correct++
+        for (index in data.indices) {
+            if ((outputs[index] >= 0.5) == (targets[index] >= 0.5)) correct++
         }
         return mapOf("scope" to "representative winning seed, not five-seed reliability", "samples" to data.size,
-            "rmse" to sqrt(squared / data.size), "classificationAccuracy" to correct.toDouble() / data.size)
+            "rmse" to snapshot.error(inputs, targets), "classificationAccuracy" to correct.toDouble() / data.size)
     }
     fun percentile(sorted: List<Double>, fraction: Double): Double {
         require(sorted.isNotEmpty() && fraction in 0.0..1.0)

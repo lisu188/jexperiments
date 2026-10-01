@@ -6,7 +6,7 @@ import com.lis.neuro.SmallCpuTrainingTest.Companion.assertState
 
 class SearchTrainingAdvanceTest {
     private fun reference(model: Neuro, batch: Int = 1, clock: () -> Long = { 0L }) =
-        DefaultTrainingSession(model, TrainingBackend.CPU, { error("CPU must not open CUDA") }, batch, clock)
+        SmallTrainingSession(model, batch, { TensorFlowMath.trainingKernel(it, model.hyperParameters(), Neuro.TrainingPrecision.FP64, TrainingBackend.CPU) }, clock)
 
     private fun small(model: Neuro, precision: Neuro.TrainingPrecision, batch: Int = 1, clock: () -> Long = { 0L }) =
         SmallTrainingSession(model, batch, { SmallCpuTraining(it, model.hyperParameters(), precision) }, clock)

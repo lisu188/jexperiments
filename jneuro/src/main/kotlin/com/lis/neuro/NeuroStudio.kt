@@ -27,13 +27,6 @@ internal data class StudioConfig(
         require(targetError.isFinite() && targetError >= 0.0) { "Target RMSE must be finite and non-negative." }
         Neuro.HyperParameters(learningRate, momentum, 1.0, seed)
         require(batchSize > 0) { "Batch size must be positive." }
-        require(engine != TrainingEngine.SMALL || backend != TrainingBackend.CUBLAS) {
-            "SMALL supports CPU, CUDA or AUTO; select REFERENCE for CUBLAS."
-        }
-        require(precision == Neuro.TrainingPrecision.FP64 || engine == TrainingEngine.SMALL ||
-            backend in setOf(TrainingBackend.CUBLAS, TrainingBackend.AUTO)) {
-            "FP32 requires SMALL, CUBLAS or AUTO training."
-        }
     }
     fun topology(): IntArray = NeuroTopologyConfig.topology(NeuroTopologyConfig.parseHidden(hidden))
     fun description(): String = NeuroTopologyConfig.label(topology())

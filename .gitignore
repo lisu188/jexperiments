@@ -7,3 +7,4 @@
 build/
 target/
 out/
+/jneuro/scripts/__pycache__/

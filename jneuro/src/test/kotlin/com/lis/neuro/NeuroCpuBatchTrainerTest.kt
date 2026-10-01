@@ -48,10 +48,10 @@ class NeuroCpuBatchTrainerTest {
         assertEquals(64L, oversized.statistics().samplesSeen)
     }
 
-    @Test fun changingBatchCapacityReusesOnlyCurrentSamplesAcrossCalls() {
+    @Test fun changingBatchSizesPreservesMomentumAndUsesOnlyCurrentSamples() {
         val reused = NeuroTest.prepared(intArrayOf(2, 8, 8, 1), Neuro.Kernel.SCALAR)
         val independent = NeuroTest.prepared(intArrayOf(2, 8, 8, 1), Neuro.Kernel.SCALAR)
-        // The independent model streams one mini-batch epoch; it has no matrix workspace cache.
+        // Both public overloads must preserve the same dataset, shuffle and momentum across kernel reopening.
         for (batch in listOf(3, 19, 2, 128, 7)) {
             reused.trainMiniBatch(2, batch, 1, Neuro.BatchBackend.CPU)
             independent.trainMiniBatch(2, batch, 1)

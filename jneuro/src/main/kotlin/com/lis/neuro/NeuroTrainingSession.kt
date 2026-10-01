@@ -26,7 +26,7 @@ data class TrainingDeviceInfo(
     val name: String,
     val identity: String,
     val precision: String = "FP64",
-    val kernelVersion: String = "cpu-v1",
+    val kernelVersion: String = "tensorflow",
     val engine: TrainingEngine = TrainingEngine.REFERENCE,
     val simdBits: Int = 0,
     val sigmoid: String = "EXACT"
@@ -81,44 +81,25 @@ internal data class NeuroTrainingState(
     val samples: Int get() = inputs.size / topology[0]
 }
 
-internal fun openTrainingSession(network: Neuro, backend: TrainingBackend,
-                                 driverFactory: () -> CudaDriver = { NativeCudaDriver() }): NeuroTrainingSession =
-    openConfiguredTrainingSession(network, backend, Neuro.TrainingPrecision.FP64, 1, driverFactory)
+internal fun openTrainingSession(network: Neuro, backend: TrainingBackend): NeuroTrainingSession =
+    openConfiguredTrainingSession(network, backend, Neuro.TrainingPrecision.FP64, 1)
 
+/** Legacy backend and engine selections share TensorFlow's numerical implementation. */
 internal fun openConfiguredTrainingSession(
     network: Neuro, backend: TrainingBackend, precision: Neuro.TrainingPrecision, batchSize: Int,
-    driverFactory: () -> CudaDriver = { NativeCudaDriver() },
-    cublasFactory: (Neuro, Neuro.TrainingPrecision, Int) -> NeuroTrainingSession =
-        { model, format, batch -> CublasTrainingSession(model, format, batch) },
-    cublasAvailable: () -> Boolean = { NeuroCuda.isAvailable() },
-    engine: TrainingEngine = TrainingEngine.REFERENCE
+    engine: TrainingEngine = TrainingEngine.REFERENCE,
+    kernelFactory: (NeuroTrainingState) -> SmallTrainingKernel = { state ->
+        TensorFlowMath.trainingKernel(state, network.hyperParameters(), precision, backend, engine)
+    }
 ): NeuroTrainingSession {
     NeuroLog.debug("training", "session.requested") { mapOf("model" to network.logId,
         "requestedBackend" to backend, "requestedPrecision" to precision, "batchSize" to batchSize) }
-    var effective: TrainingBackend? = null
     return try {
         require(batchSize > 0) { "batchSize must be > 0" }
-        require(engine != TrainingEngine.SMALL || backend != TrainingBackend.CUBLAS) {
-            "SMALL supports CPU, CUDA and AUTO. Choose REFERENCE for cuBLAS."
-        }
         require(engine != TrainingEngine.SMALL || SmallNetworkShape.supports(network.topology())) {
             "SMALL requires 2 inputs, 1 output, and 1–4 hidden layers of width 4, 8 or 16."
         }
-        require(engine == TrainingEngine.SMALL || backend != TrainingBackend.CUDA || precision == Neuro.TrainingPrecision.FP64) {
-            "Driver CUDA training uses FP64. Select CUBLAS for FP32 training."
-        }
-        val resolved = if (backend == TrainingBackend.AUTO) {
-            val batch = minOf(batchSize, maxOf(1, network.trainingSampleCount()))
-            if (engine != TrainingEngine.SMALL && NeuroCuda.resolveBackend(Neuro.BatchBackend.AUTO, network.topology(), batch, true) == Neuro.BatchBackend.CUDA && cublasAvailable())
-                TrainingBackend.CUBLAS else TrainingBackend.CPU
-        } else backend
-        effective = resolved
-        val session = if (engine == TrainingEngine.SMALL) SmallTrainingSession(network, batchSize, kernelFactory = { state ->
-                if (resolved == TrainingBackend.CPU) SmallCpuTraining(state, network.hyperParameters(), precision)
-                else SmallCudaTraining(state, network.hyperParameters(), precision, driverFactory())
-            })
-            else if (resolved == TrainingBackend.CUBLAS) cublasFactory(network, precision, batchSize)
-            else DefaultTrainingSession(network, resolved, driverFactory, batchSize)
+        val session = SmallTrainingSession(network, batchSize, kernelFactory)
         NeuroLog.info("training", "session.resolved", "model" to network.logId,
             "session" to network.trainingSessionLogId, "requestedBackend" to backend,
             "backend" to session.info.backend, "requestedPrecision" to precision,
@@ -129,132 +110,10 @@ internal fun openConfiguredTrainingSession(
         session
     } catch (failure: Throwable) {
         val fields = arrayOf("model" to network.logId, "requestedBackend" to backend,
-            "resolvedBackend" to effective, "requestedPrecision" to precision, "requestedBatchSize" to batchSize)
+            "requestedPrecision" to precision, "requestedBatchSize" to batchSize)
         if (failure is IllegalArgumentException) NeuroLog.warn("training", "session.open.rejected", failure, *fields)
         else NeuroLog.error("training", "session.open.failed", failure, *fields)
         throw failure
-    }
-}
-
-internal class DefaultTrainingSession(private val network: Neuro, backend: TrainingBackend,
-                                     driverFactory: () -> CudaDriver,
-                                     private val batchSize: Int,
-                                     private val clock: () -> Long = System::nanoTime) : NeuroTrainingSession, SearchEpochAdvancer {
-    private val sessionId = NeuroLog.id("session")
-    private val openedNanos = System.nanoTime()
-    private val initialEpoch: Long
-    private var closed = false
-    private var failed = false
-    private val cuda: CudaTraining?
-    override val info: TrainingDeviceInfo
-    override val currentRmse: Double get() = network.trainingError()
-
-    init {
-        network.acquireTraining(this, sessionId)
-        initialEpoch = network.statistics().epochsTrained
-        try {
-            cuda = if (backend == TrainingBackend.CUDA) CudaTraining(network, network.exportTrainingState(), driverFactory()) else null
-            info = cuda?.info?.copy(sigmoid = network.hyperParameters().sigmoidMode.name) ?: TrainingDeviceInfo(TrainingBackend.CPU, "CPU", "jvm-cpu",
-                kernelVersion = if (batchSize > 1) "cpu-matrix-v1" else "cpu-v1", sigmoid = network.hyperParameters().sigmoidMode.name)
-            logSessionOpened(network, sessionId, info, batchSize)
-        } catch (failure: Throwable) {
-            network.releaseTraining(this)
-            throw failure
-        }
-    }
-
-    private fun <T> run(operation: String, epochs: Int, batch: Int = batchSize,
-                        parallelism: Int = 1, details: Map<String, Any?> = emptyMap(),
-                        action: () -> T): T = network.withTraining(this) {
-        loggedTraining(network, sessionId, info, operation, epochs, batch, parallelism, details, initialEpoch) {
-            check(!closed) { "Training session is closed." }
-            check(!failed) { "Training failed. Close this session before continuing from the last completed epoch." }
-            try { action() } catch (failure: Throwable) {
-                if (cuda != null && failure !is IllegalArgumentException) failed = true
-                throw failure
-            }
-        }
-    }
-
-    private fun epoch(): Double = cuda?.epoch(batchSize, batchSize == 1) ?: if (batchSize == 1) network.trainEpoch() else {
-        network.trainMiniBatch(1, batchSize, 1, Neuro.BatchBackend.CPU)
-        network.statistics().lastTrainingError
-    }
-
-    override fun trainEpoch(): Double = run("trainEpoch", 1) { epoch() }
-
-    override fun advanceForSearch(request: TrainingChunkRequest): SearchAdvanceResult {
-        require(request.targetError == null) { "Search must complete its full trial budget without target stopping" }
-        if (cuda != null) return searchAdvanceFallback(this, request)
-        return run("advanceForSearch", request.maxEpochs) {
-            val started = clock()
-            var completed = 0
-            var termination = TrainingTermination.COMPLETED
-            while (completed < minOf(64, request.maxEpochs)) {
-                if (request.cancelled()) { termination = TrainingTermination.CANCELLED; break }
-                if (completed > 0 && clock() - started >= request.maxNanos) { termination = TrainingTermination.BUDGET; break }
-                try { network.advanceCpuSearchEpoch(batchSize) }
-                catch (failure: Throwable) { failed = true; throw failure }
-                completed++
-            }
-            if (termination == TrainingTermination.COMPLETED && completed < request.maxEpochs) termination = TrainingTermination.BUDGET
-            val error = if (completed > 0 && completed == request.maxEpochs) network.trainingError().also {
-                if (!it.isFinite()) failed = true
-                check(it.isFinite()) { "Training produced a non-finite RMSE." }
-                network.recordTrainingError(it)
-            } else null
-            SearchAdvanceResult(completed, error, termination)
-        }
-    }
-
-    override fun train(epochs: Int) = run("train", epochs) {
-        require(epochs >= 0) { "epochs must be >= 0" }
-        if (cuda == null && batchSize == 1) network.train(epochs) else repeat(epochs) { epoch() }
-    }
-
-    override fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int): Neuro.TrainingResult = run("trainUntil", maxEpochs,
-        details = mapOf("targetError" to targetError, "checkEvery" to checkEvery)) {
-        require(targetError.isFinite() && targetError >= 0.0) { "targetError must be finite and >= 0" }
-        require(maxEpochs >= 0) { "maxEpochs must be >= 0" }
-        require(checkEvery > 0) { "checkEvery must be > 0" }
-        if (cuda == null && batchSize == 1) network.trainUntil(targetError, maxEpochs, checkEvery) else {
-            check(network.trainingSampleCount() > 0) { "no training samples" }
-            var error = network.trainingError()
-            if (error <= targetError) network.recordTrainingError(error)
-            var epochs = 0
-            while (epochs < maxEpochs && error > targetError) {
-                val current = epoch()
-                epochs++
-                if (epochs % checkEvery == 0 || epochs == maxEpochs) error = current
-            }
-            Neuro.TrainingResult(epochs, error, error <= targetError)
-        }
-    }
-
-    override fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int) = run("trainMiniBatch", epochs, batchSize, parallelism) {
-        require(epochs >= 0) { "epochs must be >= 0" }
-        require(batchSize > 0) { "batchSize must be > 0" }
-        require(parallelism > 0) { "parallelism must be > 0" }
-        if (cuda == null) {
-            if (this.batchSize > 1) network.trainMiniBatch(epochs, batchSize, parallelism, Neuro.BatchBackend.CPU)
-            else network.trainMiniBatch(epochs, batchSize, parallelism)
-        } else repeat(epochs) { cuda.epoch(batchSize, false) }
-    }
-
-    @Synchronized override fun close() {
-        if (closed) return
-        network.withTraining(this) {
-            closed = true
-            try {
-                cuda?.close()
-                logSessionClosed(network, sessionId, info, openedNanos, failed)
-            } catch (failure: Throwable) {
-                NeuroLog.error("training", "session.close.failed", failure, "model" to network.logId,
-                    "session" to sessionId, "backend" to info.backend,
-                    "completedEpochs" to network.statistics().epochsTrained)
-                throw failure
-            } finally { network.releaseTraining(this) }
-        }
     }
 }
 

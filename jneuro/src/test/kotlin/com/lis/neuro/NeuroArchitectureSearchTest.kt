@@ -22,7 +22,7 @@ class NeuroArchitectureSearchTest {
         assertEquals(TrainingEngine.SMALL, trial.deviceInfo!!.engine)
         assertEquals("FAST", trial.deviceInfo.sigmoid)
         assertEquals("FP32", trial.deviceInfo.precision)
-        assertTrue(trial.deviceInfo.simdBits > 0)
+        assertEquals(0, trial.deviceInfo.simdBits)
         NeuroStudio(openSession = sessions::open).use { studio ->
             assertTrue(studio.replayArchitecture(report, candidate, trial))
             assertEquals(TrainingEngine.SMALL, studio.activeConfig.engine)
@@ -30,9 +30,7 @@ class NeuroArchitectureSearchTest {
             assertEquals(trial.deviceInfo, studio.frame().deviceInfo)
             assertArrayEquals(trial.snapshot!!.parameters(), studio.frame().diagnostics.parameters(), 1e-10)
         }
-        assertThrows(IllegalArgumentException::class.java) {
-            ArchitectureSearchConfig(engine = TrainingEngine.SMALL, backend = TrainingBackend.CUBLAS)
-        }
+        assertDoesNotThrow { ArchitectureSearchConfig(engine = TrainingEngine.SMALL, backend = TrainingBackend.CUBLAS) }
     }
 
     @Test fun referenceFastSigmoidProvenanceSurvivesSearchAndReplay() {
@@ -157,8 +155,8 @@ class NeuroArchitectureSearchTest {
             assertTrue(candidate.valid, trial.failure)
             assertEquals(4, sessions.miniBatches.size)
             assertEquals(Triple(backend, Neuro.TrainingPrecision.FP32, 3), sessions.configurations.single())
-            val effective = if (backend == TrainingBackend.AUTO) TrainingBackend.CPU else backend
-            val precision = if (effective == TrainingBackend.CPU) Neuro.TrainingPrecision.FP64 else Neuro.TrainingPrecision.FP32
+            val effective = if (backend == TrainingBackend.AUTO) TrainingBackend.CPU else TrainingBackend.CUDA
+            val precision = Neuro.TrainingPrecision.FP32
             assertEquals(effective, trial.deviceInfo!!.backend)
             assertEquals(precision.name, trial.deviceInfo.precision)
             NeuroStudio(openSession = sessions::open).use { studio ->
@@ -174,7 +172,7 @@ class NeuroArchitectureSearchTest {
             assertTrue(sessions.miniBatches.all { it == 3 })
         }
         assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(batchSize = 0) }
-        assertThrows(IllegalArgumentException::class.java) { ArchitectureSearchConfig(precision = Neuro.TrainingPrecision.FP32) }
+        assertDoesNotThrow { ArchitectureSearchConfig(precision = Neuro.TrainingPrecision.FP32) }
     }
 
     @Test fun selectedBackendIsRecordedAndReplayRequiresTheSameDevice() {

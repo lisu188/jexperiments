@@ -27,15 +27,14 @@ class NeuroTrainingLoggingTest {
 
     @Test fun cpuResolutionAndProgressAreCorrelatedAndInfoIsSampled() = TrainingCapture().use { capture ->
         val model = model()
-        openConfiguredTrainingSession(model, TrainingBackend.AUTO, Neuro.TrainingPrecision.FP32, 1,
-            cublasAvailable = { error("Tiny AUTO requests must not probe CUDA") }).use { session ->
+        openConfiguredTrainingSession(model, TrainingBackend.AUTO, Neuro.TrainingPrecision.FP32, 1).use { session ->
             repeat(200) { session.trainEpoch() }
         }
         val resolution = capture.one("session.resolved").fields()
         assertEquals("AUTO", resolution["requestedBackend"])
         assertEquals("CPU", resolution["backend"])
         assertEquals("FP32", resolution["requestedPrecision"])
-        assertEquals("FP64", resolution["precision"])
+        assertEquals("FP32", resolution["precision"])
         assertEquals(model.logId, resolution["model"])
         val completed = capture.events("training.completed")
         assertEquals(200, completed.size, "CPU session delegation must not duplicate completion events")
@@ -161,7 +160,7 @@ class NeuroTrainingLoggingTest {
     private fun searchSession(model: Neuro, engine: TrainingEngine): NeuroTrainingSession =
         if (engine == TrainingEngine.SMALL) SmallTrainingSession(model, 1,
             { SmallCpuTraining(it, model.hyperParameters(), Neuro.TrainingPrecision.FP64) }, { 0L })
-        else DefaultTrainingSession(model, TrainingBackend.CPU, { error("CPU logging test must not open CUDA") }, 1, { 0L })
+        else SmallTrainingSession(model, 1, { TensorFlowMath.trainingKernel(it, model.hyperParameters(), Neuro.TrainingPrecision.FP64, TrainingBackend.CPU) }, { 0L })
 
     @Test fun resumedSessionLogsItsFirstCompletedEpochAtInfo() = TrainingCapture().use { capture ->
         val model = model()
@@ -186,13 +185,13 @@ class NeuroTrainingLoggingTest {
         val problem = assertThrows(IllegalArgumentException::class.java) { model.train(-1) }
         assertSame(problem, capture.one("training.rejected").thrown)
         val unsupported = assertThrows(IllegalArgumentException::class.java) {
-            model.newTrainingSession(TrainingBackend.CUDA, Neuro.TrainingPrecision.FP32)
+            model.newTrainingSession(batchSize = 0)
         }
         assertSame(unsupported, capture.one("session.open.rejected").thrown)
         model.trainMiniBatch(2, 4, 1, Neuro.BatchBackend.CPU, Neuro.TrainingPrecision.FP32)
         val matrix = capture.one("training.batch.resolved").fields()
         assertEquals("FP32", matrix["requestedPrecision"])
-        assertEquals("FP64", matrix["precision"])
+        assertEquals("FP32", matrix["precision"])
         assertEquals(1, matrix["batchSize"])
         assertEquals(2L, capture.events("training.completed").last().fields()["completedEpochs"])
         val expected = model.predict(doubleArrayOf(0.25, 0.75))
@@ -207,84 +206,72 @@ class NeuroTrainingLoggingTest {
         assertEquals("FP32", capture.one("inference.float.exported").fields()["precision"])
     }
 
-    @Test fun cudaProofFollowsSynchronizationAndHostPublicationAndFailureNeverClaimsSuccess() = TrainingCapture().use { capture ->
+    @Test fun tensorflowProofFollowsHostPublicationAndFailureNeverClaimsSuccess() = TrainingCapture().use { capture ->
         val model = model()
-        val driver = LoggingCudaDriver()
-        val session = openTrainingSession(model, TrainingBackend.CUDA) { driver }
-        var syncsAtCompletion = 0
+        lateinit var kernel: LoggingTensorFlowKernel
+        val session = openConfiguredTrainingSession(model, TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, 1,
+            kernelFactory = { state -> LoggingTensorFlowKernel(state, model.hyperParameters()).also { kernel = it } })
         capture.observe = { record ->
-            if (record.message == "training.completed") {
-                syncsAtCompletion = driver.synchronizations
+            if (record.message == "training.completed")
                 assertEquals(1L, model.statistics().epochsTrained, "Host publication must precede the completion event")
-            }
         }
         session.trainEpoch()
-        assertTrue(syncsAtCompletion >= 2, "Workspace setup and successful native epoch must be synchronized")
         val completed = capture.one("training.completed").fields()
-        assertEquals(true, completed["gpuWorkCompleted"])
-        assertEquals("CUDA", completed["backend"])
-        assertEquals("Recording CUDA device", completed["device"])
-        assertEquals("recording-driver-kernels", completed["kernel"])
-        assertEquals(driver.info.identity, completed["deviceIdentity"])
-        driver.failure = IllegalStateException("synchronize failed")
+        assertEquals(false, completed["gpuWorkCompleted"])
+        assertEquals("CPU", completed["backend"])
+        assertEquals(kernel.info.kernelVersion, completed["kernel"])
+        assertEquals(kernel.info.identity, completed["deviceIdentity"])
+        kernel.failure = IllegalStateException("TensorFlow execution failed")
         val problem = assertThrows(IllegalStateException::class.java) { session.trainEpoch() }
-        assertSame(driver.failure, problem)
+        assertSame(kernel.failure, problem)
         val failed = capture.one("training.failed")
         assertSame(problem, failed.thrown)
         assertEquals(false, failed.fields()["gpuWorkCompleted"])
         assertEquals(0L, failed.fields()["completedEpochs"])
         assertEquals(1L, failed.fields()["totalEpochs"])
-        assertEquals("last-completed-epoch", failed.fields()["retainedState"])
         assertEquals(1, capture.events("training.completed").size)
-        driver.failure = null
+        kernel.failure = null
         assertThrows(IllegalStateException::class.java) { session.trainEpoch() }
-        assertEquals(1, capture.events("training.completed").size)
         session.close()
         assertEquals(true, capture.one("session.closed").fields()["failed"])
     }
 
     @Test fun rejectedOwnershipAndSessionOpenAndCloseFailuresRetainTheirOriginalErrors() = TrainingCapture().use { capture ->
         val model = model()
-        val driver = LoggingCudaDriver()
-        val session = openTrainingSession(model, TrainingBackend.CUDA) { driver }
+        lateinit var kernel: LoggingTensorFlowKernel
+        val session = openConfiguredTrainingSession(model, TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, 1,
+            kernelFactory = { state -> LoggingTensorFlowKernel(state, model.hyperParameters()).also { kernel = it } })
         assertThrows(IllegalStateException::class.java) { model.trainEpoch() }
         assertThrows(IllegalStateException::class.java) { model.newTrainingSession() }
         assertEquals(listOf("mutate", "acquire"), capture.events("training.ownership.rejected").map { it.fields()["operation"] })
-        driver.failure = IllegalStateException("close synchronize failed")
+        kernel.failure = IllegalStateException("close failed")
         val failure = assertThrows(IllegalStateException::class.java) { session.close() }
-        assertSame(driver.failure, failure)
+        assertSame(kernel.failure, failure)
         assertSame(failure, capture.one("session.close.failed").thrown)
         assertNull(model.trainingSessionLogId)
         assertTrue(model.trainEpoch().isFinite())
-        val expected = IllegalStateException("no device")
+        val expected = IllegalStateException("no numerical runtime")
         assertSame(expected, assertThrows(IllegalStateException::class.java) {
-            openTrainingSession(model, TrainingBackend.CUDA) { throw expected }
+            openConfiguredTrainingSession(model, TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, 1, kernelFactory = { throw expected })
         })
         assertSame(expected, capture.events("session.open.failed").last().thrown)
     }
 
-    @Test fun cublasBatchSummaryUsesCommittedStatisticsAndActualPrecision() = TrainingCapture().use { capture ->
+    @Test fun tensorflowBatchSummaryUsesCommittedStatisticsAndActualPrecision() = TrainingCapture().use { capture ->
         val model = model()
-        val info = TrainingDeviceInfo(TrainingBackend.CUBLAS, "cuBLAS test device", "test-identity", "FP32", "test-kernels")
-        CublasTrainingSession(model, Neuro.TrainingPrecision.FP32, 7, { info }) { network, epochs, _, _ ->
-            repeat(epochs) {
-                network.deviceTrainingOrder()
-                network.commitDeviceEpoch(network.exportTrainingState())
-            }
-        }.use { session ->
+        model.newTrainingSession(precision = Neuro.TrainingPrecision.FP32, batchSize = 7).use { session ->
             session.trainMiniBatch(2, 7, 3)
             session.trainUntil(1.0, 0)
         }
         val batch = capture.events("training.completed").first().fields()
-        assertEquals("CUBLAS", batch["backend"])
+        assertEquals("CPU", batch["backend"])
         assertEquals("FP32", batch["precision"])
         assertEquals(7, batch["requestedBatchSize"])
         assertEquals(1, batch["batchSize"])
         assertEquals(3, batch["requestedParallelism"])
-        assertNull(batch["cpuParallelism"])
+        assertEquals(3, batch["cpuParallelism"])
         assertEquals(2L, batch["completedEpochs"])
-        assertEquals(true, batch["gpuWorkCompleted"])
-        assertEquals(false, capture.events("training.completed").last().fields()["gpuWorkCompleted"])
+        assertEquals(false, batch["gpuWorkCompleted"])
     }
 
     private fun model() = Neuro(intArrayOf(2, 3, 1)).addTrainingSample(doubleArrayOf(0.25, 0.75), doubleArrayOf(0.5))
@@ -318,23 +305,17 @@ class NeuroTrainingLoggingTest {
         }
     }
 
-    private class LoggingCudaDriver : CudaDriver {
-        override val info = TrainingDeviceInfo(TrainingBackend.CUDA, "Recording CUDA device",
-            "log-test-${System.identityHashCode(this)}", "FP64", "recording-driver-kernels")
-        private val data = HashMap<Long, DoubleArray>()
-        private var address = 0L
-        var synchronizations = 0
+    private class LoggingTensorFlowKernel(state: NeuroTrainingState, parameters: Neuro.HyperParameters) : SmallTrainingKernel {
+        private val delegate = TensorFlowMath.trainingKernel(state, parameters, Neuro.TrainingPrecision.FP64, TrainingBackend.CPU)
+        override val info get() = delegate.info
         var failure: Throwable? = null
-        override fun availableMemory() = 1L shl 28
-        override fun allocate(bytes: Long) = ++address
-        override fun free(pointer: Long) { data.remove(pointer) }
-        override fun upload(pointer: Long, values: DoubleArray) { data[pointer] = values.copyOf() }
-        override fun upload(pointer: Long, values: IntArray) {}
-        override fun download(pointer: Long, values: DoubleArray) { data.getValue(pointer).copyInto(values) }
-        override fun launch(name: String, workItems: Int, vararg arguments: Any) {}
-        override fun synchronize() { failure?.let { throw it }; synchronizations++ }
-        override fun close() {}
+        override fun train(orders: Array<IntArray>, batchSize: Int, online: Boolean): NeuroTrainingState {
+            failure?.let { throw it }
+            return delegate.train(orders, batchSize, online)
+        }
+        override fun close() { delegate.close(); failure?.let { throw it } }
     }
+
 }
 
 @Suppress("UNCHECKED_CAST")

@@ -4,14 +4,14 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/** Compatible independent trials. One CPU model per SIMD lane, or one CUDA block per model. */
+/** Independent TensorFlow models run through a bounded worker pool and publish complete checkpoints. */
 class NeuroTrainingCohort private constructor(
     private val models: List<Neuro>,
     private val backend: TrainingBackend,
     private val precision: Neuro.TrainingPrecision,
     private val batchSize: Int,
     parallelism: Int,
-    private val driverFactory: () -> CudaDriver
+    private val kernelFactory: (NeuroTrainingState, Neuro.HyperParameters) -> SmallTrainingKernel
 ) : AutoCloseable {
     private class Group(val indices: IntRange, val info: TrainingDeviceInfo,
                         val train: (Array<Array<IntArray>>, BooleanArray) -> Array<NeuroTrainingState>,
@@ -19,6 +19,7 @@ class NeuroTrainingCohort private constructor(
     private val groups = ArrayList<Group>()
     private var pool: ExecutorService? = null
     private var closed = false
+    internal var onClose: () -> Unit = {}
     private var failed = false
     private var nanosPerEpoch = 0L
     val info: TrainingDeviceInfo get() = groups.first().info
@@ -26,7 +27,6 @@ class NeuroTrainingCohort private constructor(
     init {
         require(models.isNotEmpty() && models.distinct().size == models.size) { "Cohorts require distinct models" }
         require(batchSize > 0 && parallelism in 1..256)
-        require(backend == TrainingBackend.CPU || backend == TrainingBackend.CUDA)
         val first = models.first()
         val parameters = first.hyperParameters()
         val shape = first.topology()
@@ -40,21 +40,12 @@ class NeuroTrainingCohort private constructor(
             require(states.all { it.inputs.contentEquals(states.first().inputs) && it.targets.contentEquals(states.first().targets) }) {
                 "Cohort models must share immutable dataset values"
             }
-            val width = if (backend == TrainingBackend.CUDA) models.size else if (precision == Neuro.TrainingPrecision.FP64) 4 else 8
-            for (start in models.indices step width) {
-                val end = minOf(models.size, start + width)
-                val input = states.subList(start, end).toTypedArray()
-                if (backend == TrainingBackend.CUDA) {
-                    val kernel = SmallCudaCohort(input, parameters, precision, driverFactory())
-                    groups += Group(start until end, kernel.info,
-                        { orders, active -> kernel.train(orders, batchSize, batchSize == 1, active) }, kernel::close)
-                } else {
-                    val kernel = SmallCpuCohort(input, parameters, precision)
-                    groups += Group(start until end, kernel.info,
-                        { orders, active -> kernel.train(orders, batchSize, batchSize == 1, active) }, kernel::close)
-                }
+            for (index in states.indices) {
+                val kernel = kernelFactory(states[index], parameters)
+                groups += Group(index..index, kernel.info,
+                    { orders, _ -> arrayOf(kernel.train(orders.single(), batchSize, batchSize == 1)) }, kernel::close)
             }
-            if (backend == TrainingBackend.CPU && parallelism > 1 && groups.size > 1)
+            if (parallelism > 1 && groups.size > 1)
                 pool = Executors.newFixedThreadPool(minOf(parallelism, groups.size))
         } catch (failure: Throwable) {
             for (group in groups.asReversed()) try { group.close() } catch (cleanup: Throwable) { failure.addSuppressed(cleanup) }
@@ -163,6 +154,7 @@ class NeuroTrainingCohort private constructor(
             if (failure == null) failure = problem else failure.addSuppressed(problem)
         }
         for (model in models) model.releaseTraining(this)
+        onClose()
         failure?.let { throw it }
     }
 
@@ -175,8 +167,10 @@ class NeuroTrainingCohort private constructor(
 
         internal fun openConfigured(models: List<Neuro>, backend: TrainingBackend,
                                     precision: Neuro.TrainingPrecision, batchSize: Int, parallelism: Int,
-                                    driverFactory: () -> CudaDriver = { NativeCudaDriver() }): NeuroTrainingCohort =
+                                    kernelFactory: (NeuroTrainingState, Neuro.HyperParameters) -> SmallTrainingKernel = { state, hp ->
+                                        TensorFlowMath.trainingKernel(state, hp, precision, backend, TrainingEngine.SMALL)
+                                    }): NeuroTrainingCohort =
             NeuroTrainingCohort(java.util.List.copyOf(models), if (backend == TrainingBackend.AUTO) TrainingBackend.CPU else backend,
-                precision, batchSize, parallelism, driverFactory)
+                precision, batchSize, parallelism, kernelFactory)
     }
 }

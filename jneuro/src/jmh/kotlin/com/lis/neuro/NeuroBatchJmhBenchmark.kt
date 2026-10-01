@@ -11,7 +11,9 @@ import org.openjdk.jmh.annotations.*
 @State(Scope.Thread)
 open class NeuroBatchJmhBenchmark {
     @Param("small", "medium") @JvmField var topology = "small"
-    @Param("8", "32", "128") @JvmField var batchSize = 8
+    @Param("8", "32", "257") @JvmField var batchSize = 8
+    @Param("1", "2") @JvmField var parallelism = 1
+    @Param("EXACT", "FAST") @JvmField var sigmoid = "EXACT"
     private lateinit var session: Neuro.InferenceSession
     private lateinit var parallelSession: Neuro.ParallelInferenceSession
     private lateinit var floatModel: Neuro.FloatModel
@@ -21,8 +23,8 @@ open class NeuroBatchJmhBenchmark {
     private lateinit var floatOutputs: FloatArray
     @Setup(Level.Trial) fun setup() {
         val shape = NeuroInferenceJmhBenchmark.shape(topology)
-        val network = Neuro(shape, Neuro.HyperParameters.defaults().withSeed(1234).withKernel(Neuro.Kernel.VECTOR))
-        session = network.newInferenceSession(); parallelSession = network.newParallelInferenceSession(2); floatModel = network.toFloatModel()
+        val network = Neuro(shape, Neuro.HyperParameters.defaults().withSeed(1234).withSigmoidMode(Neuro.SigmoidMode.valueOf(sigmoid)))
+        session = network.newInferenceSession(); parallelSession = network.newParallelInferenceSession(parallelism); floatModel = network.toFloatModel()
         val input = DoubleArray(shape[0]) { (it and 7) / 7.0 }
         inputs = DoubleArray(input.size * batchSize)
         for (sample in 0 until batchSize) input.copyInto(inputs, sample * input.size)
@@ -30,7 +32,7 @@ open class NeuroBatchJmhBenchmark {
         floatInputs = FloatArray(inputs.size) { inputs[it].toFloat() }; floatOutputs = FloatArray(outputs.size)
     }
     @TearDown(Level.Trial) fun tearDown() = parallelSession.close()
-    @Benchmark fun vectorBatch(): Double { session.predictBatch(inputs, batchSize, outputs); return outputs[0] }
-    @Benchmark fun parallelVectorBatch(): Double { parallelSession.predictBatch(inputs, batchSize, outputs); return outputs[0] }
-    @Benchmark fun floatVectorBatch(): Float { floatModel.predictBatch(floatInputs, batchSize, floatOutputs); return floatOutputs[0] }
+    @Benchmark fun tensorflowBatch(): Double { session.predictBatch(inputs, batchSize, outputs); return outputs[0] }
+    @Benchmark fun tensorflowParallelBatch(): Double { parallelSession.predictBatch(inputs, batchSize, outputs); return outputs[0] }
+    @Benchmark fun tensorflowFp32Batch(): Float { floatModel.predictBatch(floatInputs, batchSize, floatOutputs); return floatOutputs[0] }
 }

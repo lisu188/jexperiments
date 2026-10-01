@@ -12,31 +12,46 @@ class SmallCpuTrainingTest {
             val orders = reference.reserveTrainingOrders(2).map { it.copyOf() }.toTypedArray()
             if (online) reference.train(2) else reference.trainMiniBatch(2, 3, 1, Neuro.BatchBackend.CPU)
             val expected = reference.exportTrainingState()
-            for (bits in listOf(0, 128, 256)) SmallCpuTraining(state, reference.hyperParameters().copy(kernel = Neuro.Kernel.VECTOR),
-                Neuro.TrainingPrecision.FP64, bits).use { kernel ->
-                assertState(expected, kernel.train(orders, 3, online), 0.0, "${shape.contentToString()} bits=$bits online=$online")
+            SmallCpuTraining(state, reference.hyperParameters(), Neuro.TrainingPrecision.FP64).use { kernel ->
+                assertState(expected, kernel.train(orders, 3, online), 0.0, "${shape.contentToString()} online=$online")
             }
         }
     }
 
-    @Test fun fp32UsesFloatStateAndMatchesScalarAcrossEveryShapeAndVectorWidth() {
+    @Test fun fp32UsesFloatStateAndMatchesFp64AcrossEveryShapeAndBatchMode() {
         for (shape in shapes()) for (online in listOf(true, false)) {
             val model = model(shape)
             val initial = model.exportTrainingState()
             val orders = orders(initial.samples, 2)
-            val parameters = model.hyperParameters().copy(kernel = Neuro.Kernel.VECTOR)
-            val expected = SmallCpuTraining(initial, parameters, Neuro.TrainingPrecision.FP32, 0).use { it.train(orders, 4, online) }
-            for (bits in listOf(128, 256)) SmallCpuTraining(initial, parameters, Neuro.TrainingPrecision.FP32, bits).use {
-                val actual = it.train(orders, 4, online)
-                assertState(expected, actual)
-                assertTrue(actual.weights.all { row -> row.all { value -> value == value.toFloat().toDouble() } })
-                assertEquals("FP32", it.info.precision)
-                assertEquals(if (shape.drop(1).dropLast(1).all { it == 4 }) minOf(128, smallVectorBits(parameters, bits))
-                    else smallVectorBits(parameters, bits), it.info.simdBits)
-                assertEquals(TrainingEngine.SMALL, it.info.engine)
+            val parameters = model.hyperParameters()
+            val actual = SmallCpuTraining(initial, parameters, Neuro.TrainingPrecision.FP32).use { kernel ->
+                val result = kernel.train(orders, 4, online)
+                assertTrue(result.weights.all { row -> row.all { value -> value == value.toFloat().toDouble() } })
+                assertEquals("FP32", kernel.info.precision)
+                assertEquals(0, kernel.info.simdBits)
+                assertEquals(TrainingEngine.SMALL, kernel.info.engine)
+                result
             }
-            val exact = SmallCpuTraining(initial, parameters, Neuro.TrainingPrecision.FP64, 0).use { it.train(orders, 4, online) }
-            assertState(exact, expected, 2e-6)
+            val exact = SmallCpuTraining(initial, parameters, Neuro.TrainingPrecision.FP64).use { it.train(orders, 4, online) }
+            assertState(exact, actual, 2e-6, "${shape.contentToString()} online=$online")
+        }
+    }
+
+    @Test fun legacyVectorWidthsAliasTensorFlowForBothPrecisionsAndMomentumContinuation() {
+        val model = model(intArrayOf(2, 4, 8, 1))
+        model.trainMiniBatch(1, 3, 1, Neuro.BatchBackend.CPU)
+        val initial = model.exportTrainingState()
+        assertTrue(initial.weightVelocity.any { row -> row.any { it != 0.0 } })
+        val parameters = model.hyperParameters().copy(kernel = Neuro.Kernel.VECTOR)
+        val orders = orders(initial.samples, 2)
+        for (precision in Neuro.TrainingPrecision.entries) for (online in listOf(true, false)) {
+            val expected = SmallCpuTraining(initial, parameters, precision, 0).use { it.train(orders, 3, online) }
+            for (bits in listOf(128, 256)) SmallCpuTraining(initial, parameters, precision, bits).use { kernel ->
+                assertState(expected, kernel.train(orders, 3, online), context = "$precision online=$online legacyBits=$bits")
+                assertEquals(0, kernel.info.simdBits)
+                assertEquals(precision.name, kernel.info.precision)
+                assertTrue(kernel.info.kernelVersion.startsWith("tensorflow-"))
+            }
         }
     }
 
@@ -64,22 +79,6 @@ class SmallCpuTrainingTest {
         }
     }
 
-    @Test fun activationModesAreStableAtTailsAndExtremeInputs() {
-        val values = doubleArrayOf(-1000.0, -745.0, -104.0, -16.0, -1.2, -0.5, 0.0, 0.5, 1.2, 16.0, 104.0, 745.0, 1000.0)
-        for (mode in Neuro.SigmoidMode.entries) for (bits in listOf(0, 128, 256)) {
-            val doubles = values.copyOf()
-            SmallDoubleActivation(mode, bits, values.size).apply(doubles, doubles.size)
-            val expected = DoubleArray(values.size) { Neuro.activate(values[it], mode) }
-            assertArrayEquals(expected, doubles, 0.0)
-            val floats = smallFloats(values)
-            SmallFloatActivation(mode, bits, values.size).apply(floats, floats.size)
-            for (i in floats.indices) {
-                assertTrue(floats[i].isFinite() && floats[i] in 0.0f..1.0f)
-                assertEquals(expected[i], floats[i].toDouble(), 2e-7)
-            }
-        }
-    }
-
     @Test fun rejectsUnsupportedShapesMalformedStateOrdersAndClosedUseWithoutMutatingPublishedState() {
         for (shape in listOf(intArrayOf(), intArrayOf(2), intArrayOf(2, 1), intArrayOf(3, 8, 1),
             intArrayOf(2, 8, 2), intArrayOf(2, 7, 1), intArrayOf(2, 4, 4, 4, 4, 4, 1))) assertFalse(SmallNetworkShape.supports(shape))
@@ -102,7 +101,7 @@ class SmallCpuTrainingTest {
         }
         for (precision in Neuro.TrainingPrecision.entries) {
             val kernel = SmallCpuTraining(state, hp, precision)
-            assertEquals(0, kernel.info.simdBits) // Explicit SCALAR wins over the constructor's preferred width.
+            assertEquals(0, kernel.info.simdBits) // Legacy kernel settings do not claim a TensorFlow SIMD width.
             val before = kernel.train(emptyArray(), 1, false)
             for (invalid in listOf(intArrayOf(), IntArray(state.samples) { 0 }, IntArray(state.samples) { it + 1 }))
                 assertThrows(IllegalArgumentException::class.java) { kernel.train(arrayOf(invalid), 1, false) }

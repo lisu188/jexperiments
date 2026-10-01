@@ -81,7 +81,9 @@ class NeuroGuiTest {
         assertEquals(TrainingBackend.CPU, device.backend)
         assertEquals("FP32", device.precision)
         assertEquals("FAST", device.sigmoid)
-        assertTrue(device.simdBits > 0)
+        assertEquals(0, device.simdBits)
+        assertTrue(device.name.contains("TensorFlow"))
+        assertTrue(edt { (field(ui, "deviceStatus") as JLabel).toolTipText.contains("TensorFlow") })
         click(button("10 epochs"))
         await("SMALL ten epoch command") { current.diagnostics.epoch() == 11 }
         assertTrue(edt { current.checkpoints.any { it.epoch == 10 } })
@@ -104,21 +106,25 @@ class NeuroGuiTest {
         assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
         choose(combo("Training engine"), TrainingEngine.REFERENCE.ordinal)
         choose(combo("Training backend"), TrainingBackend.CPU.ordinal)
-        assertFalse(edt { combo("Training precision").isEnabled })
-        assertEquals(Neuro.TrainingPrecision.FP64, edt { combo("Training precision").selectedItem })
+        assertTrue(edt { combo("Training precision").isEnabled })
+        assertEquals(Neuro.TrainingPrecision.FP32, edt { combo("Training precision").selectedItem })
         assertEquals(TrainingEngine.SMALL, edt { current.config.engine })
+        val sessions = RecordingTrainingSessions()
+        edt { ui.trainingSessionFactory = sessions::open }
         choose(combo("Training engine"), TrainingEngine.SMALL.ordinal)
         choose(combo("Training backend"), TrainingBackend.CUBLAS.ordinal)
-        shortcut(KeyEvent.VK_ENTER)
-        await("incompatible SMALL CUBLAS rejected") { errorText().contains("select REFERENCE") }
-        assertEquals(TrainingEngine.SMALL, edt { current.config.engine })
-        assertEquals(trial.deviceInfo, edt { current.deviceInfo })
+        configure("4", 25, 0.0)
+        click(button("1 epoch"))
+        await("SMALL TensorFlow GPU alias accepted") { current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUDA }
+        assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
+        assertTrue(sessions.configurations.any { it.first == TrainingBackend.CUBLAS && it.second == Neuro.TrainingPrecision.FP32 })
+        val aliasDevice = edt { current.deviceInfo }
         choose(combo("Training backend"), TrainingBackend.CPU.ordinal)
         text(input("Hidden layers"), "6")
         shortcut(KeyEvent.VK_ENTER)
         await("SMALL rejects unsupported hidden width") { errorText().contains("width 4, 8 or 16") }
         assertEquals("4", edt { current.config.hidden })
-        assertEquals(trial.deviceInfo, edt { current.deviceInfo })
+        assertEquals(aliasDevice, edt { current.deviceInfo })
     }
 
     @Test fun detailedLogsFollowNativeControlsExportAndShutdown() {
@@ -343,7 +349,7 @@ class NeuroGuiTest {
         configure("2", 25, 0.0)
         click(button("1 epoch"))
         await("CUBLAS FP32 mini-batch epoch") {
-            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUBLAS
+            current.diagnostics.epoch() == 1 && current.deviceInfo?.backend == TrainingBackend.CUDA
         }
         assertEquals("FP32", edt { current.deviceInfo!!.precision })
         assertEquals(3, sessions.miniBatches.last())
@@ -362,12 +368,12 @@ class NeuroGuiTest {
         click(button("Start search")); await("CUBLAS batch search completed") { field(panel, "result") != null }
         val report = edt { field(panel, "result") as ArchitectureSearchResult }
         assertTrue(report.candidates.all { candidate -> candidate.valid && candidate.trials.all {
-            it.deviceInfo?.backend == TrainingBackend.CUBLAS && it.deviceInfo.precision == "FP32"
+            it.deviceInfo?.backend == TrainingBackend.CUDA && it.deviceInfo.precision == "FP32"
         } })
         val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
         click(button("Replay selected run"))
         await("CUBLAS batch replay installed") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
-        assertEquals(TrainingBackend.CUBLAS, edt { current.config.backend })
+        assertEquals(TrainingBackend.CUDA, edt { current.config.backend })
         assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
         assertEquals(3, edt { current.config.batchSize })
         assertEquals(trial.deviceInfo, edt { current.deviceInfo })
@@ -404,7 +410,7 @@ class NeuroGuiTest {
 
     @Test fun automaticBatchBackendAppliesPrecisionAndStepsOnce() {
         advanced()
-        assertFalse(edt { combo("Training precision").isEnabled })
+        assertTrue(edt { combo("Training precision").isEnabled })
         choose(combo("Training backend"), TrainingBackend.AUTO.ordinal)
         assertTrue(edt { combo("Training precision").isEnabled })
         choose(combo("Training precision"), Neuro.TrainingPrecision.FP32.ordinal)
@@ -422,12 +428,13 @@ class NeuroGuiTest {
         click(button("1 epoch"))
         await("auto backend training") { current.diagnostics.epoch() == 1 && current.diagnostics.error().isFinite() }
         assertEquals(TrainingBackend.CPU, edt { current.deviceInfo!!.backend })
-        assertEquals("FP64", edt { current.deviceInfo!!.precision })
+        assertEquals("FP32", edt { current.deviceInfo!!.precision })
+        assertTrue(edt { current.deviceInfo!!.name.contains("TensorFlow") })
         assertEquals(7, edt { current.config.batchSize })
         assertEquals(Neuro.TrainingPrecision.FP32, edt { current.config.precision })
         choose(combo("Training backend"), TrainingBackend.CUDA.ordinal)
-        assertFalse(edt { combo("Training precision").isEnabled })
-        assertEquals(Neuro.TrainingPrecision.FP64, edt { combo("Training precision").selectedItem })
+        assertTrue(edt { combo("Training precision").isEnabled })
+        assertEquals(Neuro.TrainingPrecision.FP32, edt { combo("Training precision").selectedItem })
         assertEquals(TrainingBackend.AUTO, edt { current.config.backend })
     }
 

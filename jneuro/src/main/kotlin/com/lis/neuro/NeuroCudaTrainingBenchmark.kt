@@ -50,15 +50,9 @@ internal enum class NeuroCudaBenchmarkBackend(val backend: TrainingBackend, val 
     NATIVE_FP64(TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, TrainingEngine.SMALL);
 
     fun open(model: Neuro, batch: Int, service: NeuroTrainingDeviceService? = null): NeuroTrainingSession =
-        if (this == NATIVE_FP64) SmallTrainingSession(model, batch, kernelFactory = { state ->
-            NativeSmallTraining(state, model.hyperParameters(), precision)
-        })
-        else if (engine == TrainingEngine.SMALL && backend == TrainingBackend.CPU)
-            SmallTrainingSession(model, batch, kernelFactory = { state ->
-                SmallCpuTraining(state, model.hyperParameters().copy(kernel = if (vectorBits == 0) Neuro.Kernel.SCALAR else Neuro.Kernel.VECTOR), precision, vectorBits)
-            })
-        else if (service != null) service.openSession(model, backend, precision, if (this == CPU_LEGACY) 1 else batch, engine)
-        else model.newTrainingSession(backend, precision, if (this == CPU_LEGACY) 1 else batch, engine)
+        if (service != null) service.openSession(model, backend, precision, batch, engine)
+        else model.newTrainingSession(backend, precision, batch, engine)
+
 }
 
 internal enum class NeuroBenchmarkMode { MINIBATCH, EPOCH, CHUNK }
@@ -108,15 +102,15 @@ internal data class NeuroCudaBenchmarkConfig(
               --backends CPU,CUDA,CUBLAS_FP64,CUBLAS_FP32
                          CPU_LEGACY,SMALL_SCALAR_FP64,SMALL_SCALAR_FP32,SMALL_128_FP64,SMALL_256_FP64,
                          SMALL_128_FP32,SMALL_256_FP32,SMALL_CUDA_FP64,SMALL_CUDA_FP32
-                         NATIVE_FP64 (experiment; requires jneuro.small.native library property)
+                         Legacy backend names are compatibility aliases; every entry uses TensorFlow.
               --mode MINIBATCH|EPOCH|CHUNK Publication per call, per UI epoch, or bounded chunks
               --sigmoid EXACT|FAST         Compare matching arithmetic; default EXACT
-              --retained-device true|false Reuse device context/module/stream between sessions
+              --retained-device true|false Reuse the TensorFlow training service between sessions
               --output PATH                Prefix for .json and .csv reports
               --smoke                      Alias for --profile smoke
               --help, -h                   Print this help without training
             Custom topology: 2..16 layers, widths 1..2048, at most 2000000 parameters.
-            GPU selection is explicit: missing CUDA/cuBLAS fails without CPU fallback.
+            GPU selection is explicit: missing TensorFlow GPU support fails without CPU fallback.
         """.trimIndent()
 
         fun parse(args: Array<String>): NeuroCudaBenchmarkConfig {

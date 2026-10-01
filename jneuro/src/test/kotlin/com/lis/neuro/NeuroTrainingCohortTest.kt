@@ -138,7 +138,6 @@ class NeuroTrainingCohortTest {
         assertThrows(IllegalArgumentException::class.java) { NeuroTrainingCohort.open(listOf(models[0], models[0])) }
         assertThrows(IllegalArgumentException::class.java) { NeuroTrainingCohort.open(models, batchSize = 0) }
         assertThrows(IllegalArgumentException::class.java) { NeuroTrainingCohort.open(models, parallelism = 0) }
-        assertThrows(IllegalArgumentException::class.java) { NeuroTrainingCohort.open(models, backend = TrainingBackend.CUBLAS) }
         assertThrows(IllegalArgumentException::class.java) { NeuroTrainingCohort.open(listOf(NeuroTest.xor())) }
         assertThrows(IllegalArgumentException::class.java) { NeuroTrainingCohort.open(listOf(models[0], SmallCpuTrainingTest.model(intArrayOf(2, 4, 1)))) }
         val otherParameters = Neuro(intArrayOf(2, 4, 8, 1), models[0].hyperParameters().copy(learningRate = 0.9))
@@ -185,7 +184,7 @@ class NeuroTrainingCohortTest {
 
     @Test @Timeout(10)
     fun interruptedCoordinatorJoinsEveryWorkerBeforeDiscardingResultsAndReleasingModels() {
-        val models = models(5) // Two FP64 vector groups, each running on its own worker.
+        val models = models(2) // Independent TensorFlow kernels, each running on its own worker.
         val initial = models.map { it.exportTrainingState() }
         val cohort = NeuroTrainingCohort.open(models, parallelism = 2)
         val poolField = NeuroTrainingCohort::class.java.getDeclaredField("pool").apply { isAccessible = true }
@@ -257,53 +256,37 @@ class NeuroTrainingCohortTest {
         }
     }
 
-    @Test fun deviceServiceIsLazySupportsCpuReopenAndRejectsNewWorkAfterClose() {
+    @Test fun deviceServiceSupportsReopenAndRejectsClosingBeforeItsSessions() {
         assertThrows(IllegalArgumentException::class.java) { NeuroTrainingDeviceService(0) }
-        var nativeCalls = 0
-        val backing = SmallCudaDeviceService { nativeCalls++; error("Native driver deliberately unavailable") }
-        val service = NeuroTrainingDeviceService(backing)
+        val service = NeuroTrainingDeviceService(2)
         val models = models(2)
-        service.openSession(models[0], engine = TrainingEngine.SMALL).use { assertTrue(it.trainEpoch().isFinite()) }
+        service.openSession(models[0], engine = TrainingEngine.SMALL).use {
+            assertTrue(it.trainEpoch().isFinite())
+            assertThrows(IllegalStateException::class.java) { service.close() }
+        }
         service.openSession(models[0]).use { assertTrue(it.trainEpoch().isFinite()) }
-        service.openCohort(models).use { assertEquals(1, it.trainChunk(TrainingChunkRequest(1)).first().committedEpochs) }
-        assertEquals(0, nativeCalls)
-        assertThrows(IllegalStateException::class.java) { service.openSession(models[0], TrainingBackend.CUDA, engine = TrainingEngine.SMALL) }
-        assertThrows(IllegalStateException::class.java) { service.openCohort(models, TrainingBackend.CUDA) }
-        assertEquals(2, nativeCalls)
+        service.openCohort(models).use {
+            assertEquals(1, it.trainChunk(TrainingChunkRequest(1)).first().committedEpochs)
+            assertThrows(IllegalStateException::class.java) { service.close() }
+        }
         models.forEach { it.newTrainingSession().close() }
         service.close(); service.close()
         assertThrows(IllegalStateException::class.java) { service.openSession(models[0]) }
         assertThrows(IllegalStateException::class.java) { service.openCohort(models) }
     }
 
-    @Test fun cudaWrapperPublishesAfterSynchronizationAndReleasesModelsEvenIfCloseFails() {
+    @Test fun tensorflowWrapperReleasesEveryModelEvenIfKernelCloseFails() {
         val models = models(2)
-        val driver = RecordingDriver()
-        val initial = models.map { it.exportTrainingState() }
-        val cohort = NeuroTrainingCohort.openConfigured(models, TrainingBackend.CUDA, Neuro.TrainingPrecision.FP64, 1, 1) { driver }
+        val fixture = SearchTensorFlowKernels()
+        val cohort = NeuroTrainingCohort.openConfigured(models, TrainingBackend.CPU, Neuro.TrainingPrecision.FP64, 1, 1, fixture::open)
         val result = cohort.trainChunk(TrainingChunkRequest(2, maxNanos = Long.MAX_VALUE))
-        assertTrue(driver.synchronized)
         result.forEach { assertEquals(2, it.committedEpochs) }
-        // This recording driver intentionally does no math; the test asserts wrapper publication only.
-        for (index in models.indices) assertState(initial[index], models[index].exportTrainingState())
-        driver.failClose = true
-        assertThrows(IllegalStateException::class.java) { cohort.close() }
-        assertTrue(driver.closed)
+        fixture.failClose = true
+        val failure = assertThrows(IllegalStateException::class.java) { cohort.close() }
+        assertEquals(1, failure.suppressed.size)
+        assertEquals(2, fixture.closed)
         models.forEach { it.newTrainingSession().close() }
         cohort.close()
-    }
-
-    @Test fun closingServiceWithALiveLeaseCanBeRetriedAfterSessionRelease() {
-        val driver = RecordingDriver()
-        val backing = SmallCudaDeviceService { driver }
-        val service = NeuroTrainingDeviceService(backing)
-        val lease = backing.openDriver()
-        assertThrows(IllegalStateException::class.java) { service.close() }
-        assertFalse(driver.closed)
-        lease.close()
-        service.close()
-        assertTrue(driver.closed)
-        assertThrows(IllegalStateException::class.java) { service.openSession(models(1).single()) }
     }
 
     private fun models(count: Int): List<Neuro> = List(count) { index ->
@@ -312,21 +295,4 @@ class NeuroTrainingCohortTest {
         }
     }
 
-    private class RecordingDriver : CudaDriver {
-        override val info = TrainingDeviceInfo(TrainingBackend.CUDA, "Recording driver", "cohort-wrapper-test")
-        private val memory = mutableMapOf<Long, DoubleArray>()
-        private var next = 1L
-        var synchronized = false
-        var closed = false
-        var failClose = false
-        override fun availableMemory(): Long = Long.MAX_VALUE
-        override fun allocate(bytes: Long): Long = next++
-        override fun free(pointer: Long) { memory.remove(pointer) }
-        override fun upload(pointer: Long, values: DoubleArray) { memory[pointer] = values.copyOf() }
-        override fun upload(pointer: Long, values: IntArray) = Unit
-        override fun download(pointer: Long, values: DoubleArray) { check(synchronized); memory.getValue(pointer).copyInto(values) }
-        override fun launch(name: String, workItems: Int, vararg arguments: Any) { synchronized = false }
-        override fun synchronize() { synchronized = true }
-        override fun close() { closed = true; if (failClose) error("Recording close failure") }
-    }
 }
