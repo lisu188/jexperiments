@@ -391,7 +391,11 @@ internal class NeuroStudio(
                 }
                 return true
             }
-            if (trial.route == ArchitectureTrialRoute.CUDA_QUEUE) {
+            var batchedScore: Double? = null
+            if (trial.route == ArchitectureTrialRoute.TENSOR_BATCH) {
+                batchedScore = BatchedSearchReplay.replay(model, report.data, report.config, trial, ::verifyDevice, ::isCancelled)
+                    ?: return false
+            } else if (trial.route == ArchitectureTrialRoute.CUDA_QUEUE) {
                 (openSearchCuda?.invoke(recordedPrecision, report.config.batchSize)
                     ?: SearchCudaService(recordedPrecision, report.config.batchSize, maximumModels = 1)).use { service ->
                     service.openSession(model).use { training ->
@@ -421,7 +425,7 @@ internal class NeuroStudio(
                     }
                 }
             }
-            val score = report.data.score(model)
+            val score = batchedScore ?: report.data.score(model)
             check(score.isFinite() && kotlin.math.abs(score - trial.bestRmse) <= 1e-10) { "Replay did not reproduce the scored checkpoint." }
             if (isCancelled()) return false
             applyArchitecture(report, candidate)

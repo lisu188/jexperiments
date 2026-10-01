@@ -37,12 +37,23 @@ internal class ArchitectureSearchPanel(
     private val strategy = JComboBox(ArchitectureSearchStrategy.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Search strategy" }
     private val execution = JComboBox(ArchitectureExecution.entries.toTypedArray()).apply {
         accessibleContext.accessibleName = "Search execution"
-        toolTipText = "Both execution modes train with TensorFlow. OPTIMIZED advances between the same scoring checkpoints; CUDA SMALL uses a bounded shared queue."
+        selectedItem = ArchitectureExecution.BATCHED
+        toolTipText = "Batched trains independent models together. Reference and optimized preserve the full budget for every seed."
     }
+    private val budgetPolicy = JComboBox(ArchitectureBudgetPolicy.entries.toTypedArray()).apply {
+        accessibleContext.accessibleName = "Training budget policy"
+        selectedItem = ArchitectureBudgetPolicy.SUCCESSIVE_HALVING
+    }
+    private val initialEpochs = NumericInputs.spinner(25, 1)
+    private val reductionFactor = NumericInputs.spinner(3, 1)
+    private val modelsPerBatch = NumericInputs.spinner(128, 1)
+    private val budgetStatus = JLabel()
+    private val throughputStatus = JLabel("Training throughput will appear after the first batch.")
+    private var runningArchitectures = emptySet<NetworkArchitecture>()
     private val searchSeed = JTextField("42", 10)
     private val restartAfter = NumericInputs.spinner(12, 1)
     private val restarts = NumericInputs.spinner(4, 1)
-    private val lineageStatus = JLabel("Parents are selected by fitness from current elites; restarts also mutate elites.")
+    private val lineageStatus = JLabel()
     private var lineage = emptyMap<NetworkArchitecture, ArchitectureProposal>()
     private val evaluation = JComboBox(ArchitectureEvaluation.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Scoring mode" }
     private val start = JButton("Start search")
@@ -97,19 +108,20 @@ internal class ArchitectureSearchPanel(
             start.background = ACCENT; start.foreground = BACKGROUND; add(start); add(cancel)
         }
         controls.add(choices)
-        val advanced = JPanel(GridLayout(4, 4, 12, 8)).apply { isOpaque = false }
+        val advanced = JPanel(GridLayout(0, 4, 12, 8)).apply { isOpaque = false }
         for ((name, component) in listOf("Seeds" to seeds, "Required successes" to successes, "Epochs per seed" to epochs,
             "Check every (epochs)" to checkEvery, "Near-best tolerance" to tolerance, "Parallel seed trials" to threads,
             "Trial budget" to trials, "Seconds (0 = unlimited)" to seconds, "Validation fraction" to fraction, "Split seed" to splitSeed,
             "Search seed" to searchSeed, "Plateau length (architectures)" to restartAfter, "Max restarts" to restarts,
-            "Search execution" to execution)) {
+            "Search execution" to execution, "Models per training batch" to modelsPerBatch,
+            "Training budget policy" to budgetPolicy, "Initial epochs" to initialEpochs, "Reduction factor" to reductionFactor)) {
             advanced.add(field(name, component))
         }
-        epochs.toolTipText = "<html>Each seed runs the full epoch budget, even after meeting the target.<br>" +
-            "Adaptive search waits for every seed of the first architecture before proposing others.<br>" +
-            "Cancel or set a time limit to stop earlier.</html>"
-        (epochs.editor as JSpinner.DefaultEditor).textField.toolTipText = epochs.toolTipText
-        threads.toolTipText = "Maximum CPU workers. Optimized CUDA SMALL independently admits at most 64 resident models; CPU workers score completed checkpoints."
+        modelsPerBatch.toolTipText = "Independent models trained together (1–1024). This does not change samples per mini-batch."
+        initialEpochs.toolTipText = "Epochs for every seed before the first pruning decision, capped by Epochs per seed. Survivors receive larger budgets."
+        reductionFactor.toolTipText = "Keep approximately one architecture in this many at each pruning decision."
+        threads.toolTipText = "Maximum CPU workers for independent trials and scoring. Models per training batch controls batched training separately."
+        updateBudgetControls()
         advanced.isVisible = false
         controls.add(JCheckBox("Advanced search settings").apply {
             isOpaque = false
@@ -118,6 +130,8 @@ internal class ArchitectureSearchPanel(
         controls.add(advanced)
         summary.foreground = MUTED
         controls.add(summary)
+        budgetStatus.foreground = MUTED; controls.add(budgetStatus)
+        throughputStatus.foreground = MUTED; controls.add(throughputStatus)
         lineageStatus.foreground = MUTED; controls.add(lineageStatus)
         progressBar.isStringPainted = true; progressBar.string = "Not started"; controls.add(progressBar)
         for (child in controls.components) if (child is JComponent) child.alignmentX = 0f
@@ -149,11 +163,14 @@ internal class ArchitectureSearchPanel(
             NeuroLog.info("ui", "ui.search.policy.selected", "policy" to policy.selectedItem)
             updateSummary(); plot.repaint()
         } }
-        strategy.addActionListener {
-            if (!running) lineageStatus.text = if (strategy.selectedItem == ArchitectureSearchStrategy.ADAPTIVE)
-                "Parents are selected by fitness from current elites; restarts also mutate elites."
-            else "Reference search evaluates a pre-enumerated grid."
+        execution.addActionListener {
+            if (!changing && execution.selectedItem != ArchitectureExecution.BATCHED) {
+                budgetPolicy.selectedItem = ArchitectureBudgetPolicy.FULL
+            }
+            updateBudgetControls()
         }
+        budgetPolicy.addActionListener { updateBudgetControls() }
+        strategy.addActionListener { updateProposalHint() }
         table.selectionModel.addListSelectionListener { event ->
             if (!event.valueIsAdjusting && !changing && table.selectedRow >= 0) {
                 selected = results[table.convertRowIndexToModel(table.selectedRow)].architecture
@@ -181,16 +198,23 @@ internal class ArchitectureSearchPanel(
     }
 
     internal fun readConfig(): ArchitectureSearchConfig {
-        val spinners = listOf(minLayers, maxLayers, minWidth, maxWidth, parameters, target, epochs, checkEvery, successes, tolerance, threads, trials, seconds, fraction, restartAfter, restarts)
-        spinners.forEach { it.commitEdit() }
+        val spinners = listOf(minLayers, maxLayers, minWidth, maxWidth, parameters, target, epochs, checkEvery, successes, tolerance, threads, trials, seconds, fraction, restartAfter, restarts, initialEpochs, reductionFactor, modelsPerBatch)
+        spinners.filter { it.isEnabled }.forEach { it.commitEdit() }
+        val selectedExecution = execution.selectedItem as ArchitectureExecution
+        val batched = selectedExecution == ArchitectureExecution.BATCHED
+        val selectedBudget = if (batched) budgetPolicy.selectedItem as ArchitectureBudgetPolicy else ArchitectureBudgetPolicy.FULL
+        val pruning = selectedBudget == ArchitectureBudgetPolicy.SUCCESSIVE_HALVING
         return ArchitectureSearchConfig(integer(minLayers), integer(maxLayers), integer(minWidth), integer(maxWidth), integer(parameters),
             seeds.text.split(',').map { token -> token.trim().toLongOrNull() ?: throw IllegalArgumentException("Seeds must be comma-separated integers.") },
             integer(epochs), integer(checkEvery), decimal(target), integer(successes), decimal(tolerance), policy.selectedItem as ArchitecturePolicy,
-            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed, sigmoidMode = source.sigmoid), integer(threads), integer(trials), (seconds.value as Number).toLong(),
+            Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed, sigmoidMode = source.sigmoid), if (batched) 32 else integer(threads), integer(trials), (seconds.value as Number).toLong(),
             strategy.selectedItem as ArchitectureSearchStrategy, NeuroTopologyConfig.parseHidden(source.hidden).toList(),
             searchSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Search seed must be an integer."),
-            integer(restartAfter), integer(restarts), source.backend, source.precision, source.batchSize, source.engine,
-            execution.selectedItem as ArchitectureExecution)
+            if (batched) 12 else integer(restartAfter), if (batched) 4 else integer(restarts), source.backend, source.precision, source.batchSize, source.engine,
+            selectedExecution, budgetPolicy = selectedBudget,
+            initialEpochs = if (pruning) integer(initialEpochs) else minOf(integer(epochs), maxOf(integer(checkEvery), 25)),
+            reductionFactor = if (pruning) integer(reductionFactor) else 3,
+            modelsPerBatch = if (batched) integer(modelsPerBatch) else 128)
     }
 
     private fun submit() {
@@ -202,7 +226,9 @@ internal class ArchitectureSearchPanel(
             val split = splitSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Split seed must be an integer.")
             started(next, mode)
             summary.text = "${next.strategy}: up to $trialLimit seed trials. Main run paused."
-            lineageStatus.text = if (next.strategy == ArchitectureSearchStrategy.ADAPTIVE)
+            lineageStatus.text = if (next.execution == ArchitectureExecution.BATCHED)
+                "A broad population trains together; only fully qualified candidates can be recommended."
+            else if (next.strategy == ArchitectureSearchStrategy.ADAPTIVE)
                 "Starting from ${next.startingArchitecture()}; fitness tournaments select current elite parents, including for restarts."
             else "Reference mode: all candidates are enumerated in advance."
             startSearch(next, mode, decimal(fraction), split)
@@ -218,10 +244,19 @@ internal class ArchitectureSearchPanel(
         parameters.value = next.maxParameters; target.value = next.targetRmse
         epochs.value = next.maxEpochs; checkEvery.value = next.checkEvery
         seeds.text = next.seeds.joinToString(","); successes.value = next.requiredSuccesses
-        tolerance.value = next.nearBestTolerance; threads.value = next.parallelism
+        tolerance.value = next.nearBestTolerance
+        if (next.execution != ArchitectureExecution.BATCHED) threads.value = next.parallelism
         trials.value = next.maxTrials; seconds.value = next.timeLimitSeconds
-        searchSeed.text = next.searchSeed.toString(); restartAfter.value = next.restartAfter; restarts.value = next.maxRestarts
+        searchSeed.text = next.searchSeed.toString()
+        if (next.execution != ArchitectureExecution.BATCHED) {
+            restartAfter.value = next.restartAfter; restarts.value = next.maxRestarts
+        }
         changing = true; strategy.selectedItem = next.strategy; execution.selectedItem = next.execution
+        budgetPolicy.selectedItem = next.budgetPolicy
+        if (next.execution == ArchitectureExecution.BATCHED) modelsPerBatch.value = next.modelsPerBatch
+        if (next.budgetPolicy == ArchitectureBudgetPolicy.SUCCESSIVE_HALVING) {
+            initialEpochs.value = next.initialEpochs; reductionFactor.value = next.reductionFactor
+        }
         policy.selectedItem = next.policy; evaluation.selectedItem = mode; changing = false
         running = true; config = next; scoreMode = mode; result = null; selected = null
         results = emptyList(); lineage = emptyMap(); shownLineage = null; chosenTrial = null; surface = null
@@ -229,6 +264,9 @@ internal class ArchitectureSearchPanel(
         tableModel.fireTableDataChanged(); selectedSeed.removeAllItems()
         strategy.isEnabled = false; execution.isEnabled = false; policy.isEnabled = false
         start.isEnabled = false; cancel.isEnabled = true; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false
+        runningArchitectures = emptySet()
+        updateBudgetControls()
+        throughputStatus.text = "Training throughput will appear after the first batch."
         progressBar.value = 0; progressBar.string = "Starting…"
         details.text = "Inspecting a result never changes the active network."
         plot.repaint(); inspector.repaint()
@@ -240,7 +278,12 @@ internal class ArchitectureSearchPanel(
             shownLineage = progress.lineage
             lineage = progress.lineage.associateBy { it.architecture }
         }
+        val active = progress.running.map { it.architecture }.toSet()
+        val activeChanged = runningArchitectures != active
+        runningArchitectures = active
         showCandidates(progress.candidates)
+        if (activeChanged && results.isNotEmpty()) tableModel.fireTableRowsUpdated(0, results.lastIndex)
+        throughputStatus.text = throughput(progress.nativeTrainingCalls, progress.modelsPerBatch, progress.aggregateEpochsPerSecond)
         progressBar.maximum = maxOf(1, progress.plannedTrials); progressBar.value = progress.finishedTrials
         progressBar.string = "${progress.finishedTrials}/${progress.plannedTrials} trial budget · ${progress.fullyEvaluated}/${progress.generated} ${if (config?.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposed" else "enumerated"} architectures evaluated"
         progress.lineage.lastOrNull()?.let { proposal ->
@@ -249,7 +292,8 @@ internal class ArchitectureSearchPanel(
         val trial = progress.running.firstOrNull()
         val activeArchitectures = progress.running.map { it.architecture }.distinct().size
         val workers = "Active trials: ${progress.running.size}/${config?.concurrentModels} · $activeArchitectures architectures · peak ${progress.peakParallelTrials}" +
-            " · CPU workers ${progress.activeWorkers}/${config?.parallelism}" +
+            (if (config?.execution == ArchitectureExecution.BATCHED) " · TensorFlow batch execution"
+            else " · CPU workers ${progress.activeWorkers}/${config?.parallelism}") +
             if (config?.usesCudaQueue == true) " · GPU models ${progress.residentModels}/64 · queued ${progress.queuedGpuRequests} · dispatches ${progress.gpuBatches}" else ""
         summary.text = if (trial == null) "$workers · Collecting results…" else "$workers · ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch}/${config?.maxEpochs}"
     }
@@ -261,10 +305,19 @@ internal class ArchitectureSearchPanel(
         running = false; result = report; config = report.config; scoreMode = report.data.evaluation
         start.isEnabled = sourceSize > 0; cancel.isEnabled = false
         lineage = report.lineage.associateBy { it.architecture }
+        runningArchitectures = emptySet()
         showCandidates(report.candidates)
         progressBar.maximum = maxOf(1, report.generated); progressBar.value = report.evaluated
-        progressBar.string = "${report.termination} · peak ${report.peakParallelTrials}/${report.config.concurrentModels} trials · CPU workers peak ${report.peakWorkers}/${report.config.parallelism} · ${report.evaluated}/${report.generated} ${if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposals" else "architectures"} evaluated · ${report.partial} partial"
-        lineageStatus.text = if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE)
+        val executionSummary = if (report.config.execution == ArchitectureExecution.BATCHED) "TensorFlow batch execution"
+            else "CPU workers peak ${report.peakWorkers}/${report.config.parallelism}"
+        progressBar.string = "${report.termination} · peak ${report.peakParallelTrials}/${report.config.concurrentModels} trials · $executionSummary · ${report.evaluated}/${report.generated} ${if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposals" else "architectures"} evaluated · ${report.partial} partial"
+        updateBudgetControls()
+        throughputStatus.text = throughput(report.nativeTrainingCalls, report.modelsPerBatch, report.aggregateEpochsPerSecond)
+        val pruned = report.candidates.count { candidate -> candidate.trials.any { it.state == ArchitectureTrialState.PRUNED } }
+        if (pruned > 0) progressBar.string += " · $pruned pruned"
+        lineageStatus.text = if (report.config.execution == ArchitectureExecution.BATCHED)
+            "Batched search finished. Pruned architectures are not recommendations; no global minimum is claimed."
+        else if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE)
             "Adaptive search finished. Counts cover generated proposals, not the entire space; no global minimum is claimed."
         else "${report.untested} enumerated architectures untested."
         if (selected == null) selected = currentSelection()?.recommended?.architecture ?: currentSelection()?.bestError?.architecture
@@ -274,7 +327,7 @@ internal class ArchitectureSearchPanel(
 
     fun failed(message: String) {
         strategy.isEnabled = true; execution.isEnabled = true; policy.isEnabled = true
-        running = false; start.isEnabled = sourceSize > 0; cancel.isEnabled = false
+        running = false; updateBudgetControls(); start.isEnabled = sourceSize > 0; cancel.isEnabled = false
         summary.text = "Search error: $message"; progressBar.string = "Search failed"
     }
 
@@ -287,6 +340,8 @@ internal class ArchitectureSearchPanel(
         if (result != null) NeuroLog.info("ui", "ui.search.results.invalidated", "searchId" to result?.logId)
         strategy.isEnabled = true; execution.isEnabled = true; policy.isEnabled = true; lineage = emptyMap(); shownLineage = null
         running = false; result = null; config = null; results = emptyList(); selected = null
+        runningArchitectures = emptySet(); updateBudgetControls()
+        throughputStatus.text = "Training throughput will appear after the first batch."
         clearRankingCache()
         chosenTrial = null; surface = null; tableModel.fireTableDataChanged()
         cancel.isEnabled = false; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false; start.isEnabled = sourceSize > 0
@@ -367,12 +422,53 @@ internal class ArchitectureSearchPanel(
         details.text = when {
             candidate == null -> "Select a point or row to inspect a scored checkpoint."
             trial == null -> "This architecture has no completed seed trial yet."
+            trial.state == ArchitectureTrialState.PRUNED -> "PRUNED · seed ${trial.seed}: best ${scoreMode.label} ${number(trial.bestRmse)} at epoch ${trial.bestEpoch}; trained ${trial.epochs}. Inspectable checkpoint; not eligible for application or replay."
             trial.failure.isNotEmpty() -> "Seed ${trial.seed}: ${trial.failure}"
             else -> "Seed ${trial.seed}: best ${scoreMode.label} ${number(trial.bestRmse)} at epoch ${trial.bestEpoch}; trained ${trial.epochs}. Apply = fresh run; replay = scored training partition."
         }
         details.toolTipText = trial?.deviceInfo?.let { "${trial.execution} · ${trial.route} · TensorFlow ${it.backend} · ${it.name} · ${it.precision} · ${it.engine} · ${it.sigmoid} · kernel ${it.kernelVersion} · ${it.identity}" }
         inspector.repaint(); plot.repaint()
     }
+
+    private fun updateBudgetControls() {
+        val batched = execution.selectedItem == ArchitectureExecution.BATCHED
+        val halving = batched && budgetPolicy.selectedItem == ArchitectureBudgetPolicy.SUCCESSIVE_HALVING
+        budgetPolicy.isEnabled = !running && batched
+        modelsPerBatch.isEnabled = !running && batched
+        threads.isEnabled = !running && !batched
+        restartAfter.isEnabled = !running && !batched
+        restarts.isEnabled = !running && !batched
+        updateProposalHint()
+        initialEpochs.isEnabled = !running && halving
+        reductionFactor.isEnabled = !running && halving
+        epochs.toolTipText = if (halving) "<html>Maximum epochs per seed. Every architecture starts with Initial epochs.<br>" +
+            "Weaker architectures are pruned between rounds; survivors receive larger budgets.<br>" +
+            "A group that meets the required seed successes can finish early.<br>" +
+            "Pruned checkpoints are inspectable but cannot be recommended or replayed.</html>"
+        else "<html>Each seed runs the full epoch budget, even after meeting the target.<br>" +
+            (if (batched) "Independent models train together without pruning.<br>"
+            else "Adaptive search waits for every seed of the first architecture before proposing others.<br>") +
+            "Cancel or set a time limit to stop earlier.</html>"
+        (epochs.editor as JSpinner.DefaultEditor).textField.toolTipText = epochs.toolTipText
+        budgetStatus.text = if (halving) "Budget: pruning · weak groups stop early; successful groups can finish early. Pruned results are never recommended."
+        else "Budget: full · every seed keeps its requested epochs, even after meeting the target."
+    }
+
+    private fun updateProposalHint() {
+        if (running || result != null) return
+        lineageStatus.text = when {
+            strategy.selectedItem == ArchitectureSearchStrategy.EXHAUSTIVE ->
+                if (execution.selectedItem == ArchitectureExecution.BATCHED) "Batched search evaluates a pre-enumerated population."
+                else "Reference search evaluates a pre-enumerated grid."
+            execution.selectedItem == ArchitectureExecution.BATCHED ->
+                "A broad population trains together; evaluated parents guide mutations alongside seeded exploration."
+            else -> "Parents are selected by fitness from current elites; restarts also mutate elites."
+        }
+    }
+
+    private fun throughput(calls: Long, models: Int, rate: Double): String =
+        if (config?.execution != ArchitectureExecution.BATCHED && calls == 0L) "Batch throughput is available with batched search."
+        else "Training calls: $calls · peak models per batch: $models · aggregate model-epochs/s: ${String.format(Locale.ROOT, "%.1f", rate)}"
 
     private fun field(name: String, component: JComponent): JPanel = JPanel(BorderLayout(0, 4)).apply {
         isOpaque = false
@@ -392,7 +488,15 @@ internal class ArchitectureSearchPanel(
             4 -> "${candidate.successes}/${candidate.expectedSeeds}"; 5 -> "${candidate.trials.size}/${candidate.expectedSeeds}"
             7 -> lineage[candidate.architecture]?.parent?.toString() ?: "—"
             8 -> lineage[candidate.architecture]?.mutation ?: "Reference grid"
-            else -> if (!candidate.fullyEvaluated) "Provisional" else if (!candidate.valid) "Failed seed" else if (candidate.meetsTarget(config?.requiredSuccesses ?: 1)) "Target met" else "Above target"
+            else -> when {
+                candidate.trials.any { it.state == ArchitectureTrialState.PRUNED } -> "PRUNED"
+                candidate.architecture in runningArchitectures -> "Running"
+                candidate.trials.isEmpty() -> "Pending"
+                !candidate.fullyEvaluated -> "Provisional"
+                !candidate.valid -> "Failed seed"
+                candidate.meetsTarget(config?.requiredSuccesses ?: 1) -> "Target met"
+                else -> "Above target"
+            }
         } }
     }
 
@@ -400,7 +504,7 @@ internal class ArchitectureSearchPanel(
         private var points: List<Pair<Point, NetworkArchitecture>> = emptyList()
         init {
             background = SURFACE; preferredSize = Dimension(900, 300); minimumSize = Dimension(300, 180)
-            toolTipText = "Click a point to inspect an architecture. Circles: complete; squares: provisional; diamond: recommended."
+            toolTipText = "Click a point to inspect an architecture. Circles: complete; squares: partial; diamond: recommended. Inspect pruned checkpoints in the table; they cannot be recommended."
             getAccessibleContext().accessibleName = "Parameter count versus median RMSE Pareto plot"
             addMouseListener(object : MouseAdapter() {
                 override fun mousePressed(event: MouseEvent) {

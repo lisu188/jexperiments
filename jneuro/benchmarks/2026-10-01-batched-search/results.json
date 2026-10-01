@@ -1,0 +1,226 @@
+{
+  "fullBudget": {
+    "five-seeds": {
+      "legacy": {
+        "median": 2278.5259545,
+        "minimum": 1930.471114,
+        "maximum": 2307.802392,
+        "observations": 4
+      },
+      "batched": {
+        "median": 710.146767,
+        "minimum": 449.904927,
+        "maximum": 1246.952591,
+        "observations": 4
+      },
+      "speedup": 3.2085282372340926,
+      "firstEligibleMs": {
+        "legacy": {
+          "median": 2277.8913715,
+          "minimum": 1928.616329,
+          "maximum": 2306.863649,
+          "observations": 4
+        },
+        "batched": {
+          "median": 709.9751114999999,
+          "minimum": 449.802625,
+          "maximum": 1246.829038,
+          "observations": 4
+        }
+      },
+      "firstDiverseMs": {},
+      "aggregateEpochsPerSecond": {
+        "legacy": {
+          "median": 109.72670945700435,
+          "minimum": 108.32816573317773,
+          "maximum": 129.50206723476515,
+          "observations": 4
+        },
+        "batched": {
+          "median": 365.13410616777287,
+          "minimum": 200.4887770428475,
+          "maximum": 555.6729544328817,
+          "observations": 4
+        }
+      }
+    },
+    "mixed-population": {
+      "legacy": {
+        "median": 13366.2732265,
+        "minimum": 8136.286336,
+        "maximum": 14458.590334,
+        "observations": 4
+      },
+      "batched": {
+        "median": 2605.5915685,
+        "minimum": 2278.698957,
+        "maximum": 3962.828977,
+        "observations": 4
+      },
+      "speedup": 5.129842062773776,
+      "firstEligibleMs": {
+        "legacy": {
+          "median": 2702.162125,
+          "minimum": 2285.264491,
+          "maximum": 3638.436074,
+          "observations": 4
+        },
+        "batched": {
+          "median": 2605.4446515,
+          "minimum": 2278.497844,
+          "maximum": 3962.599667,
+          "observations": 4
+        }
+      },
+      "firstDiverseMs": {
+        "legacy": {
+          "median": 2406.602676,
+          "minimum": 2039.898421,
+          "maximum": 3253.668701,
+          "observations": 4
+        },
+        "batched": {
+          "median": 0.3478645,
+          "minimum": 0.337424,
+          "maximum": 0.447174,
+          "observations": 4
+        }
+      },
+      "aggregateEpochsPerSecond": {
+        "legacy": {
+          "median": 112.38449406229743,
+          "minimum": 103.74455360787734,
+          "maximum": 184.3592934239624,
+          "observations": 4
+        },
+        "batched": {
+          "median": 575.8100837593311,
+          "minimum": 378.5174703995307,
+          "maximum": 658.2703675674697,
+          "observations": 4
+        }
+      }
+    }
+  },
+  "quality": {
+    "quality-full": [
+      {
+        "case": "quality",
+        "round": 42,
+        "execution": "BATCHED",
+        "budgetPolicy": "FULL",
+        "epochCap": 150,
+        "modelsPerBatchLimit": 30,
+        "elapsedMs": 15056.316397,
+        "firstEligibleMs": 8970.542613,
+        "firstDiverseMs": 13.795572,
+        "firstPrunedMs": null,
+        "peakActiveArchitectures": 6,
+        "architecturesSampled": 12,
+        "totalCommittedEpochs": 9000,
+        "aggregateEpochsPerSecond": 597.7557699168216,
+        "nativeTrainingCalls": 352,
+        "actualMaximumBatch": 20,
+        "validArchitectures": 12,
+        "prunedTrials": 0,
+        "bestMedianRmse": 0.4631227549374197,
+        "targetMet": false,
+        "termination": "TRIAL_BUDGET"
+      },
+      {
+        "case": "quality",
+        "round": 123,
+        "execution": "BATCHED",
+        "budgetPolicy": "FULL",
+        "epochCap": 150,
+        "modelsPerBatchLimit": 30,
+        "elapsedMs": 17348.951893,
+        "firstEligibleMs": 9991.444155,
+        "firstDiverseMs": 0.382745,
+        "firstPrunedMs": null,
+        "peakActiveArchitectures": 6,
+        "architecturesSampled": 12,
+        "totalCommittedEpochs": 9000,
+        "aggregateEpochsPerSecond": 518.7633267708434,
+        "nativeTrainingCalls": 425,
+        "actualMaximumBatch": 20,
+        "validArchitectures": 12,
+        "prunedTrials": 0,
+        "bestMedianRmse": 0.4631227549374197,
+        "targetMet": false,
+        "termination": "TRIAL_BUDGET"
+      }
+    ],
+    "quality-prune": [
+      {
+        "case": "quality",
+        "round": 42,
+        "execution": "BATCHED",
+        "budgetPolicy": "SUCCESSIVE_HALVING",
+        "epochCap": 150,
+        "modelsPerBatchLimit": 30,
+        "elapsedMs": 8543.562058,
+        "firstEligibleMs": 7219.956497,
+        "firstDiverseMs": 5.172436,
+        "firstPrunedMs": 2032.978797,
+        "peakActiveArchitectures": 6,
+        "architecturesSampled": 12,
+        "totalCommittedEpochs": 3875,
+        "aggregateEpochsPerSecond": 453.55789232800583,
+        "nativeTrainingCalls": 161,
+        "actualMaximumBatch": 20,
+        "validArchitectures": 3,
+        "prunedTrials": 45,
+        "bestMedianRmse": 0.46351485722695646,
+        "targetMet": false,
+        "termination": "TRIAL_BUDGET"
+      },
+      {
+        "case": "quality",
+        "round": 123,
+        "execution": "BATCHED",
+        "budgetPolicy": "SUCCESSIVE_HALVING",
+        "epochCap": 150,
+        "modelsPerBatchLimit": 30,
+        "elapsedMs": 4059.559905,
+        "firstEligibleMs": 3498.19788,
+        "firstDiverseMs": 0.250763,
+        "firstPrunedMs": 714.592944,
+        "peakActiveArchitectures": 6,
+        "architecturesSampled": 12,
+        "totalCommittedEpochs": 3875,
+        "aggregateEpochsPerSecond": 954.5369672282247,
+        "nativeTrainingCalls": 84,
+        "actualMaximumBatch": 25,
+        "validArchitectures": 3,
+        "prunedTrials": 45,
+        "bestMedianRmse": 0.46351485722695646,
+        "targetMet": false,
+        "termination": "TRIAL_BUDGET"
+      }
+    ]
+  },
+  "parity": {
+    "checkpoints": 140,
+    "parameters": 4220,
+    "maxParameterDifference": 7.105427357601002e-15,
+    "maxScoreDifference": 1.1102230246251565e-16
+  },
+  "baselineCommit": "11ed5d860e483c538578de9326cda290e7ecf7c1",
+  "candidateBaseCommit": "3f6ff25545a0ca790475dcdbd325d140058b6a9f",
+  "cpuModel": "Intel(R) Core(TM) i5-14400F",
+  "validation": {
+    "focusedIntegrationTests": 32,
+    "fullBudgetScoreTolerance": 1e-10,
+    "fullBudgetParameterTolerance": 1e-09,
+    "neitherQualityPolicyReachedTarget": true
+  },
+  "rawSha256": {
+    "legacy-fork1.jsonl": "ca14f299f7a8bcd5d1c0449e9a79eb4d781752180e0b0770cdd8d49594b8ab71",
+    "batched-fork1.jsonl": "70a7771fb50e33e7089e7aae325f7273cad6c08f02167a38495d49a0e3bc37c9",
+    "batched-fork2.jsonl": "f14cf11bd6009b1a820d14232c458837b670a7c7ce7017847bc982c48c388b80",
+    "legacy-fork2.jsonl": "b6f9559caa406ba652cc10c9a1d8a4495d6db2bebeaa20a6a6022b8c4ded3198",
+    "quality-full.jsonl": "278bf7f57d8d818ecf84ba90e7cda85b55f2dbeeab50671cea8fc42249b6fcd3",
+    "quality-prune.jsonl": "57dd9543358c8117e70776020e1b7ee0f0aa6ecffde8cb89f7dee64545b51c6e"
+  }
+}
