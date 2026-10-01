@@ -103,3 +103,44 @@ python3 jneuro/tools/summarize_search_benchmark.py \
 ```
 
 The summarizer deliberately groups by engine, backend, worker count and full protocol. It does not promote a cross-engine ranking into an identical-arithmetic qualification or choose the strongest baseline automatically. That comparison needs an explicitly labeled final analysis of the separately validated groups and their quality differences.
+
+## Completed CI evidence
+
+The completed CI matrix used source `974b22ca8e93a726038364eac163f7f184521abc`, separately from the local compute revision above. Its three jobs ran on different CPUs: AMD EPYC 7763, AMD EPYC 9V74 and Intel Xeon 6973P-C, each exposed as a four-logical-processor hosted VM. The [CI notes](CI.md) retain separate timing tables and interpretation. The [compact evidence](ci-results.json) includes all 360 search-call durations, 12,000 trial records, deduplicated full parameter snapshots, source/input hashes and exact reconstruction checks; the [qualification summary](ci-qualification-summary.json) retains all 45 comparison verdicts.
+
+All measured within-engine reference-versus-optimized parameter snapshots, best/final scores and best epochs match exactly, and every expected seed completes its full budget. Timing qualification remains **inconclusive**: each hardware/protocol has one actual JVM fork and three measured rounds. Pooling the three different CPU hosts would falsely satisfy the required fork count. No CI comparison is marked qualified.
+
+## Verify or regenerate compact evidence
+
+The retained [compact_evidence.py](compact_evidence.py) is a standalone artifact script with no additional dependencies. It uses the repository summarizer by default; `--tool PATH` overrides that location. Verify the published CI artifact and reconstruct one original parsed round from the repository root:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 - <<'PY'
+import json, sys
+from pathlib import Path
+folder = Path("jneuro/benchmarks/2026-10-01-search")
+sys.path.insert(0, str(folder))
+import compact_evidence
+report = json.loads((folder / "ci-results.json").read_text())
+print(compact_evidence.verify(report))
+first = compact_evidence.reconstruct_round(report, report["rounds"][0])
+print(first["case"], first["round"], first["completeTrials"])
+PY
+```
+
+Verification checks reconstructed round contents against their retained canonical SHA-256 hashes. The raw-file byte hashes and process/host metadata remain separate provenance checks. The artifact records the SHA-256 of both the compactor and summarizer used to produce it.
+
+After all nine local jobs finish, build the final compact local record using their retained successful process sidecars:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 jneuro/benchmarks/2026-10-01-search/compact_evidence.py \
+  /tmp/jneuro-search-evidence/cpu-small-{0,1,2}.jsonl \
+  /tmp/jneuro-search-evidence/cpu-reference-{0,1,2}.jsonl \
+  /tmp/jneuro-search-evidence/gpu-{0,1,2}.jsonl \
+  --raw-root /tmp/jneuro-search-evidence \
+  --output /tmp/jneuro-search-evidence/local-results.json \
+  --summary-output /tmp/jneuro-search-evidence/local-qualification-summary.json \
+  --status validated-fixed-work --require-process-exit
+```
+
+`validated-fixed-work` describes report completeness, not a blanket speedup qualification. Individual comparison verdicts still enforce compatible forks, numerical parity, median gain and p95. Use `preliminary` for an incomplete measurement series, and `inconclusive-mixed-hardware` for the CI matrix retained here. The generator verifies every reconstructed round before and after serializing the compact file; it never deletes the raw inputs.
