@@ -14,6 +14,14 @@ internal class TrialActivity {
     private val maximum = AtomicInteger()
     val peak: Int get() = maximum.get()
     fun snapshot(): List<ArchitectureRunningTrial> = active.entries.sortedBy { it.key }.map { it.value }
+    fun begin(index: Int, architecture: NetworkArchitecture, seeds: List<Long>): () -> Unit {
+        maximum.accumulateAndGet(count.addAndGet(seeds.size), ::maxOf)
+        seeds.forEachIndexed { lane, seed -> update(index + lane, architecture, seed, 0, Double.POSITIVE_INFINITY) }
+        return { seeds.indices.forEach { active.remove(index + it) }; count.addAndGet(-seeds.size) }
+    }
+    fun update(index: Int, architecture: NetworkArchitecture, seed: Long, epoch: Int, best: Double) {
+        active[index] = ArchitectureRunningTrial(architecture, seed, epoch, best)
+    }
 
     fun <T> track(index: Int, architecture: NetworkArchitecture, seed: Long,
                   action: ((Int, Double) -> Unit) -> T): T =
@@ -21,13 +29,11 @@ internal class TrialActivity {
 
     fun <T> trackMany(index: Int, architecture: NetworkArchitecture, seeds: List<Long>,
                       action: ((Int, Int, Double) -> Unit) -> T): T {
-        maximum.accumulateAndGet(count.addAndGet(seeds.size), ::maxOf)
+        val finish = begin(index, architecture, seeds)
         try {
-            seeds.forEachIndexed { lane, seed -> active[index + lane] = ArchitectureRunningTrial(architecture, seed, 0, Double.POSITIVE_INFINITY) }
-            return action { lane, epoch, best -> active[index + lane] = ArchitectureRunningTrial(architecture, seeds[lane], epoch, best) }
+            return action { lane, epoch, best -> update(index + lane, architecture, seeds[lane], epoch, best) }
         } finally {
-            seeds.indices.forEach { active.remove(index + it) }
-            count.addAndGet(-seeds.size)
+            finish()
         }
     }
 
@@ -38,6 +44,8 @@ internal class AdaptiveTrialScheduler(
     private val config: ArchitectureSearchConfig,
     private val searchId: String? = null,
     private val evaluateGroup: ((NetworkArchitecture, List<Long>, () -> Boolean, (Int, Int, Double) -> Unit) -> List<ArchitectureTrial>)? = null,
+    private val evaluateAsync: AsyncArchitectureEvaluator? = null,
+    private val deviceActivity: () -> ArchitectureDeviceActivity = { ArchitectureDeviceActivity() },
     private val evaluate: (NetworkArchitecture, Long, () -> Boolean, (Int, Double) -> Unit) -> ArchitectureTrial
 ) {
     fun search(onProgress: (ArchitectureSearchProgress) -> Unit, cancelled: () -> Boolean): ArchitectureSearchResult {
@@ -45,13 +53,8 @@ internal class AdaptiveTrialScheduler(
         val planner = AdaptiveArchitecturePlanner(config)
         val start = System.nanoTime()
         val stopping = AtomicBoolean(false)
-        val activity = TrialActivity()
-        val workerId = AtomicInteger()
-        val pool = Executors.newFixedThreadPool(config.parallelism) { runnable ->
-            Thread(runnable, "jneuro-search-${workerId.incrementAndGet()}").apply { isDaemon = true }
-        }
-        data class Finished(val architecture: NetworkArchitecture, val trial: ArchitectureTrial)
-        val completions = ExecutorCompletionService<List<Finished>>(pool)
+        val dispatcher = ArchitectureTrialDispatcher(config.parallelism, evaluate, evaluateGroup, evaluateAsync)
+        val activity = dispatcher.activity
         val completed = ArrayList<ArchitectureCandidate>()
         val pending = LinkedHashMap<NetworkArchitecture, MutableMap<Long, ArchitectureTrial>>()
         val ready = ArrayDeque<Pair<NetworkArchitecture, Long>>()
@@ -62,15 +65,20 @@ internal class AdaptiveTrialScheduler(
         var lastPublish = Long.MIN_VALUE
         var admissionEnd: ArchitectureTermination? = null
         var stopReason: ArchitectureTermination? = null
+        var candidateCache: List<ArchitectureCandidate>? = null
 
         fun candidate(architecture: NetworkArchitecture, trials: Map<Long, ArchitectureTrial>) =
             ArchitectureCandidate(architecture, config.seeds.mapNotNull { trials[it] }, config.seeds.size, config.targetRmse)
-        fun candidates(): List<ArchitectureCandidate> = completed + pending.map { (architecture, trials) -> candidate(architecture, trials) }
+        fun candidates(): List<ArchitectureCandidate> = candidateCache ?: java.util.List.copyOf(
+            completed + pending.map { (architecture, trials) -> candidate(architecture, trials) }).also { candidateCache = it }
         fun publish(force: Boolean = false) {
             val now = System.nanoTime()
             if (force || lastPublish == Long.MIN_VALUE || now - lastPublish >= 100_000_000L) {
+                val device = deviceActivity()
+                val active = activity.snapshot()
                 onProgress(ArchitectureSearchProgress(planner.lineage.size, plannedTrials, received, candidates(),
-                    activity.snapshot(), now - start, planner.lineage, activity.peak))
+                    active, now - start, planner.lineage, activity.peak, dispatcher.activeWorkers, dispatcher.peakWorkers,
+                    if (config.usesCudaQueue) device.residentModels else active.size, device.queuedRequests, device.batches))
                 lastPublish = now
             }
         }
@@ -101,13 +109,15 @@ internal class AdaptiveTrialScheduler(
             retainedParameters += storage
             fundedTrials += config.seeds.size
             pending[architecture] = LinkedHashMap()
+            candidateCache = null
             config.seeds.forEach { ready.addLast(architecture to it) }
             return true
         }
-        fun receive(finished: Finished) {
+        fun receive(finished: ArchitectureTrialDispatcher.Finished) {
             val trials = pending.getValue(finished.architecture)
             check(trials.putIfAbsent(finished.trial.seed, finished.trial) == null) { "Duplicate trial completion." }
             received++
+            candidateCache = null
             if (trials.size == config.seeds.size) {
                 val candidate = candidate(finished.architecture, trials)
                 pending.remove(finished.architecture)
@@ -123,44 +133,38 @@ internal class AdaptiveTrialScheduler(
             publish(true)
             while (true) {
                 checkStop()
-                while (true) (completions.poll() ?: break).get().forEach(::receive)
-                while (!stopping.get() && submitted - received < config.parallelism) {
+                while (true) (dispatcher.poll() ?: break).forEach(::receive)
+                while (!stopping.get() && submitted - received < config.concurrentModels) {
                     checkStop()
                     if (stopping.get()) break
                     if (ready.isEmpty() && !admit()) break
                     val (architecture, seed) = ready.removeFirst()
                     val seeds = arrayListOf(seed)
-                    val available = config.parallelism - (submitted - received)
+                    val available = config.concurrentModels - (submitted - received)
                     while (evaluateGroup != null && seeds.size < available && ready.peekFirst()?.first == architecture) {
                         seeds += ready.removeFirst().second
                     }
                     val index = submitted
                     submitted += seeds.size
-                    completions.submit {
-                        activity.trackMany(index, architecture, seeds) { progress ->
-                            val stop = { stopping.get() || Thread.currentThread().isInterrupted }
-                            val trials = if (seeds.size > 1) requireNotNull(evaluateGroup)(architecture, seeds, stop, progress)
-                                else listOf(evaluate(architecture, seed, stop) { epoch, best -> progress(0, epoch, best) })
-                            check(trials.map { it.seed } == seeds) { "Cohort completion does not match the submitted seeds." }
-                            trials.map { Finished(architecture, it) }
-                        }
-                    }
+                    dispatcher.submit(index, architecture, seeds) { stopping.get() || Thread.currentThread().isInterrupted }
                 }
                 publish()
                 if (received == submitted) break
-                completions.poll(50, TimeUnit.MILLISECONDS)?.get()?.forEach(::receive)
+                dispatcher.poll(50)?.forEach(::receive)
             }
             checkStop()
             publish(true)
             val end = stopReason ?: admissionEnd ?: ArchitectureTermination.NEIGHBOURHOODS_EXHAUSTED
+            val device = deviceActivity()
             return ArchitectureSearchResult(data, config, end, planner.lineage.size, candidates(),
-                System.nanoTime() - start, planner.lineage, activity.peak)
+                System.nanoTime() - start, planner.lineage, activity.peak, dispatcher.peakWorkers,
+                if (config.usesCudaQueue) device.peakResidentModels else activity.peak, device.batches)
         } catch (failure: Throwable) {
             searchFailure = failure
             throw failure
         } finally {
             stopping.set(true)
-            try { stopArchitectureWorkers(pool) } catch (cleanup: Throwable) {
+            try { dispatcher.close() } catch (cleanup: Throwable) {
                 if (searchFailure == null) throw cleanup else searchFailure.addSuppressed(cleanup)
             }
         }

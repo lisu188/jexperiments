@@ -88,6 +88,7 @@ internal class NeuroStudio(
     config: StudioConfig = StudioConfig(), custom: List<NeuroLearningSets.Sample> = emptyList(),
     private val windowId: String? = null,
     private val openCohort: ((List<Neuro>, TrainingBackend, Neuro.TrainingPrecision, Int, Int) -> NeuroTrainingCohort)? = null,
+    private val openSearchCuda: ((Neuro.TrainingPrecision, Int) -> SearchCudaService)? = null,
     private val openSession: ((Neuro, TrainingBackend, Neuro.TrainingPrecision, Int, TrainingEngine) -> NeuroTrainingSession)? = null
 ) : AutoCloseable {
     private val ownedDeviceService = lazy { NeuroTrainingDeviceService() }
@@ -381,29 +382,46 @@ internal class NeuroStudio(
                     "model" to model.logId, "session" to model.trainingSessionLogId,
                     "backend" to recordedDevice.backend, "device" to recordedDevice.name, "precision" to recordedDevice.precision,
                     "deviceIdentity" to recordedDevice.identity, "kernelVersion" to recordedDevice.kernelVersion,
-                    "engine" to recordedDevice.engine, "simdBits" to recordedDevice.simdBits, "sigmoid" to recordedDevice.sigmoid, "cohort" to trial.cohort)
+                    "engine" to recordedDevice.engine, "simdBits" to recordedDevice.simdBits, "sigmoid" to recordedDevice.sigmoid,
+                    "cohort" to trial.cohort, "execution" to trial.execution, "route" to trial.route)
             }
-            fun replayChunks(train: (TrainingChunkRequest) -> TrainingChunkResult): Boolean {
+            fun replayChunks(train: (TrainingChunkRequest) -> SearchAdvanceResult): Boolean {
                 var replayed = 0
                 while (replayed < trial.bestEpoch) {
                     if (isCancelled()) return false
                     val boundary = minOf(trial.bestEpoch - replayed, report.config.checkEvery - replayed % report.config.checkEvery)
                     val result = train(TrainingChunkRequest(boundary, checkEvery = boundary, cancelled = ::isCancelled))
+                    check(result.committedEpochs in 0..minOf(64, boundary)) { "Replay crossed a checkpoint boundary." }
                     replayed += result.committedEpochs
                     if (result.termination == TrainingTermination.CANCELLED) return false
+                    check(result.committedEpochs > 0) { "Replay made no training progress." }
                 }
                 return true
             }
-            if (trial.cohort) {
+            if (trial.route == ArchitectureTrialRoute.CUDA_QUEUE) {
+                (openSearchCuda?.invoke(recordedPrecision, report.config.batchSize)
+                    ?: SearchCudaService(recordedPrecision, report.config.batchSize, maximumModels = 1)).use { service ->
+                    service.openSession(model).use { training ->
+                        verifyDevice(training.info)
+                        if (!replayChunks(training::advanceForSearch)) return false
+                    }
+                }
+            } else if (trial.cohort) {
                 openTrainingCohort(listOf(model), recordedDevice.backend, recordedPrecision, report.config.batchSize, 1).use { cohort ->
                     verifyDevice(cohort.info)
-                    if (!replayChunks { request -> cohort.trainChunk(request).single() }) return false
+                    if (!replayChunks { request -> cohort.trainChunk(request).single().let {
+                        SearchAdvanceResult(it.committedEpochs, it.rmse, it.termination)
+                    } }) return false
                 }
             } else {
                 openTrainingSession(model, recordedDevice.backend, recordedPrecision, report.config.batchSize, recordedDevice.engine).use { training ->
                     verifyDevice(training.info)
-                    if (recordedDevice.engine == TrainingEngine.SMALL) {
-                        if (!replayChunks(training::trainChunk)) return false
+                    if (trial.execution == ArchitectureExecution.OPTIMIZED) {
+                        if (!replayChunks { request -> advanceTrainingForSearch(training, request) }) return false
+                    } else if (recordedDevice.engine == TrainingEngine.SMALL) {
+                        if (!replayChunks { request -> training.trainChunk(request).let {
+                            SearchAdvanceResult(it.committedEpochs, it.rmse, it.termination)
+                        } }) return false
                     } else repeat(trial.bestEpoch) {
                         if (isCancelled()) return false
                         trainConfiguredEpoch(model, training, report.config.batchSize)

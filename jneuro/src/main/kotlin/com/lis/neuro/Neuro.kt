@@ -61,6 +61,24 @@ class Neuro @JvmOverloads constructor(
         }
     }
 
+    /** Search-only shared storage. These samples and packed buffers are immutable after construction. */
+    internal class SharedDatasets private constructor(
+        internal val training: ArrayList<Sample>, internal val validation: ArrayList<Sample>
+    ) {
+        internal val packedTraining = PackedDataset(training, 2, 1)
+        internal val packedValidation = PackedDataset(validation, 2, 1)
+
+        companion object {
+            fun fromSamples(training: List<NeuroLearningSets.Sample>, validation: List<NeuroLearningSets.Sample>): SharedDatasets {
+                fun pack(samples: List<NeuroLearningSets.Sample>) = ArrayList(samples.map { sample ->
+                    require(sample.x.isFinite() && sample.y.isFinite() && sample.target.isFinite()) { "Samples must be finite" }
+                    Sample(doubleArrayOf(sample.x, sample.y), doubleArrayOf(sample.target))
+                })
+                return SharedDatasets(pack(training), pack(validation))
+            }
+        }
+    }
+
     internal class Layer(val inputs: Int, val outputs: Int, random: SplittableRandom) {
         val weights = DoubleArray(inputs * outputs)
         val biases = DoubleArray(outputs)
@@ -220,8 +238,10 @@ class Neuro @JvmOverloads constructor(
     private val layers = Array(this.topology.size - 1) {
         Layer(this.topology[it], this.topology[it + 1], initializationRandom)
     }
-    private val trainingSamples = ArrayList<Sample>()
-    private val testSamples = ArrayList<Sample>()
+    private var trainingSamples = ArrayList<Sample>()
+    private var testSamples = ArrayList<Sample>()
+    private var sharedTrainingSamples = false
+    private var sharedTestSamples = false
     private val trainingWorkspace = Workspace(this.topology)
     private val inferenceSession = ThreadLocal.withInitial { newInferenceSession() }
     private val trainingShuffle = TrainingShuffle(hyperParameters.seed xor -7046029254386353131L)
@@ -231,6 +251,7 @@ class Neuro @JvmOverloads constructor(
     private val beta = hyperParameters.beta
     private var packedTraining: PackedDataset? = null
     private var packedTests: PackedDataset? = null
+    internal var cpuBatchWorkspace: NeuroCpuBatchTrainer.Workspace? = null
     private var epochsTrained = 0L
     private var samplesSeen = 0L
     private var lastTrainingError = Double.NaN
@@ -256,9 +277,31 @@ class Neuro @JvmOverloads constructor(
     fun trainingSampleCount(): Int = trainingSamples.size
     fun testSampleCount(): Int = testSamples.size
     fun statistics() = Statistics(epochsTrained, samplesSeen, lastTrainingError)
+    internal fun trainingEpochCount(): Long = epochsTrained
+    internal fun processedSampleCount(): Long = samplesSeen
+    internal fun recordedTrainingError(): Double = lastTrainingError
+
+    @Synchronized internal fun attachSharedDatasets(data: SharedDatasets): Neuro {
+        checkTrainingAccess()
+        check(trainingSamples.isEmpty() && testSamples.isEmpty() && epochsTrained == 0L) { "Shared data requires a fresh model" }
+        require(topology.first() == 2 && topology.last() == 1) { "Search data requires topology 2-...-1" }
+        trainingSamples = data.training
+        testSamples = data.validation
+        packedTraining = data.packedTraining
+        packedTests = data.packedValidation
+        sharedTrainingSamples = true
+        sharedTestSamples = true
+        lastTrainingError = Double.NaN
+        return this
+    }
+
     @Synchronized fun addTrainingSample(input: DoubleArray, target: DoubleArray): Neuro {
         checkTrainingAccess()
         validateSample(input, target)
+        if (sharedTrainingSamples) {
+            trainingSamples = ArrayList(trainingSamples)
+            sharedTrainingSamples = false
+        }
         trainingSamples.add(Sample(input, target))
         packedTraining = null
         lastTrainingError = Double.NaN
@@ -270,6 +313,10 @@ class Neuro @JvmOverloads constructor(
     @Synchronized fun addTestSample(input: DoubleArray, target: DoubleArray): Neuro {
         checkTrainingAccess()
         validateSample(input, target)
+        if (sharedTestSamples) {
+            testSamples = ArrayList(testSamples)
+            sharedTestSamples = false
+        }
         testSamples.add(Sample(input, target))
         packedTests = null
         NeuroLog.trace("model", "dataset.sample.added") { mapOf("model" to logId,
@@ -315,11 +362,13 @@ class Neuro @JvmOverloads constructor(
         epochsTrained++
     }
 
-    internal fun exportTrainingState(): NeuroTrainingState {
+    internal fun exportTrainingState(shareDataset: Boolean = false): NeuroTrainingState {
         val data = trainingData()
         return NeuroTrainingState(topology.copyOf(), Array(layers.size) { layers[it].weights.copyOf() },
             Array(layers.size) { layers[it].biases.copyOf() }, Array(layers.size) { layers[it].weightVelocity.copyOf() },
-            Array(layers.size) { layers[it].biasVelocity.copyOf() }, data.inputs.copyOf(), data.targets.copyOf())
+            Array(layers.size) { layers[it].biasVelocity.copyOf() },
+            if (shareDataset) data.inputs else data.inputs.copyOf(),
+            if (shareDataset) data.targets else data.targets.copyOf(), sharedDataset = shareDataset)
     }
 
     @Synchronized internal fun acquireTraining(owner: Any, sessionId: String? = null) {
@@ -391,7 +440,7 @@ class Neuro @JvmOverloads constructor(
 
     internal fun commitDeviceEpoch(state: NeuroTrainingState): Double = commitTrainingChunk(state, 1)
 
-    internal fun commitTrainingChunk(state: NeuroTrainingState, epochs: Int): Double {
+    internal fun commitTrainingChunk(state: NeuroTrainingState, epochs: Int, evaluateError: Boolean = true): Double {
         checkTrainingAccess()
         require(epochs in 1..64)
         validateTrainingState(state)
@@ -405,8 +454,25 @@ class Neuro @JvmOverloads constructor(
         }
         epochsTrained += epochs
         samplesSeen += trainingSamples.size.toLong() * epochs
-        lastTrainingError = trainingError()
+        lastTrainingError = if (evaluateError) trainingError() else Double.NaN
         return lastTrainingError
+    }
+
+    /** The search evaluator owns scoring; the arithmetic and shuffle path match public CPU epochs. */
+    internal fun advanceCpuSearchEpoch(batchSize: Int) {
+        checkTrainingAccess()
+        requireTrainingSamples()
+        require(batchSize > 0)
+        if (batchSize == 1) trainOnlineEpoch(trainingData(), false)
+        else NeuroCpuBatchTrainer.train(this, trainingData(), 1, batchSize, 1)
+        lastTrainingError = Double.NaN
+        // Fail at the completed epoch before another epoch can consume non-finite state.
+        for (layer in layers) {
+            check(layer.weights.all { it.isFinite() } && layer.biases.all { it.isFinite() } &&
+                layer.weightVelocity.all { it.isFinite() } && layer.biasVelocity.all { it.isFinite() }) {
+                "Training produced non-finite parameters."
+            }
+        }
     }
 
     @Synchronized fun trainEpoch(): Double = logDirectTraining("trainEpoch", 1) {

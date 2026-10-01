@@ -76,6 +76,14 @@ internal object NeuroLog {
 
     fun id(prefix: String): String = "$prefix-${ids.incrementAndGet()}"
 
+    fun isEnabled(component: String, level: Level): Boolean = try {
+        initialize()
+        loggers.computeIfAbsent(component) { Logger.getLogger("com.lis.neuro.$it") }.isLoggable(level)
+    } catch (failure: Exception) {
+        reportFailure(failure)
+        false
+    }
+
     fun application(entrypoint: String, action: () -> Unit) {
         val application = id("application")
         val started = System.nanoTime()

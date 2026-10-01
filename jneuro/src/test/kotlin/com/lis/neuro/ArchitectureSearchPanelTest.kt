@@ -75,6 +75,7 @@ class ArchitectureSearchPanelTest {
             assertEquals(12, defaults.restartAfter)
             assertEquals(4, defaults.maxRestarts)
             assertEquals(ArchitectureSearchStrategy.ADAPTIVE, defaults.strategy)
+            assertEquals(ArchitectureExecution.REFERENCE, defaults.execution)
             assertEquals(ArchitecturePolicy.SMALLEST_MEETING_TARGET, defaults.policy)
             button(panel, "Start search").doClick()
             assertEquals(1, starts); assertFalse(button(panel, "Start search").isEnabled)

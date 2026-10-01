@@ -8,6 +8,23 @@ import java.util.logging.LogRecord
 import java.util.logging.Logger
 
 class NeuroTrainingLoggingTest {
+    @Test fun disabledProgressAvoidsRunIdsButStillLogsOriginalFailures() = TrainingCapture().use { capture ->
+        Logger.getLogger("com.lis.neuro").level = Level.WARNING
+        val model = model()
+        model.newTrainingSession().use { session ->
+            val before = NeuroLog.id("probe").substringAfterLast('-').toLong()
+            repeat(3) { session.trainEpoch() }
+            val after = NeuroLog.id("probe").substringAfterLast('-').toLong()
+            assertEquals(before + 1, after, "Disabled successful progress must not allocate correlated run IDs")
+            assertTrue(capture.events("training.completed").isEmpty())
+            val failure = assertThrows(IllegalArgumentException::class.java) { session.train(-1) }
+            val event = capture.one("training.rejected")
+            assertSame(failure, event.thrown)
+            assertEquals(0L, event.fields()["completedEpochs"])
+            assertEquals(3L, event.fields()["totalEpochs"])
+        }
+    }
+
     @Test fun cpuResolutionAndProgressAreCorrelatedAndInfoIsSampled() = TrainingCapture().use { capture ->
         val model = model()
         openConfiguredTrainingSession(model, TrainingBackend.AUTO, Neuro.TrainingPrecision.FP32, 1,

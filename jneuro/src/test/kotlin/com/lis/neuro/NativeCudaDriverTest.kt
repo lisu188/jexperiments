@@ -16,6 +16,23 @@ import org.junit.jupiter.api.Test
 
 /** Exercises the production downcalls against native upcall stubs, without a GPU or compiler. */
 class NativeCudaDriverTest {
+    @Test fun heterogeneousSearchLaunchMarshalsOffsetsAndUsesOneBlockPerRequest() {
+        Runtime().use { runtime ->
+            runtime.kernelArguments = List(7) { ValueLayout.JAVA_LONG } + List(3) { ValueLayout.JAVA_INT } +
+                List(3) { ValueLayout.JAVA_DOUBLE } + List(2) { ValueLayout.JAVA_INT }
+            runtime.driver().use { driver ->
+                for (kernel in listOf("search_train_fp64", "search_train_fp32"))
+                    driver.launch(kernel, 64 * 128, 1L, 2L, 3L, 4L, 5L, 6L, 7L,
+                        64, 19, 11, 0.11, 0.31, 0.75, 1, 0)
+                assertEquals(listOf("search_train_fp64", "search_train_fp32"), runtime.requestedFunctions)
+                assertTrue(runtime.launches.all { it.dimensions == listOf(64, 1, 1, 128, 1, 1, 0) })
+                assertEquals(listOf(64, 19, 11), runtime.launches.first().arguments.slice(7..9))
+                assertEquals(listOf(0.11, 0.31, 0.75), runtime.launches.first().arguments.slice(10..12))
+            }
+            runtime.assertCallbacksSucceeded()
+        }
+    }
+
     @Test fun fusedCohortLaunchMarshalsPackedStateAndUsesOneBlockPerModel() {
         Runtime().use { runtime ->
             runtime.kernelArguments = List(6) { ValueLayout.JAVA_LONG } + List(5) { ValueLayout.JAVA_INT } +

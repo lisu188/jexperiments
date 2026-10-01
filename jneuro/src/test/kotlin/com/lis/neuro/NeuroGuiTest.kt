@@ -705,6 +705,60 @@ class NeuroGuiTest {
         click(button("Reset")); await("replay reset to full dataset") { current.samples.size == 180 && current.replayNote.isEmpty() }
     }
 
+    @Test fun optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls() {
+        choose(combo("Dataset"), NeuroLearningSets.Kind.SPIRAL.ordinal)
+        configure("4", 1, 0.0)
+        await("Spiral dataset installed") { current.config.dataset == NeuroLearningSets.Kind.SPIRAL && current.samples.size == 220 }
+        val original = edt { current.diagnostics.parameters() }
+        tab("Architecture search")
+        assertEquals(ArchitectureEvaluation.VALIDATION, edt { combo("Scoring mode", panel).selectedItem })
+        searchSettings(25)
+        number("Min width", "4", panel); number("Max width", "4", panel)
+        number("Epochs per seed", "7", panel); number("Check every (epochs)", "3", panel)
+        text(input("Seeds", panel), "1,42"); number("Required successes", "2", panel)
+        number("Parallel seed trials", "2", panel); number("Trial budget", "2", panel)
+        choose(combo("Scoring mode", panel), ArchitectureEvaluation.VALIDATION.ordinal)
+        assertEquals(ArchitectureExecution.REFERENCE, edt { combo("Search execution", panel).selectedItem })
+        choose(combo("Search execution", panel), ArchitectureExecution.OPTIMIZED.ordinal)
+        click(button("Start search"))
+        await("optimized Spiral report") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertEquals(ArchitectureExecution.OPTIMIZED, report.config.execution)
+        assertEquals(176, report.data.training.size); assertEquals(44, report.data.validation.size)
+        assertEquals(1, report.evaluated); assertEquals(0, report.numericalFailures)
+        assertTrue(report.peakWorkers in 1..2)
+        assertTrue(report.candidates.single().trials.all {
+            it.route == ArchitectureTrialRoute.SESSION && !it.cohort && it.epochs == 7 &&
+                it.history.map { point -> point.epoch } == listOf(0, 3, 6, 7)
+        })
+        assertArrayEquals(original, edt { current.diagnostics.parameters() }, 0.0)
+        assertTrue(edt { (field(panel, "progressBar") as JProgressBar).string.contains("CPU workers peak") })
+        val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
+        screenshot("optimized-spiral-search-results")
+        click(button("Replay selected run"))
+        await("optimized Spiral scored replay") { current.replayNote.contains("Validation RMSE") && current.samples.size == 176 }
+        assertEquals(trial.bestEpoch, edt { current.diagnostics.epoch() })
+        assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
+        tab("Learning set"); screenshot("optimized-spiral-replay")
+        click(button("Reset"))
+        await("Spiral reset restores full data") { current.samples.size == 220 && current.diagnostics.epoch() == 0 }
+        tab("Architecture search")
+        number("Epochs per seed", Int.MAX_VALUE.toString(), panel)
+        number("Check every (epochs)", "25", panel)
+        click(button("Start search"))
+        await("optimized Spiral makes progress") {
+            (field(panel, "summary") as JLabel).text.matches(Regex(".*epoch [1-9][0-9]*.*"))
+        }
+        click(button("Cancel search"))
+        await("optimized Spiral cancelled") { (field(panel, "result") as ArchitectureSearchResult?)?.termination == ArchitectureTermination.CANCELLED }
+        val cancelled = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertTrue(cancelled.partial > 0)
+        assertNull(cancelled.selection.recommended)
+        assertFalse(edt { button("Apply architecture").isEnabled || button("Replay selected run").isEnabled })
+        choose(combo("Search execution", panel), ArchitectureExecution.REFERENCE.ordinal)
+        assertEquals(ArchitectureExecution.REFERENCE, edt { panel.readConfig().execution })
+    }
+
     @Test fun pngExportAndCancelUseTheRealFileDialog() {
         tab("Neurons")
         click(button("Save PNG"))

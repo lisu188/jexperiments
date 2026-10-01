@@ -914,3 +914,64 @@ Tests assert policy-dependent rank ordering, reliability-frontier preservation, 
 The concurrency regression holds 32 offspring at a latch until 32 distinct worker threads have entered their evaluator simultaneously, with only one seed configured. A separate five-seed test exercises 32 concurrent slots across several architectures and verifies grouping, exact full-seed budgets and attribution. A slow-offspring test proves other architectures advance without waiting for it. Tests also verify out-of-order feedback, exclusion of partial parents, elite membership at proposal time, cancellation of all 32 workers, observer-failure cleanup, and accurate lower concurrency for a one-architecture budget.
 
 The native GUI scenario GUI-097 enters 32 workers and a single seed through the real controls, starts adaptive search, asserts the live count reaches 32 across different architectures, cancels it, and checks the retained peak. The peak is limited by available independent tasks: bootstrap, an exhausted search space, a narrow budget, and completion of the final few trials can legitimately use fewer workers. A fixed pool does not create additional work merely because its capacity is 32; see the [Executor factory contract](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/util/concurrent/Executors.html).
+
+## Architecture search: separate execution from evaluation quality
+
+Architecture search now has an independent **Execution** choice. `REFERENCE` retains the established epoch/cohort evaluator; `OPTIMIZED` removes intermediate scoring and changes how independent trials are scheduled. Strategy still chooses adaptive proposals or an exhaustive grid. Engine still chooses the general reference trainer or the supported SMALL family. Selecting optimized execution does not silently narrow a general-width search, change precision, approximate sigmoid, reduce the seed list, or stop a trial when it first meets the target.
+
+The CPU bottleneck was larger than the arithmetic kernel. A search scores every 25 epochs by default, but calling the ordinary public epoch API also calculated training RMSE after every intervening epoch. A SMALL cohort additionally occupied one admission slot per seed while its CPU evaluator used one worker. Five admitted seeds could therefore leave most of a four-worker pool idle. Optimized CPU execution schedules each model independently. The existing cohort implementation remains available through reference execution; model-lane SIMD is not automatically selected without a demonstrated end-to-end advantage.
+
+The search-only advance interface makes the scoring contract explicit:
+
+~~~kotlin
+internal data class SearchAdvanceResult(
+    val committedEpochs: Int,
+    val rmse: Double?,
+    val termination: TrainingTermination
+)
+~~~
+
+A nullable RMSE means that no score was computed for this committed prefix. It never means that an earlier epoch's score can be reused. The evaluator requests only the distance to the next scoring boundary, advances in bounded chunks, then evaluates training and validation data. Each trial still runs its complete configured epoch budget unless cancellation, a time limit or a failure interrupts it. Public single-epoch and chunk methods retain their publication behavior.
+
+~~~kotlin
+private fun request() = TrainingChunkRequest(
+    minOf(config.maxEpochs - epoch, config.checkEvery - epoch % config.checkEvery),
+    cancelled = cancelled
+)
+~~~
+
+Each `ArchitectureSearchData` owns immutable packed training and validation datasets shared by its freshly seeded models. Adding a sample through the public API detaches the affected model's sample list; exported public state remains defensive. SMALL's internal publication copies parameters and momentum while reusing immutable input/target arrays. Permutation validation reuses scratch storage, diagnostic capture performs one defensive parameter copy, and disabled training logs avoid building statistics and field maps. These changes target allocations and scoring overhead while preserving each model's optimizer and shuffle sequence.
+
+### GPU admission, batching and publication
+
+Optimized SMALL CUDA search owns a dedicated device queue. The CPU worker setting bounds CPU scoring work; up to 64 independent models may wait for or execute GPU training. Waiting models do not block the scoring executor. Progress reports distinguish active CPU workers, active/resident models, queued GPU requests and launched batches. Bootstrap still has only the initial architecture's funded seed group, so a 64-model limit does not imply that 64 useful models always exist.
+
+The packaged CUDA ABI adds `search_train_fp64` and `search_train_fp32`. Each block receives its own parameter offset, topology offset, shuffle-order offset, layer count, epoch count and result offset. Immutable dataset buffers are shared. The existing same-topology public cohort entrypoints and atomic cohort contract remain intact. The new entrypoints reuse the same forward/backpropagation/update arithmetic, with one block per model; no native compiler installation is needed on the user's machine.
+
+A numerical failure marks only the affected block and leaves that model's resident checkpoint unchanged. Host code validates returned parameters and momentum before committing shuffle advancement and counters. A driver failure invalidates the affected unpublished batch; replay or reopening starts from the last validated host checkpoint. CUDA requests remain capped at 64 epochs and adapt toward the 25 ms training budget, without crossing the caller's scoring boundary. GPU completion is followed by authoritative CPU scoring.
+
+Trial results record actual execution route, kernel identity, device, precision and SIMD width. Replay uses that recorded route, including a one-model CUDA service for a queued GPU trial. Parallel adaptive search can observe completed parents in a different order after an optimization; that legitimately changes subsequent proposals. Serial reproducibility and shared architecture/seed numerical parity are separate requirements from parallel proposal order.
+
+### Spiral measurement protocol
+
+The command below measures complete searches through the actual scheduler. It includes opening sessions, training, scoring, snapshots, scheduling and cleanup; it is not a microbenchmark of a forward pass. Run separate JVM invocations with order offsets 0, 1 and 2 for warmed forks. Each JSONL record is flushed as it completes, so an interrupted experiment retains its evidence.
+
+~~~text
+./gradlew :jneuro:architectureSearchBenchmark --args="--epochs 2000 --workers 1,4,8,16,32 --warmups 1 --repeats 3 --order-offset 0 --output build/reports/search-benchmark/cpu-0.jsonl"
+./gradlew :jneuro:architectureSearchBenchmark --args="--epochs 2000 --engine REFERENCE --workers 1,4,8,16,32 --output build/reports/search-benchmark/reference-engine.jsonl"
+./gradlew :jneuro:architectureSearchBenchmark --args="--epochs 2000 --backends CUDA --workers 4 --output build/reports/search-benchmark/gpu.jsonl"
+~~~
+
+The frozen SMALL manifest includes width 8 at depths one through four and four mixed-width shapes. `--manifest general` exercises general-width CPU regressions. Every shape receives seeds `1,42,123,999,2026`, FP64, exact sigmoid, batch size 1, learning rate 0.6, momentum 0.2 and beta 1. Spiral's fixed 220 points are split with seed 42 into 176 training and 44 validation samples. The separate `JNeuro architecture search benchmark` workflow runs three CPU forks on existing Java/Gradle CI toolchains.
+
+Full-budget quality is a different experiment:
+
+~~~text
+./gradlew :jneuro:architectureSearchBenchmark --args="--mode quality --executions OPTIMIZED --workers 32 --epochs 1000000 --trials 60 --search-seeds 42,123 --limit-seconds 7200 --output build/reports/search-benchmark/quality.jsonl"
+~~~
+
+This protocol starts from `2→8→8→8→1`, permits one to four SMALL hidden layers with widths 4/8/16 and at most 881 parameters, and funds complete five-seed groups. A reliable winner needs validation RMSE at most **0.01 in at least four of five seeds**. Sixty trials allow twelve fully funded candidates. The wall-time limit applies across the invocation and preserves partial results; it does not convert partial candidates into reliable recommendations. A bounded experiment can finish without meeting the target and cannot establish a global minimum architecture.
+
+Only after selecting a reliable winner does the harness evaluate its representative checkpoint on 218 independent, interleaved Spiral-arm points. Their fractions `(i + 0.5) / 109` lie between the original generator's points. That final RMSE and classification accuracy are reported without feeding them back into selection.
+
+Reports include completed epochs and sample updates, actual worker/model peaks, GPU batch counts, best checkpoint parameters, per-trial route timings and JVM allocated bytes. Route timings overlap across concurrent trials; GPU training phase includes queue wait and publication, and CPU training phase includes any boundary RMSE computed by the advancement API. They are not additive kernel timings. Uninstrumented legacy cohort phases are `null`, not fabricated zero-duration measurements. JVM allocation totals exclude native CUDA allocations. Fixed-work throughput and quality success must be interpreted independently.

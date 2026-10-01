@@ -82,8 +82,8 @@ internal object NeuroXorDiagnostics {
         val topology = network.topology()
         require(topology.size >= 2 && topology[0] == 2 && topology.last() == 1) { "diagnostics require topology 2-...-1" }
         return Snapshot(epoch, error, network.hyperParameters().beta, network.hyperParameters().sigmoidMode,
-            topology, Array(topology.size - 1) { network.backendWeights(it) },
-            Array(topology.size - 1) { network.backendBiases(it) })
+            topology, Array(topology.size - 1) { network.backendLayers()[it].weights },
+            Array(topology.size - 1) { network.backendLayers()[it].biases })
     }
 
     fun probe(snapshot: Snapshot, x: Double, y: Double): Probe {

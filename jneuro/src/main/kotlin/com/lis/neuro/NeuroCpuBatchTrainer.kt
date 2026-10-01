@@ -3,23 +3,19 @@ package com.lis.neuro
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.ForkJoinPool
 import java.util.concurrent.Future
-import java.util.WeakHashMap
 
 internal object NeuroCpuBatchTrainer {
-    private class Workspace(val topology: IntArray, val capacity: Int) {
+    internal class Workspace(val topology: IntArray, val capacity: Int) {
         val activations = Array(topology.size) { DoubleArray(Math.multiplyExact(capacity, topology[it])) }
         val targets = DoubleArray(Math.multiplyExact(capacity, topology.last()))
         val deltas = Array(topology.size - 1) { DoubleArray(Math.multiplyExact(capacity, topology[it + 1])) }
     }
 
-    // Values contain only primitive buffers: they must never retain their weak model keys.
-    // Model ownership serializes use; the map lock only protects lookup/allocation across models.
-    private val workspaces = WeakHashMap<Neuro, Workspace>()
-
-    private fun workspace(network: Neuro, capacity: Int): Workspace = synchronized(workspaces) {
-        val previous = workspaces[network]
-        if (previous != null && previous.capacity >= capacity) previous
-        else Workspace(previous?.topology ?: network.topology(), capacity).also { workspaces[network] = it }
+    // Exclusive model ownership serializes use. Model lifetime also owns its primitive scratch buffers.
+    private fun workspace(network: Neuro, capacity: Int): Workspace {
+        val previous = network.cpuBatchWorkspace
+        return if (previous != null && previous.capacity >= capacity) previous
+        else Workspace(previous?.topology ?: network.topology(), capacity).also { network.cpuBatchWorkspace = it }
     }
 
     fun train(network: Neuro, data: Neuro.PackedDataset, epochs: Int, batchSize: Int, parallelism: Int) {
