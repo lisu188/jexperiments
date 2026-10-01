@@ -119,12 +119,18 @@ class ArchitectureSearchPanelTest {
             assertEquals(ArchitectureSearchStrategy.ADAPTIVE, defaults.strategy)
             assertEquals(ArchitectureExecution.REFERENCE, defaults.execution)
             assertEquals(ArchitecturePolicy.SMALLEST_MEETING_TARGET, defaults.policy)
+            val epochControl = field(panel, "epochs") as JSpinner
+            assertTrue(epochControl.toolTipText.contains("full epoch budget, even after meeting the target"))
+            assertTrue(epochControl.toolTipText.contains("every seed of the first architecture"))
+            assertEquals(epochControl.toolTipText, (epochControl.editor as JSpinner.DefaultEditor).textField.toolTipText)
             button(panel, "Start search").doClick()
             assertEquals(1, starts); assertFalse(button(panel, "Start search").isEnabled)
             val config = panel.readConfig()
+            epochControl.value = 100_001 // Unapplied edits must not change the running budget shown.
             panel.updateProgress(ArchitectureSearchProgress(584, 2920, 0, emptyList(),
                 listOf(ArchitectureRunningTrial(NetworkArchitecture(listOf(2)), 42, 25, 0.5)), 10))
-            assertTrue((field(panel, "summary") as JLabel).text.contains("epoch 25"))
+            assertTrue((field(panel, "summary") as JLabel).text.endsWith("epoch 25/100000"))
+            epochControl.value = 100_000
             panel.updateProgress(ArchitectureSearchProgress(584, 2920, 0, emptyList(), emptyList(), 20))
             render(panel, 1150, 850)
             button(panel, "Cancel search").doClick(); assertEquals(1, cancels)
