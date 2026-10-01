@@ -264,6 +264,7 @@ internal fun <T> loggedTraining(network: Neuro, sessionId: String?, info: Traini
                                parallelism: Int = 1, details: Map<String, Any?> = emptyMap(), initialEpoch: Long = 0,
                                action: () -> T): T {
     val logProgress = NeuroLog.isEnabled("training", java.util.logging.Level.INFO)
+    val searchAdvance = operation == "advanceForSearch"
     val beforeEpoch = network.trainingEpochCount()
     val beforeSamples = network.processedSampleCount()
     val started = System.nanoTime()
@@ -282,7 +283,7 @@ internal fun <T> loggedTraining(network: Neuro, sessionId: String?, info: Traini
         "durationMs" to ((System.nanoTime() - started) / 1_000_000.0)).apply { putAll(details) }
     if (logProgress) {
         val before = network.statistics()
-        if (requestedEpochs > 1 || operation == "trainUntil")
+        if (!searchAdvance && (requestedEpochs > 1 || operation == "trainUntil"))
             NeuroLog.info("training", "training.started") { fields(before) }
         else NeuroLog.debug("training", "training.started") { fields(before) }
     }
@@ -300,9 +301,12 @@ internal fun <T> loggedTraining(network: Neuro, sessionId: String?, info: Traini
                 is SearchAdvanceResult -> { put("rmse", result.rmse); put("termination", result.termination) }
             }
         }
-        // UI/architecture loops call a single epoch repeatedly. INFO remains useful and bounded.
-        if (requestedEpochs != 1 || operation == "trainUntil" ||
-            beforeEpoch == initialEpoch || after.epochsTrained / 100 > beforeEpoch / 100) {
+        // Search chunks are streaming progress just like repeated single-epoch calls.
+        // Only published work can sample the initial session or a crossed hundred-epoch boundary.
+        val sampledProgress = beforeEpoch == initialEpoch || after.epochsTrained / 100 > beforeEpoch / 100
+        val infoCompletion = if (searchAdvance) after.epochsTrained > beforeEpoch && sampledProgress
+            else requestedEpochs != 1 || operation == "trainUntil" || sampledProgress
+        if (infoCompletion) {
             NeuroLog.info("training", "training.completed") { completedFields() }
         } else NeuroLog.debug("training", "training.completed") { completedFields() }
         return result

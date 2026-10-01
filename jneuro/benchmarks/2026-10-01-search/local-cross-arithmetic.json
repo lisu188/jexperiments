@@ -1,0 +1,1358 @@
+{
+  "sourceRevision": "529e7a9",
+  "scope": "One unique measured result per architecture/seed/arithmetic implementation; repeated timing rounds are not additional quality seeds.",
+  "comparisons": [
+    {
+      "left": "SMALL/CPU",
+      "right": "REFERENCE/CPU",
+      "uniqueTrials": 40,
+      "changedBestEpochs": 2,
+      "medianBestRmseAbsDifference": 5.551115123125783e-17,
+      "maximumBestRmseAbsDifference": 0.06629519617800428,
+      "maximumFinalRmseAbsDifference": 0.07879485996199892,
+      "pairs": [
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.4587806903189305,
+          "rightBestRmse": 0.4587806903189303,
+          "bestRmseAbsDifference": 1.6653345369377348e-16,
+          "leftFinalRmse": 0.512054689776717,
+          "rightFinalRmse": 0.5120546897767168,
+          "finalRmseAbsDifference": 2.220446049250313e-16,
+          "leftBestEpoch": 500,
+          "rightBestEpoch": 500,
+          "maximumScaledBestParameterError": 3.697621762519899e-06
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.45566418480009396,
+          "rightBestRmse": 0.4556641848000931,
+          "bestRmseAbsDifference": 8.881784197001252e-16,
+          "leftFinalRmse": 0.46941417455093365,
+          "rightFinalRmse": 0.4694141745509323,
+          "finalRmseAbsDifference": 1.3322676295501878e-15,
+          "leftBestEpoch": 1950,
+          "rightBestEpoch": 1950,
+          "maximumScaledBestParameterError": 0.0011972353850577743
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4522126463288596,
+          "rightBestRmse": 0.4522126463288595,
+          "bestRmseAbsDifference": 1.1102230246251565e-16,
+          "leftFinalRmse": 0.4623115581265829,
+          "rightFinalRmse": 0.4623115581265827,
+          "finalRmseAbsDifference": 2.220446049250313e-16,
+          "leftBestEpoch": 1700,
+          "rightBestEpoch": 1700,
+          "maximumScaledBestParameterError": 0.0016670472362841381
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.4617066116281527,
+          "rightBestRmse": 0.4617066116281525,
+          "bestRmseAbsDifference": 1.6653345369377348e-16,
+          "leftFinalRmse": 0.4678885955908865,
+          "rightFinalRmse": 0.46788859559095186,
+          "finalRmseAbsDifference": 6.533662499919046e-14,
+          "leftBestEpoch": 275,
+          "rightBestEpoch": 275,
+          "maximumScaledBestParameterError": 6.800670605007723e-06
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.4627781367633288,
+          "rightBestRmse": 0.4627781367633288,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.50633949775412,
+          "rightFinalRmse": 0.5063394977541197,
+          "finalRmseAbsDifference": 3.3306690738754696e-16,
+          "leftBestEpoch": 225,
+          "rightBestEpoch": 225,
+          "maximumScaledBestParameterError": 1.6621136354737815e-06
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.43803276488303966,
+          "rightBestRmse": 0.43803276488321846,
+          "bestRmseAbsDifference": 1.7880141811588146e-13,
+          "leftFinalRmse": 0.4397156226670268,
+          "rightFinalRmse": 0.4397156226673228,
+          "finalRmseAbsDifference": 2.9598545836506673e-13,
+          "leftBestEpoch": 1950,
+          "rightBestEpoch": 1950,
+          "maximumScaledBestParameterError": 0.09344520409409363
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4607572422762157,
+          "rightBestRmse": 0.46075724227621573,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.522373219782075,
+          "rightFinalRmse": 0.5231332021806622,
+          "finalRmseAbsDifference": 0.0007599823985872112,
+          "leftBestEpoch": 500,
+          "rightBestEpoch": 500,
+          "maximumScaledBestParameterError": 1.2242540627960394e-05
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4523583905711255,
+          "rightBestRmse": 0.45235839057112537,
+          "bestRmseAbsDifference": 1.1102230246251565e-16,
+          "leftFinalRmse": 0.5161351034670082,
+          "rightFinalRmse": 0.516135103467008,
+          "finalRmseAbsDifference": 2.220446049250313e-16,
+          "leftBestEpoch": 625,
+          "rightBestEpoch": 625,
+          "maximumScaledBestParameterError": 6.602942186641861e-06
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.37747838904617337,
+          "rightBestRmse": 0.37747838904619657,
+          "bestRmseAbsDifference": 2.3203661214665772e-14,
+          "leftFinalRmse": 0.3895700305360048,
+          "rightFinalRmse": 0.3895700305358657,
+          "finalRmseAbsDifference": 1.3911094498553211e-13,
+          "leftBestEpoch": 1850,
+          "rightBestEpoch": 1850,
+          "maximumScaledBestParameterError": 0.00022531123631017153
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.46845410637554286,
+          "rightBestRmse": 0.46845410637554286,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.47861517481113686,
+          "rightFinalRmse": 0.4786151748111368,
+          "finalRmseAbsDifference": 5.551115123125783e-17,
+          "leftBestEpoch": 550,
+          "rightBestEpoch": 550,
+          "maximumScaledBestParameterError": 2.7336416539714784e-06
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.45359002179627783,
+          "rightBestRmse": 0.45359002179627766,
+          "bestRmseAbsDifference": 1.6653345369377348e-16,
+          "leftFinalRmse": 0.500182271366083,
+          "rightFinalRmse": 0.5189414997973022,
+          "finalRmseAbsDifference": 0.018759228431219244,
+          "leftBestEpoch": 875,
+          "rightBestEpoch": 875,
+          "maximumScaledBestParameterError": 0.0003382049231435463
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.38503860495283054,
+          "rightBestRmse": 0.31874340877482626,
+          "bestRmseAbsDifference": 0.06629519617800428,
+          "leftFinalRmse": 0.3975382687368252,
+          "rightFinalRmse": 0.31874340877482626,
+          "finalRmseAbsDifference": 0.07879485996199892,
+          "leftBestEpoch": 1925,
+          "rightBestEpoch": 2000,
+          "maximumScaledBestParameterError": 9382541580.33127
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.46756043200015635,
+          "rightBestRmse": 0.46756043200015635,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.47761962186522366,
+          "rightFinalRmse": 0.47761962186522366,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 325,
+          "rightBestEpoch": 325,
+          "maximumScaledBestParameterError": 4.043574074288686e-06
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.45760894104933275,
+          "rightBestRmse": 0.4576089410493327,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.46078645660764506,
+          "rightFinalRmse": 0.4605031464616111,
+          "finalRmseAbsDifference": 0.0002833101460339438,
+          "leftBestEpoch": 950,
+          "rightBestEpoch": 950,
+          "maximumScaledBestParameterError": 2.6804842905477824e-05
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.4518658146411915,
+          "rightBestRmse": 0.4518658146411916,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.48134300563906723,
+          "rightFinalRmse": 0.48134300563904897,
+          "finalRmseAbsDifference": 1.8263168755083825e-14,
+          "leftBestEpoch": 600,
+          "rightBestEpoch": 600,
+          "maximumScaledBestParameterError": 9.85456452748091e-06
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.45631741984311813,
+          "rightBestRmse": 0.45631741984311813,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.45920485638715214,
+          "rightFinalRmse": 0.45920485638715214,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1125,
+          "rightBestEpoch": 1125,
+          "maximumScaledBestParameterError": 2.4334440986912227e-05
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4621216118755113,
+          "rightBestRmse": 0.4621216118755113,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.4671024068683573,
+          "rightFinalRmse": 0.46710240686835713,
+          "finalRmseAbsDifference": 1.6653345369377348e-16,
+          "leftBestEpoch": 1975,
+          "rightBestEpoch": 1975,
+          "maximumScaledBestParameterError": 0.00013635365323892733
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.46546379145244876,
+          "rightBestRmse": 0.46546379145244876,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5175914155992568,
+          "rightFinalRmse": 0.5175914155992476,
+          "finalRmseAbsDifference": 9.2148511043888e-15,
+          "leftBestEpoch": 1350,
+          "rightBestEpoch": 1350,
+          "maximumScaledBestParameterError": 9.654755606894077e-05
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.44091423613068853,
+          "rightBestRmse": 0.4394975174268112,
+          "bestRmseAbsDifference": 0.0014167187038773288,
+          "leftFinalRmse": 0.4510340210274332,
+          "rightFinalRmse": 0.4463271372877593,
+          "finalRmseAbsDifference": 0.004706883739673873,
+          "leftBestEpoch": 1925,
+          "rightBestEpoch": 1950,
+          "maximumScaledBestParameterError": 480388079.245761
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.3584295802656482,
+          "rightBestRmse": 0.3597131770262354,
+          "bestRmseAbsDifference": 0.0012835967605872023,
+          "leftFinalRmse": 0.3584295802656482,
+          "rightFinalRmse": 0.3597131770262354,
+          "finalRmseAbsDifference": 0.0012835967605872023,
+          "leftBestEpoch": 2000,
+          "rightBestEpoch": 2000,
+          "maximumScaledBestParameterError": 149418116.3600043
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.47001874129868926,
+          "rightBestRmse": 0.4700187412986893,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.4803275298211654,
+          "rightFinalRmse": 0.48032752982116494,
+          "finalRmseAbsDifference": 4.440892098500626e-16,
+          "leftBestEpoch": 1525,
+          "rightBestEpoch": 1525,
+          "maximumScaledBestParameterError": 3.693415512877365e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.46964051575385385,
+          "rightBestRmse": 0.4696405157538538,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.5069361055605909,
+          "rightFinalRmse": 0.5069361055605911,
+          "finalRmseAbsDifference": 2.220446049250313e-16,
+          "leftBestEpoch": 525,
+          "rightBestEpoch": 525,
+          "maximumScaledBestParameterError": 4.914424371652173e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4714473412468401,
+          "rightBestRmse": 0.4714473412468401,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.49239209629273656,
+          "rightFinalRmse": 0.4923920962927364,
+          "finalRmseAbsDifference": 1.6653345369377348e-16,
+          "leftBestEpoch": 1225,
+          "rightBestEpoch": 1225,
+          "maximumScaledBestParameterError": 2.168655639106962e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.46885703294345105,
+          "rightBestRmse": 0.46885703294345105,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.4955178069553368,
+          "rightFinalRmse": 0.4955178069553368,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 650,
+          "rightBestEpoch": 650,
+          "maximumScaledBestParameterError": 1.2596216168736258e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.470050278794184,
+          "rightBestRmse": 0.470050278794184,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.49435341915723013,
+          "rightFinalRmse": 0.4940971661666325,
+          "finalRmseAbsDifference": 0.0002562529905976163,
+          "leftBestEpoch": 550,
+          "rightBestEpoch": 550,
+          "maximumScaledBestParameterError": 1.2628749961026312e-05
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.4691460563365961,
+          "rightBestRmse": 0.4691460563365962,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.4927683424818287,
+          "rightFinalRmse": 0.49276834248182955,
+          "finalRmseAbsDifference": 8.326672684688674e-16,
+          "leftBestEpoch": 650,
+          "rightBestEpoch": 650,
+          "maximumScaledBestParameterError": 1.1210502791654573e-05
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.45811311312415215,
+          "rightBestRmse": 0.45811311312415726,
+          "bestRmseAbsDifference": 5.10702591327572e-15,
+          "leftFinalRmse": 0.515951984438306,
+          "rightFinalRmse": 0.5156890359050197,
+          "finalRmseAbsDifference": 0.0002629485332863446,
+          "leftBestEpoch": 1525,
+          "rightBestEpoch": 1525,
+          "maximumScaledBestParameterError": 0.00013931823784643939
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.47016395845242254,
+          "rightBestRmse": 0.47016395845242254,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.4863111017683856,
+          "rightFinalRmse": 0.48631110176838566,
+          "finalRmseAbsDifference": 5.551115123125783e-17,
+          "leftBestEpoch": 1000,
+          "rightBestEpoch": 1000,
+          "maximumScaledBestParameterError": 4.973021850756827e-06
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.4696428857268579,
+          "rightBestRmse": 0.469642885726858,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.4909765505367952,
+          "rightFinalRmse": 0.4909765505367953,
+          "finalRmseAbsDifference": 1.1102230246251565e-16,
+          "leftBestEpoch": 1200,
+          "rightBestEpoch": 1200,
+          "maximumScaledBestParameterError": 2.9029833142801215e-05
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.4694226123055293,
+          "rightBestRmse": 0.46942261230552923,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.49221204573557176,
+          "rightFinalRmse": 0.49221204573557187,
+          "finalRmseAbsDifference": 1.1102230246251565e-16,
+          "leftBestEpoch": 750,
+          "rightBestEpoch": 750,
+          "maximumScaledBestParameterError": 6.626485205480017e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.4999999376308733,
+          "rightBestRmse": 0.49999993763087325,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.5002544467096551,
+          "rightFinalRmse": 0.5002544467096551,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1900,
+          "rightBestEpoch": 1900,
+          "maximumScaledBestParameterError": 1.1552714050971494e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4998829097517884,
+          "rightBestRmse": 0.4998829097517884,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5002841012698279,
+          "rightFinalRmse": 0.5002841012698279,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1975,
+          "rightBestEpoch": 1975,
+          "maximumScaledBestParameterError": 1.174653665477223e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4999985853099201,
+          "rightBestRmse": 0.4999985853099201,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5072258523009284,
+          "rightFinalRmse": 0.5072258523009284,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 775,
+          "rightBestEpoch": 775,
+          "maximumScaledBestParameterError": 2.8018522400477496e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.49998413265320435,
+          "rightBestRmse": 0.49998413265320435,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5037236219332134,
+          "rightFinalRmse": 0.5037236219332134,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1550,
+          "rightBestEpoch": 1550,
+          "maximumScaledBestParameterError": 1.4727534161984616e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.5000036962933401,
+          "rightBestRmse": 0.5000036962933401,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5022002595503957,
+          "rightFinalRmse": 0.5022002595503957,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1825,
+          "rightBestEpoch": 1825,
+          "maximumScaledBestParameterError": 9.272962775414663e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.49999479704954564,
+          "rightBestRmse": 0.49999479704954564,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5002487094021184,
+          "rightFinalRmse": 0.5002487094021183,
+          "finalRmseAbsDifference": 1.1102230246251565e-16,
+          "leftBestEpoch": 1900,
+          "rightBestEpoch": 1900,
+          "maximumScaledBestParameterError": 2.8605619722721423e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4999998837055091,
+          "rightBestRmse": 0.4999998837055091,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5004188846927231,
+          "rightFinalRmse": 0.5004188846927231,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1975,
+          "rightBestEpoch": 1975,
+          "maximumScaledBestParameterError": 6.781081466280012e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4999993951177874,
+          "rightBestRmse": 0.4999993951177874,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5072372085603163,
+          "rightFinalRmse": 0.5072372085603163,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 775,
+          "rightBestEpoch": 775,
+          "maximumScaledBestParameterError": 4.0460953493118336e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.5000000626644735,
+          "rightBestRmse": 0.5000000626644735,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.503756959348514,
+          "rightFinalRmse": 0.503756959348514,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 725,
+          "rightBestEpoch": 725,
+          "maximumScaledBestParameterError": 3.4489803769477235e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.5000047929701761,
+          "rightBestRmse": 0.5000047929701761,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5022005948961755,
+          "rightFinalRmse": 0.5022005948961755,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1825,
+          "rightBestEpoch": 1825,
+          "maximumScaledBestParameterError": 8.994625789392759e-06
+        }
+      ]
+    },
+    {
+      "left": "SMALL/CPU",
+      "right": "SMALL/CUDA",
+      "uniqueTrials": 40,
+      "changedBestEpochs": 1,
+      "medianBestRmseAbsDifference": 5.551115123125783e-17,
+      "maximumBestRmseAbsDifference": 0.0213513474842158,
+      "maximumFinalRmseAbsDifference": 0.03385101126821044,
+      "pairs": [
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.4587806903189305,
+          "rightBestRmse": 0.45878069031893043,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.512054689776717,
+          "rightFinalRmse": 0.512054689776717,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 500,
+          "rightBestEpoch": 500,
+          "maximumScaledBestParameterError": 7.267904039218596e-06
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.45566418480009396,
+          "rightBestRmse": 0.4556641848000918,
+          "bestRmseAbsDifference": 2.1649348980190553e-15,
+          "leftFinalRmse": 0.46941417455093365,
+          "rightFinalRmse": 0.46941417455092993,
+          "finalRmseAbsDifference": 3.7192471324942744e-15,
+          "leftBestEpoch": 1950,
+          "rightBestEpoch": 1950,
+          "maximumScaledBestParameterError": 0.003204560045224704
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4522126463288596,
+          "rightBestRmse": 0.45221264632885894,
+          "bestRmseAbsDifference": 6.661338147750939e-16,
+          "leftFinalRmse": 0.4623115581265829,
+          "rightFinalRmse": 0.4623115581265819,
+          "finalRmseAbsDifference": 9.992007221626409e-16,
+          "leftBestEpoch": 1700,
+          "rightBestEpoch": 1700,
+          "maximumScaledBestParameterError": 0.0021846391389305896
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.4617066116281527,
+          "rightBestRmse": 0.46170661162815263,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.4678885955908865,
+          "rightFinalRmse": 0.46788859559097923,
+          "finalRmseAbsDifference": 9.270362255620057e-14,
+          "leftBestEpoch": 275,
+          "rightBestEpoch": 275,
+          "maximumScaledBestParameterError": 1.8836655812911433e-06
+        },
+        {
+          "hidden": [
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.4627781367633288,
+          "rightBestRmse": 0.4627781367633288,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.50633949775412,
+          "rightFinalRmse": 0.50633949775412,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 225,
+          "rightBestEpoch": 225,
+          "maximumScaledBestParameterError": 1.7432043878937602e-06
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.43803276488303966,
+          "rightBestRmse": 0.43803276488327997,
+          "bestRmseAbsDifference": 2.4030777368011513e-13,
+          "leftFinalRmse": 0.4397156226670268,
+          "rightFinalRmse": 0.4397156226674293,
+          "finalRmseAbsDifference": 4.025113575778505e-13,
+          "leftBestEpoch": 1950,
+          "rightBestEpoch": 1950,
+          "maximumScaledBestParameterError": 0.12318624945975708
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4607572422762157,
+          "rightBestRmse": 0.46075724227621573,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.522373219782075,
+          "rightFinalRmse": 0.5232390736011211,
+          "finalRmseAbsDifference": 0.0008658538190461362,
+          "leftBestEpoch": 500,
+          "rightBestEpoch": 500,
+          "maximumScaledBestParameterError": 4.308080176482985e-06
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4523583905711255,
+          "rightBestRmse": 0.4523583905711253,
+          "bestRmseAbsDifference": 1.6653345369377348e-16,
+          "leftFinalRmse": 0.5161351034670082,
+          "rightFinalRmse": 0.5161351034670077,
+          "finalRmseAbsDifference": 4.440892098500626e-16,
+          "leftBestEpoch": 625,
+          "rightBestEpoch": 625,
+          "maximumScaledBestParameterError": 1.7641378778435933e-05
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.37747838904617337,
+          "rightBestRmse": 0.3774783890461873,
+          "bestRmseAbsDifference": 1.3933298959045715e-14,
+          "leftFinalRmse": 0.3895700305360048,
+          "rightFinalRmse": 0.3895700305359223,
+          "finalRmseAbsDifference": 8.248957072964913e-14,
+          "leftBestEpoch": 1850,
+          "rightBestEpoch": 1850,
+          "maximumScaledBestParameterError": 0.0001493147766546211
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.46845410637554286,
+          "rightBestRmse": 0.46845410637554286,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.47861517481113686,
+          "rightFinalRmse": 0.47861517481113697,
+          "finalRmseAbsDifference": 1.1102230246251565e-16,
+          "leftBestEpoch": 550,
+          "rightBestEpoch": 550,
+          "maximumScaledBestParameterError": 6.4544721383744e-06
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.45359002179627783,
+          "rightBestRmse": 0.45359002179627766,
+          "bestRmseAbsDifference": 1.6653345369377348e-16,
+          "leftFinalRmse": 0.500182271366083,
+          "rightFinalRmse": 0.4965785706731606,
+          "finalRmseAbsDifference": 0.0036037006929223736,
+          "leftBestEpoch": 875,
+          "rightBestEpoch": 875,
+          "maximumScaledBestParameterError": 0.00018521840969438463
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.38503860495283054,
+          "rightBestRmse": 0.36368725746861474,
+          "bestRmseAbsDifference": 0.0213513474842158,
+          "leftFinalRmse": 0.3975382687368252,
+          "rightFinalRmse": 0.36368725746861474,
+          "finalRmseAbsDifference": 0.03385101126821044,
+          "leftBestEpoch": 1925,
+          "rightBestEpoch": 2000,
+          "maximumScaledBestParameterError": 943063258.009084
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.46756043200015635,
+          "rightBestRmse": 0.4675604320001564,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.47761962186522366,
+          "rightFinalRmse": 0.4776196218652238,
+          "finalRmseAbsDifference": 1.1102230246251565e-16,
+          "leftBestEpoch": 325,
+          "rightBestEpoch": 325,
+          "maximumScaledBestParameterError": 1.9131787153298026e-06
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.45760894104933275,
+          "rightBestRmse": 0.45760894104933286,
+          "bestRmseAbsDifference": 1.1102230246251565e-16,
+          "leftFinalRmse": 0.46078645660764506,
+          "rightFinalRmse": 0.459911529401533,
+          "finalRmseAbsDifference": 0.0008749272061120417,
+          "leftBestEpoch": 950,
+          "rightBestEpoch": 950,
+          "maximumScaledBestParameterError": 6.788585628664458e-05
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.4518658146411915,
+          "rightBestRmse": 0.45186581464119174,
+          "bestRmseAbsDifference": 2.220446049250313e-16,
+          "leftFinalRmse": 0.48134300563906723,
+          "rightFinalRmse": 0.4813430056390409,
+          "finalRmseAbsDifference": 2.631228568361621e-14,
+          "leftBestEpoch": 600,
+          "rightBestEpoch": 600,
+          "maximumScaledBestParameterError": 5.4255467623211915e-06
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.45631741984311813,
+          "rightBestRmse": 0.4563174198431181,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.45920485638715214,
+          "rightFinalRmse": 0.45920485638715214,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1125,
+          "rightBestEpoch": 1125,
+          "maximumScaledBestParameterError": 2.6227409840507372e-05
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4621216118755113,
+          "rightBestRmse": 0.46212161187551115,
+          "bestRmseAbsDifference": 1.6653345369377348e-16,
+          "leftFinalRmse": 0.4671024068683573,
+          "rightFinalRmse": 0.467102406868357,
+          "finalRmseAbsDifference": 2.7755575615628914e-16,
+          "leftBestEpoch": 1975,
+          "rightBestEpoch": 1975,
+          "maximumScaledBestParameterError": 0.00011981383960753907
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.46546379145244876,
+          "rightBestRmse": 0.4654637914524487,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.5175914155992568,
+          "rightFinalRmse": 0.5175914155992565,
+          "finalRmseAbsDifference": 3.3306690738754696e-16,
+          "leftBestEpoch": 1350,
+          "rightBestEpoch": 1350,
+          "maximumScaledBestParameterError": 5.542776018297915e-05
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.44091423613068853,
+          "rightBestRmse": 0.4396785558994846,
+          "bestRmseAbsDifference": 0.0012356802312039061,
+          "leftFinalRmse": 0.4510340210274332,
+          "rightFinalRmse": 0.44895738904356625,
+          "finalRmseAbsDifference": 0.002076631983866928,
+          "leftBestEpoch": 1925,
+          "rightBestEpoch": 1925,
+          "maximumScaledBestParameterError": 43254849.00083088
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.3584295802656482,
+          "rightBestRmse": 0.35745716126850763,
+          "bestRmseAbsDifference": 0.0009724189971405672,
+          "leftFinalRmse": 0.3584295802656482,
+          "rightFinalRmse": 0.35745716126850763,
+          "finalRmseAbsDifference": 0.0009724189971405672,
+          "leftBestEpoch": 2000,
+          "rightBestEpoch": 2000,
+          "maximumScaledBestParameterError": 631630551.96765
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.47001874129868926,
+          "rightBestRmse": 0.47001874129868926,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.4803275298211654,
+          "rightFinalRmse": 0.4803275298211648,
+          "finalRmseAbsDifference": 6.106226635438361e-16,
+          "leftBestEpoch": 1525,
+          "rightBestEpoch": 1525,
+          "maximumScaledBestParameterError": 3.4390566686373466e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.46964051575385385,
+          "rightBestRmse": 0.4696405157538538,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.5069361055605909,
+          "rightFinalRmse": 0.5069361055605907,
+          "finalRmseAbsDifference": 2.220446049250313e-16,
+          "leftBestEpoch": 525,
+          "rightBestEpoch": 525,
+          "maximumScaledBestParameterError": 6.506152633000159e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4714473412468401,
+          "rightBestRmse": 0.4714473412468401,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.49239209629273656,
+          "rightFinalRmse": 0.49239209629273634,
+          "finalRmseAbsDifference": 2.220446049250313e-16,
+          "leftBestEpoch": 1225,
+          "rightBestEpoch": 1225,
+          "maximumScaledBestParameterError": 1.732393794255682e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.46885703294345105,
+          "rightBestRmse": 0.468857032943451,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.4955178069553368,
+          "rightFinalRmse": 0.49551780695533704,
+          "finalRmseAbsDifference": 2.220446049250313e-16,
+          "leftBestEpoch": 650,
+          "rightBestEpoch": 650,
+          "maximumScaledBestParameterError": 9.670783441988345e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.470050278794184,
+          "rightBestRmse": 0.470050278794184,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.49435341915723013,
+          "rightFinalRmse": 0.4936645490277024,
+          "finalRmseAbsDifference": 0.00068887012952773,
+          "leftBestEpoch": 550,
+          "rightBestEpoch": 550,
+          "maximumScaledBestParameterError": 1.8265071252357878e-05
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.4691460563365961,
+          "rightBestRmse": 0.4691460563365962,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.4927683424818287,
+          "rightFinalRmse": 0.4927683424818299,
+          "finalRmseAbsDifference": 1.1657341758564144e-15,
+          "leftBestEpoch": 650,
+          "rightBestEpoch": 650,
+          "maximumScaledBestParameterError": 1.4620283103501478e-05
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.45811311312415215,
+          "rightBestRmse": 0.45811311312416003,
+          "bestRmseAbsDifference": 7.882583474838611e-15,
+          "leftFinalRmse": 0.515951984438306,
+          "rightFinalRmse": 0.517771364129343,
+          "finalRmseAbsDifference": 0.0018193796910369597,
+          "leftBestEpoch": 1525,
+          "rightBestEpoch": 1525,
+          "maximumScaledBestParameterError": 0.00042640118510335785
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.47016395845242254,
+          "rightBestRmse": 0.4701639584524225,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.4863111017683856,
+          "rightFinalRmse": 0.48631110176838566,
+          "finalRmseAbsDifference": 5.551115123125783e-17,
+          "leftBestEpoch": 1000,
+          "rightBestEpoch": 1000,
+          "maximumScaledBestParameterError": 1.1118981145135256e-05
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.4696428857268579,
+          "rightBestRmse": 0.4696428857268578,
+          "bestRmseAbsDifference": 1.1102230246251565e-16,
+          "leftFinalRmse": 0.4909765505367952,
+          "rightFinalRmse": 0.4909765505367952,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1200,
+          "rightBestEpoch": 1200,
+          "maximumScaledBestParameterError": 6.510855892817916e-05
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.4694226123055293,
+          "rightBestRmse": 0.46942261230552923,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.49221204573557176,
+          "rightFinalRmse": 0.49221204573557176,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 750,
+          "rightBestEpoch": 750,
+          "maximumScaledBestParameterError": 5.525703946016993e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.4999999376308733,
+          "rightBestRmse": 0.49999993763087325,
+          "bestRmseAbsDifference": 5.551115123125783e-17,
+          "leftFinalRmse": 0.5002544467096551,
+          "rightFinalRmse": 0.5002544467096551,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1900,
+          "rightBestEpoch": 1900,
+          "maximumScaledBestParameterError": 1.2566608738843956e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4998829097517884,
+          "rightBestRmse": 0.4998829097517884,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5002841012698279,
+          "rightFinalRmse": 0.5002841012698279,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1975,
+          "rightBestEpoch": 1975,
+          "maximumScaledBestParameterError": 2.8398113200521414e-05
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4999985853099201,
+          "rightBestRmse": 0.4999985853099201,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5072258523009284,
+          "rightFinalRmse": 0.5072258523009284,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 775,
+          "rightBestEpoch": 775,
+          "maximumScaledBestParameterError": 4.158352791120033e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.49998413265320435,
+          "rightBestRmse": 0.49998413265320435,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5037236219332134,
+          "rightFinalRmse": 0.5037236219332134,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1550,
+          "rightBestEpoch": 1550,
+          "maximumScaledBestParameterError": 6.549518610033637e-06
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.5000036962933401,
+          "rightBestRmse": 0.5000036962933401,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5022002595503957,
+          "rightFinalRmse": 0.5022002595503957,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1825,
+          "rightBestEpoch": 1825,
+          "maximumScaledBestParameterError": 1.5536894231198948e-05
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 1,
+          "leftBestRmse": 0.49999479704954564,
+          "rightBestRmse": 0.49999479704954564,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5002487094021184,
+          "rightFinalRmse": 0.5002487094021183,
+          "finalRmseAbsDifference": 1.1102230246251565e-16,
+          "leftBestEpoch": 1900,
+          "rightBestEpoch": 1900,
+          "maximumScaledBestParameterError": 2.6243032034880768e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 42,
+          "leftBestRmse": 0.4999998837055091,
+          "rightBestRmse": 0.4999998837055091,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5004188846927231,
+          "rightFinalRmse": 0.5004188846927231,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1975,
+          "rightBestEpoch": 1975,
+          "maximumScaledBestParameterError": 7.824843705453397e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 123,
+          "leftBestRmse": 0.4999993951177874,
+          "rightBestRmse": 0.4999993951177874,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5072372085603163,
+          "rightFinalRmse": 0.5072372085603163,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 775,
+          "rightBestEpoch": 775,
+          "maximumScaledBestParameterError": 3.053015560761963e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 999,
+          "leftBestRmse": 0.5000000626644735,
+          "rightBestRmse": 0.5000000626644735,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.503756959348514,
+          "rightFinalRmse": 0.503756959348514,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 725,
+          "rightBestEpoch": 725,
+          "maximumScaledBestParameterError": 3.4735191520343246e-06
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "seed": 2026,
+          "leftBestRmse": 0.5000047929701761,
+          "rightBestRmse": 0.5000047929701761,
+          "bestRmseAbsDifference": 0.0,
+          "leftFinalRmse": 0.5022005948961755,
+          "rightFinalRmse": 0.5022005948961755,
+          "finalRmseAbsDifference": 0.0,
+          "leftBestEpoch": 1825,
+          "rightBestEpoch": 1825,
+          "maximumScaledBestParameterError": 6.735829052618447e-06
+        }
+      ]
+    }
+  ]
+}

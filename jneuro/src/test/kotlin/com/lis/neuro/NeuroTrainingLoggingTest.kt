@@ -50,6 +50,119 @@ class NeuroTrainingLoggingTest {
         assertTrue(capture.records.none { it.fields().keys.any { key -> key in listOf("inputs", "targets", "weights", "biases") } })
     }
 
+    @Test fun searchChunksSamplePublishedBoundariesAtInfoAndKeepEveryChunkAtDebug() {
+        for (engine in TrainingEngine.entries) for (level in listOf(Level.INFO, Level.FINE)) {
+            TrainingCapture().use { capture ->
+                Logger.getLogger("com.lis.neuro").level = level
+                val model = NeuroTest.prepared(intArrayOf(2, 4, 1))
+                model.train(7)
+                capture.records.clear()
+                searchSession(model, engine).use { session ->
+                    repeat(2) {
+                        assertEquals(0, advanceTrainingForSearch(session, TrainingChunkRequest(0)).committedEpochs)
+                        assertEquals(0, advanceTrainingForSearch(session,
+                            TrainingChunkRequest(25, cancelled = { true })).committedEpochs)
+                    }
+                    assertTrue(capture.events("training.completed").none { it.level == Level.INFO },
+                        "Zero-work search calls must not repeatedly report initial progress")
+                    capture.records.clear()
+                    val chunks = listOf(25, 64, 12, 64, 30, 25)
+                    chunks.forEach { epochs ->
+                        assertEquals(epochs, advanceTrainingForSearch(session, TrainingChunkRequest(epochs)).committedEpochs)
+                    }
+                    val completed = capture.events("training.completed")
+                    val info = completed.filter { it.level == Level.INFO }
+                    assertEquals(listOf(32L, 108L, 202L), info.map { it.fields()["totalEpochs"] },
+                        "Sample the first committed chunk and crossed boundaries, even when totals are not multiples of 100")
+                    assertEquals(listOf(25L, 12L, 30L), info.map { it.fields()["completedEpochs"] })
+                    assertTrue(completed.all { it.fields()["operation"] == "advanceForSearch" })
+                    assertTrue(completed.all { it.fields()["gpuWorkCompleted"] == false })
+                    val started = capture.events("training.started")
+                    if (level == Level.INFO) {
+                        assertTrue(started.isEmpty(), "Search chunk starts belong at DEBUG")
+                        assertEquals(3, completed.size)
+                    } else {
+                        assertEquals(chunks.size, started.size)
+                        assertEquals(chunks.size, completed.size)
+                        assertTrue(started.all { it.level == Level.FINE })
+                        assertEquals(chunks, completed.map { it.fields()["requestedEpochs"] })
+                        assertEquals(listOf(32L, 96L, 108L, 172L, 202L, 227L),
+                            completed.map { it.fields()["totalEpochs"] })
+                        for ((start, end) in started.zip(completed)) {
+                            assertEquals(start.fields()["run"], end.fields()["run"])
+                            val epochs = end.fields()["completedEpochs"] as Long
+                            assertEquals(epochs * model.trainingSampleCount(), end.fields()["samplesProcessed"])
+                            assertEquals("COMPLETED", end.fields()["termination"])
+                            assertTrue((end.fields()["rmse"] as Double).isFinite())
+                        }
+                    }
+                }
+                assertEquals(227L, capture.one("session.closed").fields()["completedEpochs"])
+            }
+        }
+    }
+
+    @Test fun searchCancellationAndFailureDetailsRetainOnlyCommittedProgress() {
+        for (engine in TrainingEngine.entries) TrainingCapture().use { capture ->
+            Logger.getLogger("com.lis.neuro").level = Level.FINE
+            val model = NeuroTest.prepared(intArrayOf(2, 4, 1))
+            searchSession(model, engine).use { session ->
+                advanceTrainingForSearch(session, TrainingChunkRequest(25))
+                var polls = 0
+                val result = advanceTrainingForSearch(session, TrainingChunkRequest(25, cancelled = { ++polls > 3 }))
+                assertEquals(SearchAdvanceResult(3, null, TrainingTermination.CANCELLED), result)
+                val cancelled = capture.events("training.completed").last()
+                assertEquals(Level.FINE, cancelled.level)
+                assertEquals("CANCELLED", cancelled.fields()["termination"])
+                assertEquals(3L, cancelled.fields()["completedEpochs"])
+                assertEquals(28L, cancelled.fields()["totalEpochs"])
+                assertEquals(3L * model.trainingSampleCount(), cancelled.fields()["samplesProcessed"])
+                assertNull(cancelled.fields()["rmse"])
+                val problem = IllegalStateException("search cancellation callback failed")
+                val thrown = assertThrows(IllegalStateException::class.java) {
+                    advanceTrainingForSearch(session, TrainingChunkRequest(25, cancelled = { throw problem }))
+                }
+                val failed = capture.one("training.failed")
+                assertSame(problem, thrown)
+                assertSame(problem, failed.thrown)
+                assertEquals("advanceForSearch", failed.fields()["operation"])
+                assertEquals(25, failed.fields()["requestedEpochs"])
+                assertEquals(0L, failed.fields()["completedEpochs"])
+                assertEquals(28L, failed.fields()["totalEpochs"])
+                assertEquals(0L, failed.fields()["samplesProcessed"])
+                assertEquals(false, failed.fields()["gpuWorkCompleted"])
+                assertEquals("current-model", failed.fields()["retainedState"])
+                assertEquals(2, capture.events("training.completed").size,
+                    "A failed chunk must not emit a completion")
+            }
+        }
+    }
+
+    @Test fun publicBulkCallsKeepInfoStartAndCompletionAfterSearchProgress() {
+        for (engine in TrainingEngine.entries) TrainingCapture().use { capture ->
+            Logger.getLogger("com.lis.neuro").level = Level.INFO
+            val model = NeuroTest.prepared(intArrayOf(2, 4, 1))
+            searchSession(model, engine).use { session ->
+                advanceTrainingForSearch(session, TrainingChunkRequest(25))
+                capture.records.clear()
+                session.train(2)
+                session.trainUntil(1.0, 0)
+                assertEquals(listOf("train", "trainUntil"),
+                    capture.events("training.started").map { it.fields()["operation"] })
+                val completed = capture.events("training.completed")
+                assertEquals(listOf("train", "trainUntil"), completed.map { it.fields()["operation"] })
+                assertTrue(completed.all { it.level == Level.INFO })
+                assertEquals(listOf(2L, 0L), completed.map { it.fields()["completedEpochs"] })
+                assertEquals(true, completed.last().fields()["converged"])
+            }
+        }
+    }
+
+    private fun searchSession(model: Neuro, engine: TrainingEngine): NeuroTrainingSession =
+        if (engine == TrainingEngine.SMALL) SmallTrainingSession(model, 1,
+            { SmallCpuTraining(it, model.hyperParameters(), Neuro.TrainingPrecision.FP64) }, { 0L })
+        else DefaultTrainingSession(model, TrainingBackend.CPU, { error("CPU logging test must not open CUDA") }, 1, { 0L })
+
     @Test fun resumedSessionLogsItsFirstCompletedEpochAtInfo() = TrainingCapture().use { capture ->
         val model = model()
         model.train(5)

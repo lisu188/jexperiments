@@ -1,6 +1,6 @@
 # Architecture-search measurement protocol
 
-This record measures the execution changes in JNeuro's architecture search on Spiral. The measured compute revision is `529e7a9`. Measurements are in progress; this protocol records the planned comparisons and acceptance rules without treating preliminary timings as qualified results.
+This record measures the execution changes in JNeuro's architecture search on Spiral. The completed local fixed-work matrix measures compute revision `529e7a9`. The [local results](LOCAL.md) and [CI results](CI.md) retain their own source, hardware and qualification scope; the separate long-budget quality experiment does not share the fixed-work timing claims.
 
 ## Fixed-work comparison
 
@@ -144,3 +144,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 jneuro/benchmarks/2026-10-01-search/compact_ev
 ```
 
 `validated-fixed-work` describes report completeness, not a blanket speedup qualification. Individual comparison verdicts still enforce compatible forks, numerical parity, median gain and p95. Use `preliminary` for an incomplete measurement series, and `inconclusive-mixed-hardware` for the CI matrix retained here. The generator verifies every reconstructed round before and after serializing the compact file; it never deletes the raw inputs.
+
+## Completed local throughput
+
+Nine sequential JVMs completed the fixed-work matrix with successful exits. All eleven same-engine/backend/worker groups have three compatible forks, nine measured calls per mode, complete 40-trial budgets and exact recorded best-parameter/score/epoch parity. Ten groups meet the 10% median-reduction/no-p95-regression gate. The exception is one-worker SMALL, whose median regresses by 8.1%.
+
+The strongest observed prior CPU baseline and fastest optimized CPU configuration are both REFERENCE/CPU with 32 workers: **6.053 → 4.024 seconds** per complete search, **1.504x** faster. The CUDA queue improves its GPU baseline **53.335 → 12.462 seconds**, **4.280x**, while remaining **2.56x slower** than optimized CPU at the same four-worker setting. These figures describe the fixed 2,000-epoch manifest, not time to reach the quality target.
+
+[LOCAL.md](LOCAL.md) contains every configuration's median/p95, the one-worker regression, third-fork variability, allocation tradeoffs and cross-arithmetic caveats. [Compact local evidence](local-results.json) reconstructs all original parsed round/trial data; the [qualification summary](local-qualification-summary.json) retains all verdicts. The later `7a0a1ab` Java/API/progress refinements and final-head smoke checks remain separate from the measured `529e7a9` matrix.

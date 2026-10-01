@@ -1,0 +1,1172 @@
+{
+  "sourceRevision": "529e7a9",
+  "scope": "Read-only offline comparison of existing SMALL/CPU one-worker rounds; no profiling rerun.",
+  "normalRounds": [
+    {
+      "fork": 0,
+      "case": "SMALL/CPU/REFERENCE/workers=1/searchSeed=42",
+      "round": 0,
+      "totalNanos": 14739418000,
+      "allocatedBytes": 14769864,
+      "summedPhaseNanos": {
+        "open": 2481500,
+        "training": 14371992100,
+        "scoring": 352957800,
+        "snapshot": 634400,
+        "close": 486000
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 605428400
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 953252000
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1259342400
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1470691000
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 1863637200
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2808647600
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2565952100
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2845041400
+        }
+      ]
+    },
+    {
+      "fork": 0,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 0,
+      "totalNanos": 16624939800,
+      "allocatedBytes": 14844176,
+      "summedPhaseNanos": {
+        "open": 2755500,
+        "training": 16490674800,
+        "scoring": 98488200,
+        "snapshot": 756800,
+        "close": 463800
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 598782500
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 1578893400
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1227066200
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1558269500
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2019799400
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2214481900
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 4224213000
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 3069168900
+        }
+      ]
+    },
+    {
+      "fork": 0,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 1,
+      "totalNanos": 14762023400,
+      "allocatedBytes": 14831472,
+      "summedPhaseNanos": {
+        "open": 1892700,
+        "training": 14666581100,
+        "scoring": 74846200,
+        "snapshot": 565600,
+        "close": 377500
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 644448700
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 959335600
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1363985400
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1468399500
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 1994722000
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2265370600
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2786251500
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 3184067800
+        }
+      ]
+    },
+    {
+      "fork": 0,
+      "case": "SMALL/CPU/REFERENCE/workers=1/searchSeed=42",
+      "round": 1,
+      "totalNanos": 15382110700,
+      "allocatedBytes": 14717104,
+      "summedPhaseNanos": {
+        "open": 1738800,
+        "training": 14992749600,
+        "scoring": 375061400,
+        "snapshot": 602700,
+        "close": 432500
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 715265500
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 908084500
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1603313300
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1452648200
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2499733500
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2422805100
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2528817600
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2862081900
+        }
+      ]
+    },
+    {
+      "fork": 0,
+      "case": "SMALL/CPU/REFERENCE/workers=1/searchSeed=42",
+      "round": 2,
+      "totalNanos": 15883438900,
+      "allocatedBytes": 14715064,
+      "summedPhaseNanos": {
+        "open": 1541100,
+        "training": 15489946600,
+        "scoring": 380922600,
+        "snapshot": 531000,
+        "close": 338500
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 616917400
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 1201943700
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1262722300
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1438550100
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2039746000
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2392609700
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2772810000
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 3764647400
+        }
+      ]
+    },
+    {
+      "fork": 0,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 2,
+      "totalNanos": 19217173500,
+      "allocatedBytes": 14811616,
+      "summedPhaseNanos": {
+        "open": 1943000,
+        "training": 19090651100,
+        "scoring": 83317900,
+        "snapshot": 624900,
+        "close": 350100
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 1037573800
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 1086324400
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 2344026800
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1685157600
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 3889047600
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2262077000
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 3881774200
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2904669700
+        }
+      ]
+    },
+    {
+      "fork": 1,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 0,
+      "totalNanos": 14441739900,
+      "allocatedBytes": 14827096,
+      "summedPhaseNanos": {
+        "open": 3060300,
+        "training": 14338116600,
+        "scoring": 75684700,
+        "snapshot": 657300,
+        "close": 472800
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 594056400
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 994939400
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1294805200
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1478864600
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 1961201700
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2656428100
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2500581000
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2857240200
+        }
+      ]
+    },
+    {
+      "fork": 1,
+      "case": "SMALL/CPU/REFERENCE/workers=1/searchSeed=42",
+      "round": 0,
+      "totalNanos": 13473922300,
+      "allocatedBytes": 14863424,
+      "summedPhaseNanos": {
+        "open": 1681800,
+        "training": 13118065800,
+        "scoring": 343185200,
+        "snapshot": 680700,
+        "close": 461700
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 626854000
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 910797800
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1199096300
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1388524600
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 1790274700
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2155668700
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2423812000
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2623037700
+        }
+      ]
+    },
+    {
+      "fork": 1,
+      "case": "SMALL/CPU/REFERENCE/workers=1/searchSeed=42",
+      "round": 1,
+      "totalNanos": 13544638500,
+      "allocatedBytes": 14719432,
+      "summedPhaseNanos": {
+        "open": 1590300,
+        "training": 13205939800,
+        "scoring": 329000900,
+        "snapshot": 586600,
+        "close": 407100
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 580636600
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 915953500
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1191710300
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1375586500
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 1818493300
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2173225600
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2505476900
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2644857100
+        }
+      ]
+    },
+    {
+      "fork": 1,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 1,
+      "totalNanos": 13386607900,
+      "allocatedBytes": 14802824,
+      "summedPhaseNanos": {
+        "open": 1757800,
+        "training": 13300273100,
+        "scoring": 72607300,
+        "snapshot": 541900,
+        "close": 323200
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 594453400
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 898499400
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1203379600
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1453930300
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 1807204000
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2233244900
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2447627300
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2661934200
+        }
+      ]
+    },
+    {
+      "fork": 1,
+      "case": "SMALL/CPU/REFERENCE/workers=1/searchSeed=42",
+      "round": 2,
+      "totalNanos": 17034130800,
+      "allocatedBytes": 14732592,
+      "summedPhaseNanos": {
+        "open": 1776600,
+        "training": 16591581300,
+        "scoring": 425215200,
+        "snapshot": 699500,
+        "close": 375400
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 676688200
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 1306176700
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 2018210300
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1807402100
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2003709300
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2929550000
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2756713900
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 3093130800
+        }
+      ]
+    },
+    {
+      "fork": 1,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 2,
+      "totalNanos": 15129176500,
+      "allocatedBytes": 14800216,
+      "summedPhaseNanos": {
+        "open": 1851100,
+        "training": 15020774200,
+        "scoring": 81932600,
+        "snapshot": 1959500,
+        "close": 368100
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 739476200
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 913215900
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 1385171400
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 1511837000
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 3016832300
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 2177958000
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 2611660400
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 2664623000
+        }
+      ]
+    }
+  ],
+  "lateRounds": [
+    {
+      "fork": 2,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 1,
+      "totalNanos": 50930964100,
+      "allocatedBytes": 18062592,
+      "summedPhaseNanos": {
+        "open": 2257400,
+        "training": 50517588400,
+        "scoring": 296951600,
+        "snapshot": 748600,
+        "close": 465500
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 632813100
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 2822014700
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 3507581200
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 7070571300
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 6591572900
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 11626469300
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 4368754900
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 13897811000
+        }
+      ]
+    },
+    {
+      "fork": 2,
+      "case": "SMALL/CPU/REFERENCE/workers=1/searchSeed=42",
+      "round": 2,
+      "totalNanos": 74238688700,
+      "allocatedBytes": 21972472,
+      "summedPhaseNanos": {
+        "open": 2193000,
+        "training": 72315333700,
+        "scoring": 1773427900,
+        "snapshot": 12873900,
+        "close": 518500
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 3007557700
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 4477990600
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 7317625300
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 7583779300
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 10013357700
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 11480973800
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 13290551700
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 15143497600
+        }
+      ]
+    },
+    {
+      "fork": 2,
+      "case": "SMALL/CPU/OPTIMIZED/workers=1/searchSeed=42",
+      "round": 2,
+      "totalNanos": 68585525100,
+      "allocatedBytes": 18833672,
+      "summedPhaseNanos": {
+        "open": 14198000,
+        "training": 67919125300,
+        "scoring": 380940500,
+        "snapshot": 725400,
+        "close": 422400
+      },
+      "candidateTrainingNanos": [
+        {
+          "hidden": [
+            8
+          ],
+          "sumNanos": 3668944900
+        },
+        {
+          "hidden": [
+            4,
+            8
+          ],
+          "sumNanos": 5037868400
+        },
+        {
+          "hidden": [
+            8,
+            8
+          ],
+          "sumNanos": 6876558900
+        },
+        {
+          "hidden": [
+            16,
+            4
+          ],
+          "sumNanos": 7662503100
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 9632539200
+        },
+        {
+          "hidden": [
+            4,
+            8,
+            16
+          ],
+          "sumNanos": 11715666300
+        },
+        {
+          "hidden": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "sumNanos": 13062811600
+        },
+        {
+          "hidden": [
+            16,
+            8,
+            4,
+            8
+          ],
+          "sumNanos": 10262232900
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Allocation growth is only a few MiB while runtime grows several-fold; these counters do not support a large hot-path vector-object allocation explosion.",
+    "Most added wall time is recorded inside training. One reference late round also has slower scoring; setup and close remain negligible.",
+    "Cohort reference phaseNanos are absent, so cohort internal phase attribution is unavailable.",
+    "Summed per-trial phases overlap for parallel-worker cases and are not CPU time.",
+    "Longer duration can itself create more adaptive chunk publications and progress snapshots, so allocation increases do not establish causation.",
+    "No JFR, compiler/deoptimization, GC pause or CPU-frequency profile was captured. JIT effects, GC, thermal throttling or background contention are not proven.",
+    "The late host-load sample is a point observation: CPU16%,GPU3%,GPU36C; it does not describe the earlier slowdown interval."
+  ]
+}
