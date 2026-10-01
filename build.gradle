@@ -1272,6 +1272,15 @@ project(':jneuro') {
         systemProperty 'jneuro.benchmark.sourceRevision', providers.gradleProperty('neuroBenchmarkRevision').orElse('unspecified').get()
         if (providers.gradleProperty('neuroSmallNative').isPresent()) systemProperty 'jneuro.small.native', providers.gradleProperty('neuroSmallNative').get()
     }
+    tasks.register('architectureSearchBenchmark', JavaExec) {
+        group = 'verification'
+        description = 'Measures complete Spiral architecture searches, fixed manifests and full-budget quality.'
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = 'com.lis.neuro.ArchitectureSearchBenchmark'
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(27) }
+        jvmArgs '-Xms128m', '-Xmx2g'
+        systemProperty 'jneuro.benchmark.sourceRevision', providers.gradleProperty('neuroBenchmarkRevision').orElse('unspecified').get()
+    }
     ['cudaBenchmark', 'cpuGpuBenchmark'].each { benchmarkTask ->
         tasks.register(benchmarkTask, JavaExec) {
             group = 'verification'

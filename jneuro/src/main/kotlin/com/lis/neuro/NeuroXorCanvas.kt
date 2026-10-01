@@ -418,7 +418,8 @@ class NeuroXorCanvas private constructor(initial: StudioFrame? = null, private v
 
     private fun startArchitectureSearch(config: ArchitectureSearchConfig, evaluation: ArchitectureEvaluation, fraction: Double, splitSeed: Long) {
         NeuroLog.info("ui", "ui.search.requested", "windowId" to windowId, "backend" to config.backend,
-            "precision" to config.precision, "batchSize" to config.batchSize, "evaluation" to evaluation)
+            "precision" to config.precision, "batchSize" to config.batchSize, "evaluation" to evaluation,
+            "execution" to config.execution, "cpuWorkers" to config.parallelism, "maximumModels" to config.concurrentModels)
         val expectedConfig = frame?.config
         val expectedSamples = frame?.samples
         val token = searchSession.begin()

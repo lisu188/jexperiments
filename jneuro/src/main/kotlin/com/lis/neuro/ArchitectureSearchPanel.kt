@@ -35,6 +35,10 @@ internal class ArchitectureSearchPanel(
     private val splitSeed = JTextField("42", 10)
     private val policy = JComboBox(ArchitecturePolicy.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Recommendation policy" }
     private val strategy = JComboBox(ArchitectureSearchStrategy.entries.toTypedArray()).apply { accessibleContext.accessibleName = "Search strategy" }
+    private val execution = JComboBox(ArchitectureExecution.entries.toTypedArray()).apply {
+        accessibleContext.accessibleName = "Search execution"
+        toolTipText = "REFERENCE retains the comparison route. OPTIMIZED advances between the same scoring checkpoints; CUDA SMALL uses a bounded shared queue."
+    }
     private val searchSeed = JTextField("42", 10)
     private val restartAfter = NumericInputs.spinner(12, 1)
     private val restarts = NumericInputs.spinner(4, 1)
@@ -66,6 +70,11 @@ internal class ArchitectureSearchPanel(
     private var surface: BufferedImage? = null
     private var running = false
     private var changing = false
+    private var shownLineage: List<ArchitectureProposal>? = null
+    private var rankedCandidates: List<ArchitectureCandidate>? = null
+    private var rankedPolicy: ArchitecturePolicy? = null
+    private var rankedConfig: ArchitectureSearchConfig? = null
+    private var cachedSelection: ArchitectureSelection? = null
 
     init {
         background = BACKGROUND
@@ -92,10 +101,11 @@ internal class ArchitectureSearchPanel(
         for ((name, component) in listOf("Seeds" to seeds, "Required successes" to successes, "Epochs per seed" to epochs,
             "Check every (epochs)" to checkEvery, "Near-best tolerance" to tolerance, "Parallel seed trials" to threads,
             "Trial budget" to trials, "Seconds (0 = unlimited)" to seconds, "Validation fraction" to fraction, "Split seed" to splitSeed,
-            "Search seed" to searchSeed, "Plateau length (architectures)" to restartAfter, "Max restarts" to restarts)) {
+            "Search seed" to searchSeed, "Plateau length (architectures)" to restartAfter, "Max restarts" to restarts,
+            "Search execution" to execution)) {
             advanced.add(field(name, component))
         }
-        threads.toolTipText = "Maximum concurrent architecture/seed trials. Adaptive search fills spare slots with elite offspring after bootstrap."
+        threads.toolTipText = "Maximum CPU workers. Optimized CUDA SMALL independently admits at most 64 resident models; CPU workers score completed checkpoints."
         advanced.isVisible = false
         controls.add(JCheckBox("Advanced search settings").apply {
             isOpaque = false
@@ -175,7 +185,8 @@ internal class ArchitectureSearchPanel(
             Neuro.HyperParameters(source.learningRate, source.momentum, 1.0, source.seed, sigmoidMode = source.sigmoid), integer(threads), integer(trials), (seconds.value as Number).toLong(),
             strategy.selectedItem as ArchitectureSearchStrategy, NeuroTopologyConfig.parseHidden(source.hidden).toList(),
             searchSeed.text.trim().toLongOrNull() ?: throw IllegalArgumentException("Search seed must be an integer."),
-            integer(restartAfter), integer(restarts), source.backend, source.precision, source.batchSize, source.engine)
+            integer(restartAfter), integer(restarts), source.backend, source.precision, source.batchSize, source.engine,
+            execution.selectedItem as ArchitectureExecution)
     }
 
     private fun submit() {
@@ -206,11 +217,12 @@ internal class ArchitectureSearchPanel(
         tolerance.value = next.nearBestTolerance; threads.value = next.parallelism
         trials.value = next.maxTrials; seconds.value = next.timeLimitSeconds
         searchSeed.text = next.searchSeed.toString(); restartAfter.value = next.restartAfter; restarts.value = next.maxRestarts
-        changing = true; strategy.selectedItem = next.strategy; policy.selectedItem = next.policy; evaluation.selectedItem = mode; changing = false
+        changing = true; strategy.selectedItem = next.strategy; execution.selectedItem = next.execution
+        policy.selectedItem = next.policy; evaluation.selectedItem = mode; changing = false
         running = true; config = next; scoreMode = mode; result = null; selected = null
         results = emptyList(); lineage = emptyMap(); chosenTrial = null; surface = null
         tableModel.fireTableDataChanged(); selectedSeed.removeAllItems()
-        strategy.isEnabled = false; policy.isEnabled = false
+        strategy.isEnabled = false; execution.isEnabled = false; policy.isEnabled = false
         start.isEnabled = false; cancel.isEnabled = true; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false
         progressBar.value = 0; progressBar.string = "Starting…"
         details.text = "Inspecting a result never changes the active network."
@@ -219,7 +231,10 @@ internal class ArchitectureSearchPanel(
 
     fun updateProgress(progress: ArchitectureSearchProgress) {
         if (!running) return
-        lineage = progress.lineage.associateBy { it.architecture }
+        if (shownLineage !== progress.lineage) {
+            shownLineage = progress.lineage
+            lineage = progress.lineage.associateBy { it.architecture }
+        }
         showCandidates(progress.candidates)
         progressBar.maximum = maxOf(1, progress.plannedTrials); progressBar.value = progress.finishedTrials
         progressBar.string = "${progress.finishedTrials}/${progress.plannedTrials} trial budget · ${progress.fullyEvaluated}/${progress.generated} ${if (config?.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposed" else "enumerated"} architectures evaluated"
@@ -228,20 +243,22 @@ internal class ArchitectureSearchPanel(
         }
         val trial = progress.running.firstOrNull()
         val activeArchitectures = progress.running.map { it.architecture }.distinct().size
-        val workers = "Active trials: ${progress.running.size}/${config?.parallelism} · $activeArchitectures architectures · peak ${progress.peakParallelTrials}"
+        val workers = "Active trials: ${progress.running.size}/${config?.concurrentModels} · $activeArchitectures architectures · peak ${progress.peakParallelTrials}" +
+            " · CPU workers ${progress.activeWorkers}/${config?.parallelism}" +
+            if (config?.usesCudaQueue == true) " · GPU models ${progress.residentModels}/64 · queued ${progress.queuedGpuRequests} · launches ${progress.gpuBatches}" else ""
         summary.text = if (trial == null) "$workers · Collecting results…" else "$workers · ${trial.architecture} · seed ${trial.seed} · epoch ${trial.epoch}"
     }
 
     fun complete(report: ArchitectureSearchResult) {
         NeuroLog.info("ui", "ui.search.results.published", "searchId" to report.logId, "termination" to report.termination, "evaluated" to report.evaluated)
         if (config !== report.config) started(report.config, report.data.evaluation)
-        strategy.isEnabled = true; policy.isEnabled = true
+        strategy.isEnabled = true; execution.isEnabled = true; policy.isEnabled = true
         running = false; result = report; config = report.config; scoreMode = report.data.evaluation
         start.isEnabled = sourceSize > 0; cancel.isEnabled = false
         lineage = report.lineage.associateBy { it.architecture }
         showCandidates(report.candidates)
         progressBar.maximum = maxOf(1, report.generated); progressBar.value = report.evaluated
-        progressBar.string = "${report.termination} · peak ${report.peakParallelTrials}/${report.config.parallelism} trials · ${report.evaluated}/${report.generated} ${if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposals" else "architectures"} evaluated · ${report.partial} partial"
+        progressBar.string = "${report.termination} · peak ${report.peakParallelTrials}/${report.config.concurrentModels} trials · CPU workers peak ${report.peakWorkers}/${report.config.parallelism} · ${report.evaluated}/${report.generated} ${if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE) "proposals" else "architectures"} evaluated · ${report.partial} partial"
         lineageStatus.text = if (report.config.strategy == ArchitectureSearchStrategy.ADAPTIVE)
             "Adaptive search finished. Counts cover generated proposals, not the entire space; no global minimum is claimed."
         else "${report.untested} enumerated architectures untested."
@@ -251,7 +268,7 @@ internal class ArchitectureSearchPanel(
     }
 
     fun failed(message: String) {
-        strategy.isEnabled = true; policy.isEnabled = true
+        strategy.isEnabled = true; execution.isEnabled = true; policy.isEnabled = true
         running = false; start.isEnabled = sourceSize > 0; cancel.isEnabled = false
         summary.text = "Search error: $message"; progressBar.string = "Search failed"
     }
@@ -263,7 +280,7 @@ internal class ArchitectureSearchPanel(
 
     fun invalidateResults() {
         if (result != null) NeuroLog.info("ui", "ui.search.results.invalidated", "searchId" to result?.logId)
-        strategy.isEnabled = true; policy.isEnabled = true; lineage = emptyMap()
+        strategy.isEnabled = true; execution.isEnabled = true; policy.isEnabled = true; lineage = emptyMap(); shownLineage = null
         running = false; result = null; config = null; results = emptyList(); selected = null
         chosenTrial = null; surface = null; tableModel.fireTableDataChanged()
         cancel.isEnabled = false; apply.isEnabled = false; replay.isEnabled = false; inspect.isEnabled = false; start.isEnabled = sourceSize > 0
@@ -284,6 +301,7 @@ internal class ArchitectureSearchPanel(
     }
 
     private fun showCandidates(candidates: List<ArchitectureCandidate>) {
+        if (results === candidates) return
         results = candidates
         changing = true; tableModel.fireTableDataChanged(); changing = false
         selectArchitecture(selected)
@@ -291,7 +309,14 @@ internal class ArchitectureSearchPanel(
     }
 
     private fun selectedCandidate(): ArchitectureCandidate? = results.firstOrNull { it.architecture == selected }
-    private fun currentSelection(): ArchitectureSelection? = config?.let { ArchitectureRanking.select(results, it, policy.selectedItem as ArchitecturePolicy) }
+    private fun currentSelection(): ArchitectureSelection? = config?.let {
+        val selectedPolicy = policy.selectedItem as ArchitecturePolicy
+        if (rankedCandidates !== results || rankedPolicy != selectedPolicy || rankedConfig !== it) {
+            rankedCandidates = results; rankedPolicy = selectedPolicy; rankedConfig = it
+            cachedSelection = ArchitectureRanking.select(results, it, selectedPolicy)
+        }
+        cachedSelection
+    }
 
     private fun updateSummary() {
         val report = result ?: return
@@ -303,7 +328,7 @@ internal class ArchitectureSearchPanel(
                     "${report.config.backend}: ${it.failure}"
                 } ?: "The search was incomplete or every completed architecture had a failed seed.")
             else "No evaluated architecture met the target reliably. Best completed RMSE: ${number(selection.bestError.medianRmse)}."
-        summary.toolTipText = "${report.environment}; backend ${report.config.backend}; strategy ${report.config.strategy}; search seed ${report.config.searchSeed}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
+        summary.toolTipText = "${report.environment}; backend ${report.config.backend}; execution ${report.config.execution}; strategy ${report.config.strategy}; search seed ${report.config.searchSeed}; dataset SHA-256 ${report.data.fingerprint}; split seed ${report.data.splitSeed}. Validation is selection data, not an independent test score."
     }
 
     private fun updateInspection() {
@@ -335,7 +360,7 @@ internal class ArchitectureSearchPanel(
             trial.failure.isNotEmpty() -> "Seed ${trial.seed}: ${trial.failure}"
             else -> "Seed ${trial.seed}: best ${scoreMode.label} ${number(trial.bestRmse)} at epoch ${trial.bestEpoch}; trained ${trial.epochs}. Apply = fresh run; replay = scored training partition."
         }
-        details.toolTipText = trial?.deviceInfo?.let { "${it.backend} · ${it.name} · ${it.precision} · ${it.engine} · ${it.sigmoid} · SIMD ${it.simdBits} · kernel ${it.kernelVersion} · ${it.identity}" }
+        details.toolTipText = trial?.deviceInfo?.let { "${trial.execution} · ${trial.route} · ${it.backend} · ${it.name} · ${it.precision} · ${it.engine} · ${it.sigmoid} · SIMD ${it.simdBits} · kernel ${it.kernelVersion} · ${it.identity}" }
         inspector.repaint(); plot.repaint()
     }
 

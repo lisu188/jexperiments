@@ -11,6 +11,7 @@ internal class SmallCpuCohort(
     private val bits = smallVectorBits(parameters, vectorBits)
     private val count = states.size
     private val samples: Int
+    private val seen: BooleanArray
     private val compute: SmallCohortCompute
     private var closed = false
     val info = TrainingDeviceInfo(TrainingBackend.CPU, "CPU model lanes", "jvm-cpu",
@@ -20,6 +21,7 @@ internal class SmallCpuCohort(
         require(states.isNotEmpty()) { "A cohort must contain models" }
         states.forEach(::validateSmallState)
         samples = states[0].samples
+        seen = BooleanArray(samples)
         require(states.all { it.topology.contentEquals(states[0].topology) && it.samples == samples }) {
             "Cohort models must share topology and sample count"
         }
@@ -35,7 +37,7 @@ internal class SmallCpuCohort(
         val epochs = active.indices.firstOrNull { active[it] }?.let { orders[it].size } ?: 0
         for (model in 0 until count) if (active[model]) {
             require(orders[model].size == epochs) { "Active models must request the same epoch count" }
-            validateSmallOrders(orders[model], samples)
+            validateSmallOrders(orders[model], samples, seen)
         }
         compute.train(orders, batchSize, online, active, epochs)
         return compute.snapshot()
@@ -49,13 +51,15 @@ private interface SmallCohortCompute {
     fun snapshot(): Array<NeuroTrainingState>
 }
 
-internal fun smallStateCopy(state: NeuroTrainingState) = NeuroTrainingState(state.topology.copyOf(),
+internal fun smallStateCopy(state: NeuroTrainingState, shareDataset: Boolean = false) = NeuroTrainingState(state.topology.copyOf(),
     Array(state.weights.size) { state.weights[it].copyOf() }, Array(state.biases.size) { state.biases[it].copyOf() },
     Array(state.weightVelocity.size) { state.weightVelocity[it].copyOf() },
-    Array(state.biasVelocity.size) { state.biasVelocity[it].copyOf() }, state.inputs.copyOf(), state.targets.copyOf())
+    Array(state.biasVelocity.size) { state.biasVelocity[it].copyOf() },
+    if (shareDataset && state.sharedDataset) state.inputs else state.inputs.copyOf(),
+    if (shareDataset && state.sharedDataset) state.targets else state.targets.copyOf(), sharedDataset = shareDataset && state.sharedDataset)
 
 private class SmallDoubleCohortCompute(states: Array<NeuroTrainingState>, parameters: Neuro.HyperParameters, private val bits: Int) : SmallCohortCompute {
-    private val initial = Array(states.size) { smallStateCopy(states[it]) }
+    private val initial = Array(states.size) { smallStateCopy(states[it], shareDataset = true) }
     private val topology = states[0].topology.copyOf()
     private val models = states.size
     private val vector = bits != 0
@@ -71,8 +75,8 @@ private class SmallDoubleCohortCompute(states: Array<NeuroTrainingState>, parame
     private val biasGradients = Array(biases.size) { DoubleArray(biases[it].size) }
     private val activations = Array(topology.size) { DoubleArray(topology[it] * stride) }
     private val deltas = Array(weights.size) { DoubleArray(topology[it + 1] * stride) }
-    private val inputs = Array(models) { smallDoubles(states[it].inputs) }
-    private val targets = Array(models) { smallDoubles(states[it].targets) }
+    private val inputs = Array(models) { initial[it].inputs }
+    private val targets = Array(models) { initial[it].targets }
     private val gatheredTargets = DoubleArray(stride)
     private val beta = parameters.beta
     private val rate = parameters.learningRate
@@ -263,14 +267,16 @@ private class SmallDoubleCohortCompute(states: Array<NeuroTrainingState>, parame
     }
 
     override fun snapshot(): Array<NeuroTrainingState> = Array(models) { model ->
-        if (!touched[model]) smallStateCopy(initial[model]) else NeuroTrainingState(topology.copyOf(),
+        if (!touched[model]) smallStateCopy(initial[model], shareDataset = true) else NeuroTrainingState(topology.copyOf(),
             unpack(weights, model), unpack(biases, model), unpack(velocities, model), unpack(biasVelocities, model),
-            initial[model].inputs.copyOf(), initial[model].targets.copyOf())
+            if (initial[model].sharedDataset) initial[model].inputs else initial[model].inputs.copyOf(),
+            if (initial[model].sharedDataset) initial[model].targets else initial[model].targets.copyOf(),
+            sharedDataset = initial[model].sharedDataset)
     }
 }
 
 private class SmallFloatCohortCompute(states: Array<NeuroTrainingState>, parameters: Neuro.HyperParameters, private val bits: Int) : SmallCohortCompute {
-    private val initial = Array(states.size) { smallStateCopy(states[it]) }
+    private val initial = Array(states.size) { smallStateCopy(states[it], shareDataset = true) }
     private val topology = states[0].topology.copyOf()
     private val models = states.size
     private val vector = bits != 0
@@ -478,8 +484,10 @@ private class SmallFloatCohortCompute(states: Array<NeuroTrainingState>, paramet
     }
 
     override fun snapshot(): Array<NeuroTrainingState> = Array(models) { model ->
-        if (!touched[model]) smallStateCopy(initial[model]) else NeuroTrainingState(topology.copyOf(),
+        if (!touched[model]) smallStateCopy(initial[model], shareDataset = true) else NeuroTrainingState(topology.copyOf(),
             unpack(weights, model), unpack(biases, model), unpack(velocities, model), unpack(biasVelocities, model),
-            initial[model].inputs.copyOf(), initial[model].targets.copyOf())
+            if (initial[model].sharedDataset) initial[model].inputs else initial[model].inputs.copyOf(),
+            if (initial[model].sharedDataset) initial[model].targets else initial[model].targets.copyOf(),
+            sharedDataset = initial[model].sharedDataset)
     }
 }

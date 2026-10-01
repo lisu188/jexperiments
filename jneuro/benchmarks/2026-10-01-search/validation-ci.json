@@ -1,0 +1,622 @@
+{
+  "source": "cc5804507d2cd6b0360c90713a7e8ed783991fa4",
+  "githubRun": 36815073298,
+  "githubRunUrl": "https://github.com/lisu188/jexperiments/actions/runs/36815073298",
+  "auditedAt": "2026-10-01T04:35:41.544643+00:00",
+  "audit": "Read-only compressed-report inspection; no extraction or runtime/build/network calls",
+  "sourceAssociation": "Source/run association supplied by the downloading coordinator; reports themselves do not embed a Git SHA.",
+  "archives": {
+    "validation-cc58045.zip": {
+      "bytes": 2041557,
+      "sha256": "6631353833d093aca5dbac42b8d39f0d81c42e0c06b3935d2d79e789def7698b",
+      "memberCount": 392,
+      "crcVerified": true,
+      "relevantMembers": {
+        "reports/tests/test/index.html": {
+          "bytes": 16784,
+          "sha256": "ac1b8ad8e73147c181d8ad3f85f48637339f75d0a79cc17d06c80e3198adc8e0"
+        },
+        "reports/tests/test/com.lis.neuro.ArchitectureSearchBenchmarkTest/index.html": {
+          "bytes": 3640,
+          "sha256": "a1b92d12ae54393a33fcefd0472014a9335b3772ab41e7b09f5ed1751a92660d"
+        },
+        "reports/tests/test/com.lis.neuro.AdaptiveArchitectureSearchTest/index.html": {
+          "bytes": 6431,
+          "sha256": "912855185baf037df0ee6b51dcf1faf6eaeccebe574c79654b9bf486c984fa0f"
+        },
+        "reports/tests/test/com.lis.neuro.ArchitectureSearchPanelTest/index.html": {
+          "bytes": 4306,
+          "sha256": "ed03a43c1e2c0e0fec7adb581f715c40d2ad42fe2f6ba544288003e4eb57a4c8"
+        },
+        "reports/tests/test/com.lis.neuro.ArchitectureTrialDispatcherTest/index.html": {
+          "bytes": 2982,
+          "sha256": "b3343ae35ac39abf6f379f0ff742edbe4fc0a3075bf4904393fee04363a89d5f"
+        },
+        "reports/tests/test/com.lis.neuro.ArchitectureWorkerLifecycleTest/index.html": {
+          "bytes": 2944,
+          "sha256": "bdbf49707ebae233fcd513c34be660efc720cf07b165499dac33f313c9b407eb"
+        },
+        "reports/tests/test/com.lis.neuro.CublasTrainingSessionTest/index.html": {
+          "bytes": 4905,
+          "sha256": "a87ef3f9141ba4de14f7a4f1c8068eb3b5783b0d482eac83e46ea8c7e0a7bfed"
+        },
+        "reports/tests/test/com.lis.neuro.CudaTrainingTest/index.html": {
+          "bytes": 6829,
+          "sha256": "d47d5cc3791994fa40c63fdf2bf4d4f8aa71f75fd04ef8f7db316213e218e9a7"
+        },
+        "reports/tests/test/com.lis.neuro.EliteParentSelectionTest/index.html": {
+          "bytes": 4455,
+          "sha256": "4fb1667e55017da257e106bd2cd9d039826e77b63a202cbf32f3994a7d33621b"
+        },
+        "reports/tests/test/com.lis.neuro.NativeCudaDriverTest/index.html": {
+          "bytes": 6523,
+          "sha256": "80797c4ab5f67466d2f5ad6d14c34ba76e7de16ab449b35509b6ac35bbe1fd52"
+        },
+        "reports/tests/test/com.lis.neuro.NativeLoggingTest/index.html": {
+          "bytes": 3754,
+          "sha256": "d3d0e2ad069ef9fca309902e5dc6e93aef17bf93c691e073ccff89ed328d745e"
+        },
+        "reports/tests/test/com.lis.neuro.NativeSmallTrainingTest/index.html": {
+          "bytes": 4272,
+          "sha256": "728bc4b8e6d6efa8351b5f0dbda215ca42b3dcdb8468ed5106bb3ad3a399100e"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroArchitectureCohortTest/index.html": {
+          "bytes": 4027,
+          "sha256": "7d5b1d5fc1ebad7d6153e94be54718a986c64817754a1a9c42fb067c735eaf0f"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroArchitectureSearchTest/index.html": {
+          "bytes": 10148,
+          "sha256": "305b60d87c697d980b8a008138fd459f61b5020d3f3104289cc9308d0bbbb802"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroBaselineTopologyTest/index.html": {
+          "bytes": 3438,
+          "sha256": "7a04688b7153cf760785941d0aba8eca6c2ebb875597e1d88040bf64c0ad2614"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroCpuBatchTrainerTest/index.html": {
+          "bytes": 4049,
+          "sha256": "04f92c8d7458bfe88ebc402d8bddabd6a546ba9c6eaa660a691612c02d8c0720"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroCudaBatchBackendTest/index.html": {
+          "bytes": 4189,
+          "sha256": "f3508ac48deaef11088b7f54e6353d9b70b6e3df4c607951faad2194407f696d"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroCudaBenchmarkHarnessTest/index.html": {
+          "bytes": 6476,
+          "sha256": "87a81c34456a7a098c56156c2de4209083a7e38087c38f4f163c2d1164787414"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroCudaBufferTest/index.html": {
+          "bytes": 3046,
+          "sha256": "b5f2406f239551118b2334c767002afbf0f9e4fb63a2456b2ff9dc5bb929b7ce"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroCudaPlanTest/index.html": {
+          "bytes": 3466,
+          "sha256": "a1ede6d8f1cdb83578dafe197d12b93507c7c8e04457e2867211f78a2556041d"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroGuiModelTest/index.html": {
+          "bytes": 4039,
+          "sha256": "b517c96feb823430d629df4cb7a82ca9ad9889f9b3dbd7d4e165ee7ef1ab8482"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroHardLearningSetsTest/index.html": {
+          "bytes": 4142,
+          "sha256": "9a225e7336ab35757622e5f4657a4bcd622f762e8d21d89c41e6bd3bfb851be2"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroLearningSetsTest/index.html": {
+          "bytes": 3058,
+          "sha256": "c390d67d51e122921dcbf593b6d75455d3bc80f153fe52ec65eedab4b8ebce1b"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroLogTest/index.html": {
+          "bytes": 4603,
+          "sha256": "cfaee452eda983908f0ad2b9cd4918058fa649f968d8bcff5902c6da09d18247"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroNativeAdaptersTest/index.html": {
+          "bytes": 4364,
+          "sha256": "57f260598bb732a523a0538f7abc7ccdb3ab1b9631cdfe3607f1b560ca4750b2"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroNativeBlasTest/index.html": {
+          "bytes": 2549,
+          "sha256": "be3934cf14c391ca4538cbb277baf58f3b0191ee08b03f43964439886373667e"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroNvrtcKernelsTest/index.html": {
+          "bytes": 4098,
+          "sha256": "a99d41ce43ef545c5effc87166ab4d2e366dcc2ed205a7c94d981544a4ba8969"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroStudioTest/index.html": {
+          "bytes": 8058,
+          "sha256": "d68e3a11b764d730e000af3b8680b279eb26a4ef60e9ead4d10e86b8039fef85"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroStudioUiTest/index.html": {
+          "bytes": 3193,
+          "sha256": "278e8dd6876f17bc4dde26f9d1ac648836131f5ec3d470825f1b1225e9a42b22"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroTest/index.html": {
+          "bytes": 4633,
+          "sha256": "3af5c1e063b1e30514b4cc0a80c3f5f867b641a55a97cb9b12d359add8bbcaf8"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroTrainingCohortTest/index.html": {
+          "bytes": 5910,
+          "sha256": "4e21347b2603d92377048df0cfd98084205e401c548e588472e0c15d9e5685e5"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroTopologyConfigTest/index.html": {
+          "bytes": 2982,
+          "sha256": "a17c04cfcd5001e5f8af8602ec3d9c98ac17179e3003125461a13f14ea34bb3f"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroTrainingLoggingTest/index.html": {
+          "bytes": 5485,
+          "sha256": "170b6e8a226e8cdf1d11a7eab6dba30fc42761b7461b1068af9926c15284f930"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroTrainingSessionTest/index.html": {
+          "bytes": 3157,
+          "sha256": "26a499a308065208c629c3666612bbb57aa15fb663a12d4e6ad3e7ebbd48782f"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroXorDiagnosticsTest/index.html": {
+          "bytes": 3618,
+          "sha256": "74db9a634530e091ba5b97186ceed2a424fe6dd213755c261e884965a4030db9"
+        },
+        "reports/tests/test/com.lis.neuro.NeuroXorGridTest/index.html": {
+          "bytes": 2973,
+          "sha256": "ef38a4f6ffca9cc9c62381eb0531db656fc3b999951cd705bec689278917d8ed"
+        },
+        "reports/tests/test/com.lis.neuro.OptimizedArchitectureSearchTest/index.html": {
+          "bytes": 3606,
+          "sha256": "3640ac3716ef754f277ed72f723411f7561d774322ab04273f24258dbf2661cd"
+        },
+        "reports/tests/test/com.lis.neuro.OptimizedCudaSearchTest/index.html": {
+          "bytes": 3261,
+          "sha256": "7fab88e0745e9769f190d69c7a2b03cbe8e80d41e8492c7207741ffef51e43a9"
+        },
+        "reports/tests/test/com.lis.neuro.SearchCudaServiceTest/index.html": {
+          "bytes": 4606,
+          "sha256": "170eae217536db7197580b7cbd8e60d4057e481a335512e9c1371ee555cc8c97"
+        },
+        "reports/tests/test/com.lis.neuro.ParallelArchitectureSearchTest/index.html": {
+          "bytes": 4704,
+          "sha256": "4167949cdf4d415c7084e2c8fb5d4aab749092c011a9591af0185b605c3ddad3"
+        },
+        "reports/tests/test/com.lis.neuro.SearchTrainingAdvanceTest/index.html": {
+          "bytes": 4627,
+          "sha256": "d13a59f80249cc273c38af57871cec751cf1513e8b78bbae4c6b2b05dd0c14d5"
+        },
+        "reports/tests/test/com.lis.neuro.SharedTrainingDataTest/index.html": {
+          "bytes": 3620,
+          "sha256": "da4f77281ae4625703b8fdd31b1182d23eb2fefc7b37f43ca8ac22623e3ec42b"
+        },
+        "reports/tests/test/com.lis.neuro.SmallCpuCohortTest/index.html": {
+          "bytes": 3190,
+          "sha256": "0b588f2e188951b4f618d0724d9f3ea8fc92dd22d079cdeaa739422c32fbce65"
+        },
+        "reports/tests/test/com.lis.neuro.SmallCpuTrainingTest/index.html": {
+          "bytes": 3901,
+          "sha256": "33a161da639df38b2c3c5ce770a90e919c6f4d7b6900d7d147f375c12431cbef"
+        },
+        "reports/tests/test/com.lis.neuro.SmallCudaTrainingTest/index.html": {
+          "bytes": 6074,
+          "sha256": "b7a76305f1dd95df9a5610c8675d3235d81cbd99aa81ececefeada80e7d1d1a6"
+        },
+        "reports/tests/test/com.lis.neuro.SmallTrainingSessionTest/index.html": {
+          "bytes": 4154,
+          "sha256": "36ff39cee4d23967e8c6d4ba01f5aad511cea5549b8dc68c381bd36ab1557a05"
+        },
+        "reports/tests/test/com.lis.neuro.TrainingShuffleTest/index.html": {
+          "bytes": 2934,
+          "sha256": "ef619a6871f02dd00ebddd3ce8fff13d3fc57806c388765ed6fbdaa6a041f202"
+        },
+        "reports/tests/test/com.lis.neuro.TrialActivityTest/index.html": {
+          "bytes": 3188,
+          "sha256": "1a07a902d94afa9e342dd44d2b254910cc8fcba2ec7e61399c91b97c60c72ed8"
+        },
+        "reports/tests/test/experiments.testing.MainEntrypointCoverageTest/index.html": {
+          "bytes": 2573,
+          "sha256": "c474e8680d52302c27322b70027f24c9298782d4421e7f33bb6487af1b8bf824"
+        },
+        "reports/jacoco/test/jacocoTestReport.xml": {
+          "bytes": 1065127,
+          "sha256": "4a85d8abfb915a0cf859b5a526f4d06fad54415832c3df1486c1d67dd6fc7bdf"
+        }
+      }
+    },
+    "gui-cc58045.zip": {
+      "bytes": 4449862,
+      "sha256": "bd4a4eb1def4fa85990efc1c6c6e26b59b21d5b027d7f5fda461b2ae4f257493",
+      "memberCount": 114,
+      "crcVerified": true,
+      "relevantMembers": {
+        "test-results/guiTest/TEST-com.lis.neuro.NeuroGuiTest.xml": {
+          "bytes": 80182,
+          "sha256": "d7857bd3270f05f281083c81ce3b669927ed13cf5d02440a243d6b4319a6ff6d"
+        },
+        "reports/gui-paths/coverage.json": {
+          "bytes": 26573,
+          "sha256": "0346a82b2c9f3fe5ab2d4d8dd65968709bcc8f0ce602730f4a4c8b3777367551"
+        },
+        "reports/jacoco/guiCoverageReport/guiCoverageReport.xml": {
+          "bytes": 147857,
+          "sha256": "73976be1aa2ca49d14f5b862d29fac9207b6db1b35d9d91229a1a3bbbe90e5d8"
+        }
+      }
+    }
+  },
+  "unit": {
+    "reportedTests": 304,
+    "passed": 304,
+    "failures": 0,
+    "skipped": 0,
+    "classCount": 48,
+    "resultsFormat": "Gradle HTML; failures include test errors, which are not counted separately",
+    "classSummaries": {
+      "com.lis.neuro.ArchitectureSearchBenchmarkTest": {
+        "tests": 4,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.AdaptiveArchitectureSearchTest": {
+        "tests": 12,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.ArchitectureSearchPanelTest": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.ArchitectureTrialDispatcherTest": {
+        "tests": 2,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.ArchitectureWorkerLifecycleTest": {
+        "tests": 2,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.CublasTrainingSessionTest": {
+        "tests": 7,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.CudaTrainingTest": {
+        "tests": 12,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.EliteParentSelectionTest": {
+        "tests": 7,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NativeCudaDriverTest": {
+        "tests": 13,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NativeLoggingTest": {
+        "tests": 4,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NativeSmallTrainingTest": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroArchitectureCohortTest": {
+        "tests": 5,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroArchitectureSearchTest": {
+        "tests": 22,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroBaselineTopologyTest": {
+        "tests": 4,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroCpuBatchTrainerTest": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroCudaBatchBackendTest": {
+        "tests": 5,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroCudaBenchmarkHarnessTest": {
+        "tests": 13,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroCudaBufferTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroCudaPlanTest": {
+        "tests": 4,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroGuiModelTest": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroHardLearningSetsTest": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroLearningSetsTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroLogTest": {
+        "tests": 7,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroNativeAdaptersTest": {
+        "tests": 7,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroNativeBlasTest": {
+        "tests": 1,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroNvrtcKernelsTest": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroStudioTest": {
+        "tests": 19,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroStudioUiTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroTest": {
+        "tests": 9,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroTrainingCohortTest": {
+        "tests": 11,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroTopologyConfigTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroTrainingLoggingTest": {
+        "tests": 10,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroTrainingSessionTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroXorDiagnosticsTest": {
+        "tests": 5,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.NeuroXorGridTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.OptimizedArchitectureSearchTest": {
+        "tests": 4,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.OptimizedCudaSearchTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.SearchCudaServiceTest": {
+        "tests": 7,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.ParallelArchitectureSearchTest": {
+        "tests": 8,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.SearchTrainingAdvanceTest": {
+        "tests": 7,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.SharedTrainingDataTest": {
+        "tests": 4,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.SmallCpuCohortTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.SmallCpuTrainingTest": {
+        "tests": 5,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.SmallCudaTrainingTest": {
+        "tests": 12,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.SmallTrainingSessionTest": {
+        "tests": 6,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.TrainingShuffleTest": {
+        "tests": 2,
+        "failures": 0,
+        "skipped": 0
+      },
+      "com.lis.neuro.TrialActivityTest": {
+        "tests": 3,
+        "failures": 0,
+        "skipped": 0
+      },
+      "experiments.testing.MainEntrypointCoverageTest": {
+        "tests": 1,
+        "failures": 0,
+        "skipped": 0
+      }
+    },
+    "coverage": {
+      "INSTRUCTION": {
+        "covered": 90579,
+        "missed": 5487
+      },
+      "BRANCH": {
+        "covered": 5644,
+        "missed": 986
+      },
+      "LINE": {
+        "covered": 7986,
+        "missed": 254
+      },
+      "COMPLEXITY": {
+        "covered": 4178,
+        "missed": 1029
+      },
+      "METHOD": {
+        "covered": 1731,
+        "missed": 144
+      },
+      "CLASS": {
+        "covered": 205,
+        "missed": 3
+      }
+    },
+    "lineCoveragePercent": 96.91747572815534,
+    "loggingRegressionMethods": [
+      "searchChunksSamplePublishedBoundariesAtInfoAndKeepEveryChunkAtDebug()",
+      "searchCancellationAndFailureDetailsRetainOnlyCommittedProgress()",
+      "publicBulkCallsKeepInfoStartAndCompletionAfterSearchProgress()"
+    ],
+    "loggingClassTests": 10,
+    "progressSnapshotRegressionTests": 3
+  },
+  "gui": {
+    "suite": {
+      "name": "com.lis.neuro.NeuroGuiTest",
+      "tests": "26",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "timestamp": "2026-10-01T04:27:41.364Z",
+      "hostname": "runnervmtr4k5",
+      "time": "125.596"
+    },
+    "passed": 26,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "tests": [
+      "allDatasetsRemainSelectableAndTrainingErrorsRecover",
+      "automaticBatchBackendAppliesPrecisionAndStepsOnce",
+      "backendSelectionRequiresApplyAndUnavailableCudaRecovers",
+      "cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize",
+      "customPointsSupportMouseKeyboardUndoAndClear",
+      "detailedLogsFollowNativeControlsExportAndShutdown",
+      "everyNeuronIsReachableByScrollingAndBaselineHasNoMaps",
+      "lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow",
+      "opensAndNavigatesEveryView",
+      "optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls",
+      "parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization",
+      "parameterNavigationAndSmallWindowRemainUsable",
+      "pngExportAndCancelUseTheRealFileDialog",
+      "rejectedCudaReplayRetainsResultsAndMainModelUntilSuccessfulRetry",
+      "searchDeadlineDoesNotRecommendIncompleteCandidates",
+      "searchInputsAcceptValuesBeyondOldCaps",
+      "searchResultsSupportNativeSelectionInspectionReplayAndApply",
+      "searchValidationCancellationAndStaleResultsAreHandled",
+      "seedComparisonCanCompleteAndBeCancelled",
+      "selectedBackendRoutesControlsStudySearchReplayAndShutdown",
+      "smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls",
+      "terminalTrainingStatesDisableControls",
+      "trainingButtonsAndKeyboardRespectState",
+      "validatesConfigurationAndAcceptsUncappedInputs",
+      "validationSearchReplaysHeldOutPartition",
+      "windowCloseStopsTrainingAndSearchWorkers"
+    ],
+    "documentedPaths": 131,
+    "coveredPaths": 131,
+    "pathCoveragePercent": 100.0,
+    "allMethodsSuccessful": true,
+    "inventorySha256": "41304453c6ced7e89addc51a22d85ef60e3e4bbe0e283e6af174a8d5059ba0f4",
+    "coverage": {
+      "INSTRUCTION": {
+        "covered": 13996,
+        "missed": 1349
+      },
+      "BRANCH": {
+        "covered": 704,
+        "missed": 241
+      },
+      "LINE": {
+        "covered": 1312,
+        "missed": 77
+      },
+      "COMPLEXITY": {
+        "covered": 496,
+        "missed": 224
+      },
+      "METHOD": {
+        "covered": 215,
+        "missed": 18
+      },
+      "CLASS": {
+        "covered": 23,
+        "missed": 0
+      }
+    },
+    "lineCoveragePercent": 94.45644348452124,
+    "scope": "Actual native-control GUI scenarios, including optimized Spiral7-epoch/two-seed target0.9 fixture; separate from full-budget target0.01 reliability and actual GPU acceptance."
+  },
+  "earlierLocalValidation": {
+    "source": "7a0a1ab61c848500316367cb12720662b9f96ff0",
+    "metadataFile": "final-local-validation.json",
+    "sha256": "c43c4a2462943cdec4e3f3468df2dffd5f94fc34ef6917242e821a4897bfe471",
+    "unitReported": 301,
+    "unitPassed": 300,
+    "unitSkipped": 1,
+    "unitFailures": 0,
+    "gpuPassed": 18,
+    "gpuSkipped": 0,
+    "gpuFailures": 0,
+    "coverage": {
+      "type": "LINE",
+      "missed": "255",
+      "covered": "7982"
+    },
+    "scope": "Earlier Windows/real-hardware source; latest logging-only revision validated by CI above, not relabelled as local hardware run."
+  },
+  "limitations": [
+    "No full-budget Spiral target claim.",
+    "No new GPU execution is established by CPU-only CI or injected CUDA GUI fixtures.",
+    "Timing and7a0a1ab correctness smoke are separate evidence; smoke warmup divergence is retained in SMOKE.md."
+  ]
+}

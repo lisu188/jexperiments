@@ -50,7 +50,8 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
     private var stagnant = 0
     private var restarts = 0
     private val awaiting = HashSet<NetworkArchitecture>()
-    val lineage: List<ArchitectureProposal> get() = java.util.List.copyOf(issued.values)
+    private var lineageCache: List<ArchitectureProposal>? = null
+    val lineage: List<ArchitectureProposal> get() = lineageCache ?: java.util.List.copyOf(issued.values).also { lineageCache = it }
     val restartCount: Int get() = restarts
 
     fun next(): ArchitectureProposal? {
@@ -138,6 +139,7 @@ internal class AdaptiveArchitecturePlanner(private val config: ArchitectureSearc
     private fun issue(proposal: ArchitectureProposal): ArchitectureProposal {
         val recorded = proposal.copy(evaluatedCount = evaluated.size)
         check(issued.putIfAbsent(recorded.architecture, recorded) == null) { "Architecture was already evaluated." }
+        lineageCache = null
         awaiting.add(recorded.architecture)
         return recorded
     }

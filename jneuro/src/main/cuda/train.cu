@@ -174,9 +174,20 @@ template <typename Real> __device__ void small_train(
     double* packed, const double* inputs, const double* targets, const int* orders,
     const int* topology, const int* active, int models, int layers, int samples,
     int epochs, int batch_size, double learning_rate_double, double momentum_double,
-    double beta_double, int mode, int online) {
+    double beta_double, int mode, int online, const int* requests = nullptr, double* checkpoint = nullptr) {
     const int model = blockIdx.x;
-    if (model >= models || !active[model]) return;
+    if (model >= models || (requests == nullptr && !active[model])) return;
+    // Search ABI 3: [state offset, topology offset, order offset, layers,
+    // epochs, checkpoint offset] per block; every offset counts array elements.
+    if (requests != nullptr) {
+        const int* request = requests + model * 6;
+        packed += request[0];
+        topology += request[1];
+        orders += request[2];
+        layers = request[3];
+        epochs = request[4];
+        checkpoint += request[5];
+    }
     const int thread = threadIdx.x;
     __shared__ Real state[2 * SMALL_PARAMETERS];
     __shared__ Real activation[SMALL_TILE * SMALL_ACTIVATIONS];
@@ -194,7 +205,8 @@ template <typename Real> __device__ void small_train(
         delta_offset[layer] = delta_count;
         delta_count += topology[layer + 1];
     }
-    const std::size_t base = static_cast<std::size_t>(model) * parameters * 2;
+    const std::size_t base = requests == nullptr ? static_cast<std::size_t>(model) * parameters * 2 : 0;
+    const std::size_t order_base = requests == nullptr ? static_cast<std::size_t>(model) * epochs * samples : 0;
     for (int index = thread; index < parameters * 2; index += blockDim.x)
         state[index] = Real(packed[base + index]);
     if (thread == 0) invalid = 0;
@@ -211,7 +223,7 @@ template <typename Real> __device__ void small_train(
                 const int tile_count = min(SMALL_TILE, count - tile);
                 for (int index = thread; index < tile_count * topology[0]; index += blockDim.x) {
                     const int row = index / topology[0];
-                    const int sample = orders[(static_cast<std::size_t>(model) * epochs + epoch) * samples + start + tile + row];
+                    const int sample = orders[order_base + static_cast<std::size_t>(epoch) * samples + start + tile + row];
                     activation[row * activation_count + index % topology[0]] = Real(inputs[static_cast<std::size_t>(sample) * topology[0] + index % topology[0]]);
                 }
                 __syncthreads();
@@ -228,7 +240,7 @@ template <typename Real> __device__ void small_train(
                     __syncthreads();
                 }
                 for (int row = thread; row < tile_count; row += blockDim.x) {
-                    const int sample = orders[(static_cast<std::size_t>(model) * epochs + epoch) * samples + start + tile + row];
+                    const int sample = orders[order_base + static_cast<std::size_t>(epoch) * samples + start + tile + row];
                     const Real value = activation[row * activation_count + activation_offset[layers]];
                     delta[row * delta_count + delta_offset[layers - 1]] = (Real(targets[sample]) - value) * beta * value * (Real(1) - value);
                 }
@@ -276,8 +288,18 @@ template <typename Real> __device__ void small_train(
         }
         if (invalid) break;
     }
-    for (int index = thread; index < parameters * 2; index += blockDim.x)
-        packed[base + index] = invalid ? NAN : double(state[index]);
+    if (checkpoint != nullptr) {
+        // Numerical failure belongs to this lane. Keep its resident checkpoint
+        // intact and let unrelated models complete; driver errors remain fatal.
+        if (thread == 0) checkpoint[0] = invalid ? 1.0 : 0.0;
+        for (int index = thread; index < parameters * 2; index += blockDim.x) {
+            checkpoint[index + 1] = invalid ? packed[base + index] : double(state[index]);
+            if (!invalid) packed[base + index] = double(state[index]);
+        }
+    } else {
+        for (int index = thread; index < parameters * 2; index += blockDim.x)
+            packed[base + index] = invalid ? NAN : double(state[index]);
+    }
 }
 } // namespace
 
@@ -292,4 +314,20 @@ extern "C" __global__ void small_train_fp32(double* packed, const double* inputs
     int epochs, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) {
     small_train<float>(packed, inputs, targets, orders, topology, active, models, layers, samples,
         epochs, batch_size, learning_rate, momentum, beta, mode, online);
+}
+
+
+// Heterogeneous search batches share immutable data, but every block has its
+// own topology, optimizer state, shuffle order and bounded epoch count.
+extern "C" __global__ void search_train_fp64(double* packed, const double* inputs, const double* targets,
+    const int* orders, const int* topology, const int* requests, double* checkpoint,
+    int models, int samples, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) {
+    small_train<double>(packed, inputs, targets, orders, topology, nullptr, models, 0, samples,
+        0, batch_size, learning_rate, momentum, beta, mode, online, requests, checkpoint);
+}
+extern "C" __global__ void search_train_fp32(double* packed, const double* inputs, const double* targets,
+    const int* orders, const int* topology, const int* requests, double* checkpoint,
+    int models, int samples, int batch_size, double learning_rate, double momentum, double beta, int mode, int online) {
+    small_train<float>(packed, inputs, targets, orders, topology, nullptr, models, 0, samples,
+        0, batch_size, learning_rate, momentum, beta, mode, online, requests, checkpoint);
 }

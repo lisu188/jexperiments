@@ -63,6 +63,8 @@ class NeuroLogTest {
 
     @Test fun disabledDetailDoesNotEvaluateSuppliersAndLoggingFailuresDoNotEscape() {
         root.level = Level.INFO
+        assertTrue(NeuroLog.isEnabled("training", Level.INFO))
+        assertFalse(NeuroLog.isEnabled("training", Level.FINE))
         NeuroLog.debug("training", "disabled") { error("must stay lazy") }
         NeuroLog.trace("training", "disabled") { error("must stay lazy") }
         assertTrue(records.isEmpty())

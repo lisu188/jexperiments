@@ -27,8 +27,8 @@ internal fun validateSmallState(state: NeuroTrainingState) {
     require(state.inputs.all { it.isFinite() } && state.targets.all { it.isFinite() }) { "Non-finite training dataset" }
 }
 
-internal fun validateSmallOrders(orders: Array<IntArray>, samples: Int) {
-    val seen = BooleanArray(samples)
+internal fun validateSmallOrders(orders: Array<IntArray>, samples: Int, seen: BooleanArray = BooleanArray(samples)) {
+    require(seen.size == samples) { "Permutation workspace does not match dataset" }
     for (order in orders) {
         require(order.size == samples) { "Each epoch order must contain every sample" }
         seen.fill(false)
@@ -46,6 +46,8 @@ internal fun smallVectorBits(parameters: Neuro.HyperParameters, vectorBits: Int)
 }
 
 /** Owns primitive compute state; snapshots are allocated only at publication boundaries. */
+internal data class SmallCpuAdvance(val epochs: Int, val state: NeuroTrainingState?)
+
 internal class SmallCpuTraining(
     state: NeuroTrainingState,
     parameters: Neuro.HyperParameters,
@@ -57,6 +59,7 @@ internal class SmallCpuTraining(
             state.topology.drop(1).dropLast(1).all { it == 4 }) 128 else selected
     }
     private val samples: Int
+    private val seen: BooleanArray
     private val compute: SmallCpuCompute
     private var closed = false
     override val info = TrainingDeviceInfo(TrainingBackend.CPU, "CPU", "jvm-cpu",
@@ -65,6 +68,7 @@ internal class SmallCpuTraining(
     init {
         validateSmallState(state)
         samples = state.samples
+        seen = BooleanArray(samples)
         compute = if (precision == Neuro.TrainingPrecision.FP32) SmallFloatCompute(state, parameters, bits)
             else SmallDoubleCompute(state, parameters, bits)
     }
@@ -72,9 +76,24 @@ internal class SmallCpuTraining(
     override fun train(orders: Array<IntArray>, batchSize: Int, online: Boolean): NeuroTrainingState {
         check(!closed) { "Small CPU kernel is closed" }
         require(batchSize > 0) { "batchSize must be > 0" }
-        validateSmallOrders(orders, samples)
+        validateSmallOrders(orders, samples, seen)
         compute.train(orders, batchSize, online)
         return compute.snapshot()
+    }
+
+    fun advanceForSearch(orders: Array<IntArray>, batchSize: Int, online: Boolean,
+                         mayTrainEpoch: (Int) -> Boolean): SmallCpuAdvance {
+        check(!closed) { "Small CPU kernel is closed" }
+        require(batchSize > 0)
+        validateSmallOrders(orders, samples, seen)
+        var completed = 0
+        for (order in orders) {
+            if (!mayTrainEpoch(completed)) break
+            compute.trainEpoch(order, batchSize, online)
+            compute.validateFinite()
+            completed++
+        }
+        return SmallCpuAdvance(completed, if (completed == 0) null else compute.snapshot())
     }
 
     override fun close() { closed = true }
@@ -82,19 +101,22 @@ internal class SmallCpuTraining(
 
 private interface SmallCpuCompute {
     fun train(orders: Array<IntArray>, batchSize: Int, online: Boolean)
+    fun trainEpoch(order: IntArray, batchSize: Int, online: Boolean)
+    fun validateFinite()
     fun snapshot(): NeuroTrainingState
 }
 
 private class SmallDoubleCompute(state: NeuroTrainingState, private val parameters: Neuro.HyperParameters, private val bits: Int) : SmallCpuCompute {
     private val topology = state.topology.copyOf()
-    private val originalInputs = state.inputs.copyOf()
-    private val originalTargets = state.targets.copyOf()
+    private val sharedDataset = state.sharedDataset
+    private val originalInputs = if (state.sharedDataset) state.inputs else state.inputs.copyOf()
+    private val originalTargets = if (state.sharedDataset) state.targets else state.targets.copyOf()
     private val weights = Array(state.weights.size) { i -> smallDoubles(state.weights[i]) }
     private val biases = Array(state.biases.size) { i -> smallDoubles(state.biases[i]) }
     private val velocity = Array(state.weightVelocity.size) { i -> smallDoubles(state.weightVelocity[i]) }
     private val biasVelocity = Array(state.biasVelocity.size) { i -> smallDoubles(state.biasVelocity[i]) }
-    private val inputs = smallDoubles(state.inputs)
-    private val targets = smallDoubles(state.targets)
+    private val inputs = originalInputs
+    private val targets = originalTargets
     private val activations = Array(topology.size) { DoubleArray(topology[it]) }
     private val deltas = Array(weights.size) { DoubleArray(topology[it + 1]) }
     private val gradients = Array(weights.size) { DoubleArray(weights[it].size) }
@@ -124,25 +146,34 @@ private class SmallDoubleCompute(state: NeuroTrainingState, private val paramete
     }
 
     override fun train(orders: Array<IntArray>, batchSize: Int, online: Boolean) {
-        for (order in orders) {
-            var start = 0
-            while (start < order.size) {
-                val count = if (online) 1 else minOf(batchSize, order.size - start)
-                if (!online) {
-                    gradients.forEach { it.fill(0.0) }
-                    biasGradients.forEach { it.fill(0.0) }
-                }
-                for (position in start until start + count) {
-                    val sample = order[position]
-                    inputs.copyInto(activations[0], 0, sample * 2, sample * 2 + 2)
-                    forward()
-                    backward(targets[sample], online)
-                    if (online) updateOnline() else accumulate()
-                }
-                if (!online) updateBatch(count)
-                transpose()
-                start += count
+        for (order in orders) trainEpoch(order, batchSize, online)
+    }
+
+    override fun trainEpoch(order: IntArray, batchSize: Int, online: Boolean) {
+        var start = 0
+        while (start < order.size) {
+            val count = if (online) 1 else minOf(batchSize, order.size - start)
+            if (!online) {
+                gradients.forEach { it.fill(0.0) }
+                biasGradients.forEach { it.fill(0.0) }
             }
+            for (position in start until start + count) {
+                val sample = order[position]
+                inputs.copyInto(activations[0], 0, sample * 2, sample * 2 + 2)
+                forward()
+                backward(targets[sample], online)
+                if (online) updateOnline() else accumulate()
+            }
+            if (!online) updateBatch(count)
+            transpose()
+            start += count
+        }
+    }
+
+    override fun validateFinite() {
+        check(weights.all { row -> row.all { it.isFinite() } } && biases.all { row -> row.all { it.isFinite() } } &&
+            velocity.all { row -> row.all { it.isFinite() } } && biasVelocity.all { row -> row.all { it.isFinite() } }) {
+            "Training produced non-finite parameters."
         }
     }
 
@@ -274,7 +305,8 @@ private class SmallDoubleCompute(state: NeuroTrainingState, private val paramete
     override fun snapshot() = NeuroTrainingState(topology.copyOf(),
         Array(weights.size) { i -> smallDoubles(weights[i]) }, Array(biases.size) { i -> smallDoubles(biases[i]) },
         Array(velocity.size) { i -> smallDoubles(velocity[i]) }, Array(biasVelocity.size) { i -> smallDoubles(biasVelocity[i]) },
-        originalInputs.copyOf(), originalTargets.copyOf())
+        if (sharedDataset) originalInputs else originalInputs.copyOf(),
+        if (sharedDataset) originalTargets else originalTargets.copyOf(), sharedDataset = sharedDataset)
 }
 
 /** EXACT keeps Math.exp per lane. FAST vectorizes the explicitly selected range-reduced polynomial. */
@@ -314,8 +346,9 @@ internal class SmallDoubleActivation(private val mode: Neuro.SigmoidMode, privat
 
 private class SmallFloatCompute(state: NeuroTrainingState, private val parameters: Neuro.HyperParameters, private val bits: Int) : SmallCpuCompute {
     private val topology = state.topology.copyOf()
-    private val originalInputs = state.inputs.copyOf()
-    private val originalTargets = state.targets.copyOf()
+    private val sharedDataset = state.sharedDataset
+    private val originalInputs = if (state.sharedDataset) state.inputs else state.inputs.copyOf()
+    private val originalTargets = if (state.sharedDataset) state.targets else state.targets.copyOf()
     private val weights = Array(state.weights.size) { i -> smallFloats(state.weights[i]) }
     private val biases = Array(state.biases.size) { i -> smallFloats(state.biases[i]) }
     private val velocity = Array(state.weightVelocity.size) { i -> smallFloats(state.weightVelocity[i]) }
@@ -351,25 +384,34 @@ private class SmallFloatCompute(state: NeuroTrainingState, private val parameter
     }
 
     override fun train(orders: Array<IntArray>, batchSize: Int, online: Boolean) {
-        for (order in orders) {
-            var start = 0
-            while (start < order.size) {
-                val count = if (online) 1 else minOf(batchSize, order.size - start)
-                if (!online) {
-                    gradients.forEach { it.fill(0.0f) }
-                    biasGradients.forEach { it.fill(0.0f) }
-                }
-                for (position in start until start + count) {
-                    val sample = order[position]
-                    inputs.copyInto(activations[0], 0, sample * 2, sample * 2 + 2)
-                    forward()
-                    backward(targets[sample], online)
-                    if (online) updateOnline() else accumulate()
-                }
-                if (!online) updateBatch(count)
-                transpose()
-                start += count
+        for (order in orders) trainEpoch(order, batchSize, online)
+    }
+
+    override fun trainEpoch(order: IntArray, batchSize: Int, online: Boolean) {
+        var start = 0
+        while (start < order.size) {
+            val count = if (online) 1 else minOf(batchSize, order.size - start)
+            if (!online) {
+                gradients.forEach { it.fill(0.0f) }
+                biasGradients.forEach { it.fill(0.0f) }
             }
+            for (position in start until start + count) {
+                val sample = order[position]
+                inputs.copyInto(activations[0], 0, sample * 2, sample * 2 + 2)
+                forward()
+                backward(targets[sample], online)
+                if (online) updateOnline() else accumulate()
+            }
+            if (!online) updateBatch(count)
+            transpose()
+            start += count
+        }
+    }
+
+    override fun validateFinite() {
+        check(weights.all { row -> row.all { it.isFinite() } } && biases.all { row -> row.all { it.isFinite() } } &&
+            velocity.all { row -> row.all { it.isFinite() } } && biasVelocity.all { row -> row.all { it.isFinite() } }) {
+            "Training produced non-finite parameters."
         }
     }
 
@@ -501,7 +543,8 @@ private class SmallFloatCompute(state: NeuroTrainingState, private val parameter
     override fun snapshot() = NeuroTrainingState(topology.copyOf(),
         Array(weights.size) { i -> smallExport(weights[i]) }, Array(biases.size) { i -> smallExport(biases[i]) },
         Array(velocity.size) { i -> smallExport(velocity[i]) }, Array(biasVelocity.size) { i -> smallExport(biasVelocity[i]) },
-        originalInputs.copyOf(), originalTargets.copyOf())
+        if (sharedDataset) originalInputs else originalInputs.copyOf(),
+        if (sharedDataset) originalTargets else originalTargets.copyOf(), sharedDataset = sharedDataset)
 }
 
 /** EXACT keeps Math.exp per lane. FAST vectorizes the explicitly selected range-reduced polynomial. */

@@ -1,0 +1,1567 @@
+{
+  "comparisons": [
+    {
+      "case": "REFERENCE/CPU/workers=1/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "REFERENCE",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 22058.4012,
+        "p95Ms": 24531.7598,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 13548.3726,
+        "p95Ms": 16470.3257,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 1.6281218306617873,
+      "medianReductionFraction": 0.3857953494834431,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "REFERENCE/CPU/workers=16/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "REFERENCE",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 6335.7275,
+        "p95Ms": 7539.2881,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 4292.6237,
+        "p95Ms": 4858.8972,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 1.4759568838983022,
+      "medianReductionFraction": 0.3224734333981377,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "REFERENCE/CPU/workers=32/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "REFERENCE",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 6053.1127,
+        "p95Ms": 6989.8502,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 4024.1141,
+        "p95Ms": 4569.625,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 1.5042100073653477,
+      "medianReductionFraction": 0.33519921081264525,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "REFERENCE/CPU/workers=4/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "REFERENCE",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 8636.0872,
+        "p95Ms": 9676.9607,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 4870.3805,
+        "p95Ms": 6008.9243,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 1.773185318888329,
+      "medianReductionFraction": 0.43604315389497217,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "REFERENCE/CPU/workers=8/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "REFERENCE",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 6907.2983,
+        "p95Ms": 8114.4701,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 4667.7308,
+        "p95Ms": 5835.8149,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 1.4797979137957142,
+      "medianReductionFraction": 0.3242320517705164,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "cpu-v1",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "SMALL/CPU/workers=1/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "SMALL",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 15382.1107,
+        "p95Ms": 74238.6887,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 16624.9398,
+        "p95Ms": 68585.5251,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 0.9252430917073154,
+      "medianReductionFraction": -0.08079704562261414,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 360
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": false
+    },
+    {
+      "case": "SMALL/CPU/workers=16/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "SMALL",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 9620.3585,
+        "p95Ms": 43946.2392,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 4269.7921,
+        "p95Ms": 9664.4413,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 2.2531210594539255,
+      "medianReductionFraction": 0.5561712071332894,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "COHORT",
+            "kernel": "small-cpu-cohort-v1",
+            "simdBits": 256,
+            "trials": 251
+          },
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 109
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "SMALL/CPU/workers=32/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "SMALL",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 11521.3343,
+        "p95Ms": 36368.3936,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 4357.7431,
+        "p95Ms": 7671.974,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 2.643876436864762,
+      "medianReductionFraction": 0.6217674978843379,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "COHORT",
+            "kernel": "small-cpu-cohort-v1",
+            "simdBits": 256,
+            "trials": 360
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "SMALL/CPU/workers=4/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "SMALL",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 9141.2437,
+        "p95Ms": 34657.1208,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 5437.0058,
+        "p95Ms": 6330.6689,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 1.6813010756766162,
+      "medianReductionFraction": 0.40522253005901165,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "COHORT",
+            "kernel": "small-cpu-cohort-v1",
+            "simdBits": 256,
+            "trials": 130
+          },
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 230
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "SMALL/CPU/workers=8/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          1,
+          4,
+          8,
+          16,
+          32
+        ],
+        "backends": [
+          "CPU"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "SMALL",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 9478.5616,
+        "p95Ms": 42724.1175,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 4629.6884,
+        "p95Ms": 14228.7318,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 2.047343315805012,
+      "medianReductionFraction": 0.5115621340689499,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "COHORT",
+            "kernel": "small-cpu-cohort-v1",
+            "simdBits": 256,
+            "trials": 245
+          },
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 115
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "SESSION",
+            "kernel": "small-cpu-v1",
+            "simdBits": 256,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    },
+    {
+      "case": "SMALL/CUDA/workers=4/searchSeed=42",
+      "protocol": {
+        "type": "environment",
+        "sourceRevision": "529e7a9",
+        "java": "27+35-2325",
+        "vm": "OpenJDK 64-Bit Server VM",
+        "os": "Windows 11",
+        "arch": "amd64",
+        "osVersion": "10.0",
+        "cpuModel": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
+        "processors": 16,
+        "heapMaxBytes": 2147483648,
+        "workers": [
+          4
+        ],
+        "backends": [
+          "CUDA"
+        ],
+        "executions": [
+          "REFERENCE",
+          "OPTIMIZED"
+        ],
+        "engine": "SMALL",
+        "jvmArguments": [
+          "--add-modules=jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms128m",
+          "-Xmx2g",
+          "-Djneuro.log.level=OFF",
+          "-Djneuro.log.file=false",
+          "-Djneuro.benchmark.sourceRevision=529e7a9"
+        ],
+        "datasetFingerprint": "f8fc0ceb97466e339301faa42b05b45df6aee3c878a98986e65771cdac1d4dc9",
+        "trainingSamples": 176,
+        "validationSamples": 44,
+        "mode": "fixed",
+        "manifest": [
+          [
+            8
+          ],
+          [
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8
+          ],
+          [
+            8,
+            8,
+            8,
+            8
+          ],
+          [
+            4,
+            8
+          ],
+          [
+            16,
+            4
+          ],
+          [
+            4,
+            8,
+            16
+          ],
+          [
+            16,
+            8,
+            4,
+            8
+          ]
+        ],
+        "epochsPerSeed": 2000,
+        "seeds": [
+          1,
+          42,
+          123,
+          999,
+          2026
+        ],
+        "targetRmse": 0.01,
+        "requiredSuccesses": 4,
+        "batchSize": 1,
+        "precision": "FP64",
+        "sigmoid": "EXACT",
+        "checkEvery": 25,
+        "limitSeconds": 0,
+        "warmups": 1,
+        "repeats": 3,
+        "allocationScope": "JVM total allocated bytes, includes all threads"
+      },
+      "reference": {
+        "medianMs": 53335.3415,
+        "p95Ms": 63632.8152,
+        "rounds": 9,
+        "forks": 3
+      },
+      "optimized": {
+        "medianMs": 12461.5203,
+        "p95Ms": 12936.5596,
+        "rounds": 9,
+        "forks": 3
+      },
+      "speedup": 4.280002777831209,
+      "medianReductionFraction": 0.7663552918284023,
+      "p95Regression": false,
+      "matchingBestEpochs": true,
+      "maximumScaledParameterOrScoreError": 0.0,
+      "threeForkEvidence": true,
+      "provenanceComplete": true,
+      "stableEffectiveDevice": true,
+      "validExecutionRoutes": true,
+      "observedExecutionRoutes": {
+        "REFERENCE": [
+          {
+            "route": "COHORT",
+            "kernel": "small-v2/packed-fp64/4e1321cb41c3a629d068df357ed388634299c829fc30c12d91fdd81ec7e769ed",
+            "simdBits": 0,
+            "trials": 193
+          },
+          {
+            "route": "SESSION",
+            "kernel": "small-v2/packed-fp64/4e1321cb41c3a629d068df357ed388634299c829fc30c12d91fdd81ec7e769ed",
+            "simdBits": 0,
+            "trials": 167
+          }
+        ],
+        "OPTIMIZED": [
+          {
+            "route": "CUDA_QUEUE",
+            "kernel": "small-search-v3/packed-fp64/4e1321cb41c3a629d068df357ed388634299c829fc30c12d91fdd81ec7e769ed",
+            "simdBits": 0,
+            "trials": 360
+          }
+        ]
+      },
+      "qualifies": true
+    }
+  ],
+  "incompleteOrFailed": [],
+  "pairingScope": "Same process, same round, same complete manifest and seeds; all configured warmups and rounds required.",
+  "parityScope": "Every measured reference and optimized best snapshot, best/final RMSE and best epoch; optimizer/shuffle parity is covered by tests."
+}

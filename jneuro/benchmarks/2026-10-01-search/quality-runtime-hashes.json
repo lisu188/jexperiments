@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-01T04:29:01.283744+00:00",
+  "builtFrom": "7a0a1ab61c848500316367cb12720662b9f96ff0",
+  "note": "Read-only hashes of selected compiled runtime inputs during active quality jobs. The completed 04:04-04:06 local build used 7a0a1ab; later source-only logging and documentation edits have not recompiled these files. This is not a complete dependency manifest.",
+  "files": {
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/Neuro.class": {
+      "bytes": 56985,
+      "sha256": "f1d22dd1b98f422e62fc7744ad5c422eb60c1d3c66ef18de8643b43608fc374b"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/NeuroTrainingSessionKt.class": {
+      "bytes": 25553,
+      "sha256": "891b35441b081a0bf158ba857c0b79e1a43438246f42f20287ac825313aaab78"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallTrainingSession.class": {
+      "bytes": 18338,
+      "sha256": "ece5e7af98690240daac412d997bedb89dda2fd785faaf0145e4b15058b4a18a"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SmallCpuTraining.class": {
+      "bytes": 7850,
+      "sha256": "1a57bc6458da0e2e02a8b1508d1f8c3647337c98198b4928526effdee26b866f"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SearchCudaService.class": {
+      "bytes": 38115,
+      "sha256": "4127defad4dd6ade416aa41e401c0a02ce73732784040abbdf50b3f91569e2f7"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SearchCudaSession.class": {
+      "bytes": 12984,
+      "sha256": "5827607d2fc2cd06206abff1a8c6e6ab5e92dedc7f336d3671a676eedbbfb6df"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/OptimizedArchitectureTrial.class": {
+      "bytes": 29114,
+      "sha256": "87806e9fde1575e4e314c1266a1d040bfce23a7fcb61c8e2f42e70808a20dd8a"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/NeuroArchitectureSearch.class": {
+      "bytes": 62519,
+      "sha256": "c5f3a81da7f428175a664c6260a75ff368c5d3899fcf72f48b5891ea829192e4"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/ArchitectureTrialDispatcher.class": {
+      "bytes": 20492,
+      "sha256": "d9b00159c7033d332c3bac77a48b5132a4bc8c2ebcebc6f0d362802ee40f62a7"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/ArchitectureSearchBenchmark.class": {
+      "bytes": 6706,
+      "sha256": "c1ad37756f0afe3c3b66589ad5cb68fc54f3b426275f2fe7bab3d79a24ec8a53"
+    },
+    "jneuro/build/classes/kotlin/main/com/lis/neuro/SearchBenchmarkHarness.class": {
+      "bytes": 48307,
+      "sha256": "82dfb06ed7ec5eeb9dc9b304cc7efa3045a55b732d1f2a6fe48db3218488e09f"
+    },
+    "jneuro/build/resources/main/com/lis/neuro/cuda/train.ptx": {
+      "bytes": 201102,
+      "sha256": "4e1321cb41c3a629d068df357ed388634299c829fc30c12d91fdd81ec7e769ed"
+    }
+  },
+  "postRunInspection": {
+    "at": "2026-10-01T05:11:06.927812+00:00",
+    "allSelectedFilesUnchanged": true
+  }
+}

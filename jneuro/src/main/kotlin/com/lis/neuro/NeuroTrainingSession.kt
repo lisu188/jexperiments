@@ -74,7 +74,9 @@ internal data class NeuroTrainingState(
     val weightVelocity: Array<DoubleArray>,
     val biasVelocity: Array<DoubleArray>,
     val inputs: DoubleArray,
-    val targets: DoubleArray
+    val targets: DoubleArray,
+    /** Internal read-only dataset ownership; parameter and momentum buffers remain independent snapshots. */
+    val sharedDataset: Boolean = false
 ) {
     val samples: Int get() = inputs.size / topology[0]
 }
@@ -134,9 +136,10 @@ internal fun openConfiguredTrainingSession(
     }
 }
 
-private class DefaultTrainingSession(private val network: Neuro, backend: TrainingBackend,
+internal class DefaultTrainingSession(private val network: Neuro, backend: TrainingBackend,
                                      driverFactory: () -> CudaDriver,
-                                     private val batchSize: Int) : NeuroTrainingSession {
+                                     private val batchSize: Int,
+                                     private val clock: () -> Long = System::nanoTime) : NeuroTrainingSession, SearchEpochAdvancer {
     private val sessionId = NeuroLog.id("session")
     private val openedNanos = System.nanoTime()
     private val initialEpoch: Long
@@ -165,7 +168,7 @@ private class DefaultTrainingSession(private val network: Neuro, backend: Traini
                         action: () -> T): T = network.withTraining(this) {
         loggedTraining(network, sessionId, info, operation, epochs, batch, parallelism, details, initialEpoch) {
             check(!closed) { "Training session is closed." }
-            check(!failed) { "CUDA training failed. Close this session before continuing from the last completed epoch." }
+            check(!failed) { "Training failed. Close this session before continuing from the last completed epoch." }
             try { action() } catch (failure: Throwable) {
                 if (cuda != null && failure !is IllegalArgumentException) failed = true
                 throw failure
@@ -179,6 +182,30 @@ private class DefaultTrainingSession(private val network: Neuro, backend: Traini
     }
 
     override fun trainEpoch(): Double = run("trainEpoch", 1) { epoch() }
+
+    override fun advanceForSearch(request: TrainingChunkRequest): SearchAdvanceResult {
+        require(request.targetError == null) { "Search must complete its full trial budget without target stopping" }
+        if (cuda != null) return searchAdvanceFallback(this, request)
+        return run("advanceForSearch", request.maxEpochs) {
+            val started = clock()
+            var completed = 0
+            var termination = TrainingTermination.COMPLETED
+            while (completed < minOf(64, request.maxEpochs)) {
+                if (request.cancelled()) { termination = TrainingTermination.CANCELLED; break }
+                if (completed > 0 && clock() - started >= request.maxNanos) { termination = TrainingTermination.BUDGET; break }
+                try { network.advanceCpuSearchEpoch(batchSize) }
+                catch (failure: Throwable) { failed = true; throw failure }
+                completed++
+            }
+            if (termination == TrainingTermination.COMPLETED && completed < request.maxEpochs) termination = TrainingTermination.BUDGET
+            val error = if (completed > 0 && completed == request.maxEpochs) network.trainingError().also {
+                if (!it.isFinite()) failed = true
+                check(it.isFinite()) { "Training produced a non-finite RMSE." }
+                network.recordTrainingError(it)
+            } else null
+            SearchAdvanceResult(completed, error, termination)
+        }
+    }
 
     override fun train(epochs: Int) = run("train", epochs) {
         require(epochs >= 0) { "epochs must be >= 0" }
@@ -236,38 +263,50 @@ internal fun <T> loggedTraining(network: Neuro, sessionId: String?, info: Traini
                                operation: String, requestedEpochs: Int, batchSize: Int,
                                parallelism: Int = 1, details: Map<String, Any?> = emptyMap(), initialEpoch: Long = 0,
                                action: () -> T): T {
-    val before = network.statistics()
+    val logProgress = NeuroLog.isEnabled("training", java.util.logging.Level.INFO)
+    val searchAdvance = operation == "advanceForSearch"
+    val beforeEpoch = network.trainingEpochCount()
+    val beforeSamples = network.processedSampleCount()
     val started = System.nanoTime()
-    val runId = NeuroLog.id("run")
+    var runId: String? = null
     fun fields(after: Neuro.Statistics) = linkedMapOf<String, Any?>(
-        "model" to network.logId, "session" to sessionId, "run" to runId, "operation" to operation,
+        "model" to network.logId, "session" to sessionId,
+        "run" to (runId ?: NeuroLog.id("run").also { runId = it }), "operation" to operation,
         "backend" to info.backend, "device" to info.name, "deviceIdentity" to info.identity,
         "precision" to info.precision, "kernel" to info.kernelVersion,
         "requestedEpochs" to requestedEpochs, "requestedBatchSize" to batchSize,
         "batchSize" to minOf(batchSize, network.trainingSampleCount()), "requestedParallelism" to parallelism,
         "cpuParallelism" to if (info.backend == TrainingBackend.CPU) parallelism else null,
-        "trainingSamples" to network.trainingSampleCount(), "completedEpochs" to (after.epochsTrained - before.epochsTrained),
-        "totalEpochs" to after.epochsTrained, "samplesProcessed" to (after.samplesSeen - before.samplesSeen),
+        "trainingSamples" to network.trainingSampleCount(), "completedEpochs" to (after.epochsTrained - beforeEpoch),
+        "totalEpochs" to after.epochsTrained, "samplesProcessed" to (after.samplesSeen - beforeSamples),
         "totalSamplesSeen" to after.samplesSeen, "lastRecordedRmse" to after.lastTrainingError,
         "durationMs" to ((System.nanoTime() - started) / 1_000_000.0)).apply { putAll(details) }
-    if (requestedEpochs > 1 || operation == "trainUntil")
-        NeuroLog.info("training", "training.started") { fields(before) }
-    else NeuroLog.debug("training", "training.started") { fields(before) }
+    if (logProgress) {
+        val before = network.statistics()
+        if (!searchAdvance && (requestedEpochs > 1 || operation == "trainUntil"))
+            NeuroLog.info("training", "training.started") { fields(before) }
+        else NeuroLog.debug("training", "training.started") { fields(before) }
+    }
     try {
         val result = action()
+        if (!logProgress) return result
         val after = network.statistics()
         fun completedFields() = fields(after).apply {
             put("gpuWorkCompleted", (info.backend == TrainingBackend.CUDA || info.backend == TrainingBackend.CUBLAS) &&
-                after.epochsTrained > before.epochsTrained)
+                after.epochsTrained > beforeEpoch)
             when (result) {
                 is Double -> put("rmse", result)
                 is Neuro.TrainingResult -> { put("rmse", result.error); put("converged", result.converged) }
                 is TrainingChunkResult -> { put("rmse", result.rmse); put("termination", result.termination) }
+                is SearchAdvanceResult -> { put("rmse", result.rmse); put("termination", result.termination) }
             }
         }
-        // UI/architecture loops call a single epoch repeatedly. INFO remains useful and bounded.
-        if (requestedEpochs != 1 || operation == "trainUntil" ||
-            before.epochsTrained == initialEpoch || after.epochsTrained / 100 > before.epochsTrained / 100) {
+        // Search chunks are streaming progress just like repeated single-epoch calls.
+        // Only published work can sample the initial session or a crossed hundred-epoch boundary.
+        val sampledProgress = beforeEpoch == initialEpoch || after.epochsTrained / 100 > beforeEpoch / 100
+        val infoCompletion = if (searchAdvance) after.epochsTrained > beforeEpoch && sampledProgress
+            else requestedEpochs != 1 || operation == "trainUntil" || sampledProgress
+        if (infoCompletion) {
             NeuroLog.info("training", "training.completed") { completedFields() }
         } else NeuroLog.debug("training", "training.completed") { completedFields() }
         return result
