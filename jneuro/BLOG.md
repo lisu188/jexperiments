@@ -923,6 +923,16 @@ The CPU bottleneck was larger than the arithmetic kernel. A search scores every 
 
 Progress snapshots iterate the concurrent activity map into a private list before sorting by submission index. Sorting the live entry collection directly was unsafe: Kotlin's single-element collection-copy shortcut could observe size one, then call `next()` after a worker removed that final entry. Copying through iteration avoids that race while retaining a weakly consistent view of running trials; final trial results still come from the completion queue.
 
+The panel reuses candidate rankings between paints, but that cache must have the same lifetime as the displayed search. Starting another search or invalidating results clears both the candidate-list key and the cached selection before publishing the table change:
+
+~~~kotlin
+private fun clearRankingCache() {
+    rankedCandidates = null; rankedPolicy = null; rankedConfig = null; cachedSelection = null
+}
+~~~
+
+Clearing only the visible results left the old candidates, trial histories and parameter snapshots reachable through those cache fields. Once invalidation sets `config` to null, ranking returns early, so repainting cannot evict that stale state. Explicit release prevents the previous search from occupying checkpoint memory while the Studio is idle or the next search is starting. Tests inspect reference release on the event thread instead of depending on garbage-collection timing; native-control regression coverage also checks reset after inspecting completed results. Later results rebuild the ranking normally, and replay failures continue to retain their intentionally inspectable search results.
+
 The search-only advance interface makes the scoring contract explicit:
 
 ~~~kotlin

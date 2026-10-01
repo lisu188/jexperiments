@@ -648,9 +648,11 @@ class NeuroGuiTest {
         await("scatter selection") { field(panel,"selected") != null }
         screenshot("search-results")
         val trial = edt { field(panel,"chosenTrial") as ArchitectureTrial }
+        assertRankingCacheContains(report)
         click(button("Replay selected run"))
         await("replay installation") { current.replayNote.isNotEmpty() && current.diagnostics.epoch() == trial.bestEpoch }
         assertTrue(edt { current.replayNote.contains("Search replay") })
+        assertSearchResultsReleased()
         click(button("Reset")); await("replay reset") { current.replayNote.isEmpty() && current.diagnostics.epoch() == 0 }
         tab("Architecture search"); searchSettings(50)
         choose(combo("Search strategy",panel),ArchitectureSearchStrategy.ADAPTIVE.ordinal)
@@ -668,8 +670,26 @@ class NeuroGuiTest {
             val proposal = adaptive.lineage.first { it.architecture == adaptive.candidates[row].architecture }
             assertEquals(proposal.parent?.toString() ?: "—", edt { ancestry.model.getValueAt(row, 7) })
         }
+        assertRankingCacheContains(adaptive)
         click(button("Apply architecture"))
         await("fresh chosen model") { current.config.maxEpochs == 50 && current.diagnostics.epoch() == 0 && current.replayNote.isEmpty() }
+        assertSearchResultsReleased()
+
+        tab("Architecture search")
+        number("Epochs per seed", "25", panel)
+        choose(combo("Search strategy", panel), ArchitectureSearchStrategy.EXHAUSTIVE.ordinal)
+        click(button("Start search")); await("completed sweep before reset") { field(panel,"result") != null }
+        val resetReport = edt { field(panel,"result") as ArchitectureSearchResult }
+        assertEquals(3, resetReport.evaluated)
+        assertRankingCacheContains(resetReport)
+        click(button("Reset"))
+        await("completed search reset") {
+            field(panel,"result") == null && current.state == StudioState.CONVERGED &&
+                current.diagnostics.epoch() == 0 && current.replayNote.isEmpty()
+        }
+        assertTrue(edt { current.diagnostics.error() <= current.config.targetError },
+            "The fresh model already meets this search's 0.9 target before any training")
+        assertSearchResultsReleased()
     }
 
     @Test fun searchDeadlineDoesNotRecommendIncompleteCandidates() {
@@ -833,6 +853,31 @@ class NeuroGuiTest {
         assertEquals(ArchitectureTermination.CANCELLED, report.termination)
         assertEquals(32, report.peakParallelTrials)
         assertTrue(edt { (field(panel, "progressBar") as JProgressBar).string.contains("peak ${report.peakParallelTrials}/32") })
+    }
+
+    private fun assertRankingCacheContains(report: ArchitectureSearchResult) = edt {
+        assertSame(report, field(panel, "result"))
+        val ranked = field(panel, "rankedCandidates") as List<*>
+        assertEquals(report.candidates.size, ranked.size)
+        assertTrue(ranked.indices.all { ranked[it] === report.candidates[it] },
+            "The regression must populate the cache with the completed search's actual checkpoints")
+        assertNotNull(field(panel, "cachedSelection"))
+        assertSame(report.config, field(panel, "rankedConfig"))
+        assertNotNull(field(panel, "rankedPolicy"))
+    }
+
+    private fun assertSearchResultsReleased() {
+        await("search result invalidation") { field(panel, "result") == null && field(panel, "config") == null }
+        edt {
+            assertTrue((field(panel, "results") as List<*>).isEmpty())
+            assertNull(field(panel, "chosenTrial"))
+            assertNull(field(panel, "surface"))
+            for (name in listOf("rankedCandidates", "cachedSelection", "rankedConfig", "rankedPolicy", "shownLineage")) {
+                assertNull(field(panel, name), "Invalidation must release $name without depending on garbage collection")
+            }
+            assertFalse(button("Apply architecture").isEnabled)
+            assertFalse(button("Replay selected run").isEnabled)
+        }
     }
 
     private fun configure(hidden: String, epochs: Int, target: Double) {
