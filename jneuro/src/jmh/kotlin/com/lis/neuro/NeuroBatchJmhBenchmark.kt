@@ -11,7 +11,7 @@ import org.openjdk.jmh.annotations.*
 @State(Scope.Thread)
 open class NeuroBatchJmhBenchmark {
     @Param("small", "medium") @JvmField var topology = "small"
-    @Param("8", "32", "128") @JvmField var batchSize = 8
+    @Param("8", "32", "257") @JvmField var batchSize = 8
     @Param("1", "2") @JvmField var parallelism = 1
     @Param("EXACT", "FAST") @JvmField var sigmoid = "EXACT"
     private lateinit var session: Neuro.InferenceSession

@@ -149,7 +149,9 @@ internal object TensorFlowMath {
         private val biases = topology.drop(1).indices.map { layer ->
             definition.placeholder("bias$layer", longArrayOf(topology[layer + 1].toLong()))
         }
-        private val activations = definition.forward(input, weights, biases, hp)
+        // TensorFlow forbids feeding and fetching the same tensor in one run.
+        // An identity lets diagnostic callers fetch the input layer as well.
+        private val activations = definition.forward(definition.op("Identity", input), weights, biases, hp)
         private val rmse = definition.rmse(activations.last(), target)
         private val runtime = definition.open()
 

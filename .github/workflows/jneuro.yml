@@ -8,14 +8,12 @@ on:
       - 'build.gradle'
       - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
-      - '.github/workflows/jneuro-tensorflow.yml'
   pull_request:
     paths:
       - 'jneuro/**'
       - 'build.gradle'
       - 'AGENTS.md'
       - '.github/workflows/jneuro.yml'
-      - '.github/workflows/jneuro-tensorflow.yml'
 
 permissions:
   contents: read

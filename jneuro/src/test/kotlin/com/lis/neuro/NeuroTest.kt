@@ -201,8 +201,9 @@ class NeuroTest {
         model.newParallelInferenceSession(3).use { it.predictBatch(input, batch, parallel) }
         assertArrayEquals(sequential, parallel, 1e-12)
         assertArrayEquals(doubleArrayOf(-7.0, -7.0, -7.0), sequential.takeLast(3).toDoubleArray())
+        val beforeEmptyBatch = sequential.copyOf()
         model.predictBatch(doubleArrayOf(), 0, sequential)
-        assertArrayEquals(sequential, parallel, 0.0)
+        assertArrayEquals(beforeEmptyBatch, sequential, 0.0)
 
         val snapshot = model.toFloatModel()
         val floatInput = FloatArray(input.size) { input[it].toFloat() }
@@ -210,7 +211,9 @@ class NeuroTest {
         val floatOutput = FloatArray(batch * 2 + 3) { -8.0f }
         snapshot.predictBatch(floatInput, batch, floatOutput)
         assertArrayEquals(floatArrayOf(-8.0f, -8.0f, -8.0f), floatOutput.takeLast(3).toFloatArray())
+        val beforeEmptyFloatBatch = floatOutput.copyOf()
         snapshot.predictBatch(floatArrayOf(), 0, floatOutput)
+        assertArrayEquals(beforeEmptyFloatBatch, floatOutput, 0.0f)
         model.train(2)
         assertArrayEquals(before, snapshot.predict(floatInput.copyOf(3)), 0.0f)
     }

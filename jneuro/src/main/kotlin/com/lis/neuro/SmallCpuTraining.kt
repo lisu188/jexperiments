@@ -1,6 +1,6 @@
 package com.lis.neuro
 
-/** The deliberately bounded family for the specialized streaming kernels. */
+/** The deliberately bounded family for the TensorFlow compatibility adapters. */
 internal object SmallNetworkShape {
     fun supports(topology: IntArray): Boolean = topology.size in 3..6 && topology.first() == 2 &&
         topology.last() == 1 && (1 until topology.lastIndex).all { topology[it] == 4 || topology[it] == 8 || topology[it] == 16 }

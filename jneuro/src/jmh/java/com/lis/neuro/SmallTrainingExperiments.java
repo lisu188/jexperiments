@@ -186,7 +186,7 @@ public final class SmallTrainingExperiments {
                 int actualWorkers = switch (engine) {
                     case "CPU_COHORT" -> Math.min(workers, count);
                     case "CPU_PARALLEL_CALL" -> Math.min(workers, count);
-                    case "GPU_COHORT" -> 0;
+                    case "GPU_COHORT" -> Math.min(workers, count);
                     default -> 1;
                 };
                 TrainingDeviceInfo device = group != null ? group.getInfo() : !sessions.isEmpty() ? sessions.getFirst().getInfo() :

@@ -8,7 +8,7 @@ The old scalar, Java Vector API, native AVX2, native BLAS, handwritten CUDA and 
 
 The boundary is `TensorFlowMath`. TensorFlow types do not appear in the Swing, architecture-search or public model contracts. This is TensorFlow's JVM API called from Kotlin, rather than a second application framework. KotlinDL also wraps TensorFlow, but the lower-level JVM API lets this experiment preserve its exact weight layout, additive momentum state, activation options and explicit publication boundaries without introducing another model representation.
 
-The official [TensorFlow Java project](https://github.com/tensorflow/java) documents Kotlin as a supported JVM client. JNeuro pins [TensorFlow Java 1.1.0](https://github.com/tensorflow/java/tree/v1.1.0), whose underlying TensorFlow runtime is 2.18.0. This is deliberate: 1.1 is the last release with native Windows CPU binaries. TensorFlow Java 1.2 dropped that platform. The build resolves only the native artifact for the current platform instead of downloading every supported platform.
+The official [TensorFlow Java project](https://github.com/tensorflow/java) documents Kotlin as a supported JVM client. JNeuro pins [TensorFlow Java 1.2.0](https://github.com/tensorflow/java/releases/tag/v1.2.0), whose underlying TensorFlow runtime is 2.21.0. This release no longer publishes native Windows binaries, so Windows users run the application through Linux/WSL. The build resolves only the native artifact for the current platform instead of downloading every supported platform.
 
 Kotlin 2.4.20 and JDK 27 remain the application toolchain, with JVM bytecode targeting 26. The repository's existing Gradle wrapper is retained. Swing, Java2D and FlatLaf continue to provide the desktop interface; numerical work needs no display.
 
@@ -37,7 +37,7 @@ try (NeuroTrainingSession session = network.newTrainingSession(
 
 `CPU` explicitly places the graph on `/device:CPU:0`. `CUDA` and the retained `CUBLAS` compatibility value select TensorFlow's GPU device. `AUTO` initially chooses CPU. `REFERENCE` and `SMALL` no longer identify separate numerical implementations; SMALL keeps its supported topology-family validation for existing experiment configurations. Likewise, old SCALAR/VECTOR kernel hints remain source-compatible but TensorFlow selects its own CPU kernels.
 
-Session metadata reports `tensorflow-<runtime-version>-dense-v1`, the actual CPU/GPU device, precision, activation mode and zero application-managed SIMD bits. Zero does not mean TensorFlow uses no SIMD; JNeuro does not inspect or claim the implementation details of TensorFlow's native kernels.
+Session metadata reports `tensorflow-<runtime-version>-dense-v1`, the actual CPU/GPU device, precision, activation mode and zero application-managed SIMD bits. Zero does not mean TensorFlow uses no SIMD; JNeuro does not inspect or claim the implementation details of TensorFlow's native kernels. Device identity is currently the logical TensorFlow placement, such as `GPU:0`, rather than a physical GPU UUID. Replay checks the recorded runtime/settings and reproduced score, but metadata alone does not establish identical physical hardware across machines.
 
 ## Graph construction and forward inference
 
@@ -114,7 +114,7 @@ Neuron probes use TensorFlow for input-weight products, preactivation sums and p
 
 ## CPU, GPU and native dependencies
 
-Ordinary Windows and Linux CPU use resolves the matching TensorFlow native artifact automatically:
+Linux CPU use, including WSL on Windows, resolves the matching TensorFlow native artifact automatically. Run these commands from a Linux shell with the repository's JDK installed inside Linux. The Studio needs a graphical session, such as WSLg:
 
 ```text
 ./gradlew :jneuro:runXorCanvas
@@ -137,7 +137,7 @@ The capability probe runs an explicitly placed TensorFlow matrix multiplication 
 
 The module retains the repository's 90% line-coverage requirement and separate 90% native GUI-path requirement. Numerical tests use analytic expected values, multi-output loss scaling, non-unit beta, momentum continuation, FP32 rounding, ragged batches and explicit order handling. Session tests cover ownership, cancellation, rejected arguments, failed chunks, reopening and transactional publication. Diagnostic tests cover batched ordering, detached snapshots and tile boundaries.
 
-Linux CI runs the full build, JNeuro checks, rendering and native Robot GUI paths under Xvfb. A Windows CPU workflow verifies the platform intentionally retained by the pinned dependency. GPU acceptance remains explicit and requires actual hardware; a green CPU workflow is not evidence that GPU training ran.
+Linux CI runs the full build, JNeuro checks, rendering and native Robot GUI paths under Xvfb. Native Windows execution is unsupported by the pinned TensorFlow release; use Linux/WSL instead. GPU acceptance remains explicit and requires actual hardware; a green CPU workflow is not evidence that GPU training ran.
 
 Useful focused commands are:
 

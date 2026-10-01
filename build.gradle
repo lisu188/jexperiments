@@ -592,20 +592,29 @@ project(':jneuro') {
 
     dependencies {
         implementation 'com.formdev:flatlaf:3.7.2'
-        // 1.1 is the last TensorFlow JVM release publishing Windows CPU binaries.
-        // Resolve one native platform only; GPU is an explicit Linux runtime selection.
-        implementation 'org.tensorflow:tensorflow-core-api:1.1.0'
+        // Resolve one native platform only; Windows users run JNeuro through Linux/WSL.
+        def tfVersion = '1.2.0'
+        implementation "org.tensorflow:tensorflow-core-api:${tfVersion}"
         def tfOs = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT)
         def tfArm = System.getProperty('os.arch') in ['aarch64', 'arm64']
         def tfGpu = providers.gradleProperty('neuroTensorFlowGpu').orElse('false').get().toBoolean()
-        if (tfGpu && (!tfOs.contains('linux') || tfArm)) {
-            throw new GradleException('TensorFlow GPU requires Linux x86_64, including WSL. Windows supports CPU.')
+        // Defer platform validation until JNeuro dependencies are resolved, so unrelated
+        // modules can still build on hosts without a supported TensorFlow runtime.
+        def tfNative = providers.provider {
+            if (tfGpu && (!tfOs.contains('linux') || tfArm)) {
+                throw new GradleException('TensorFlow GPU requires Linux x86_64, including WSL.')
+            }
+            def tfPlatform
+            if (tfOs.contains('linux')) {
+                tfPlatform = tfArm ? 'linux-arm64' : tfGpu ? 'linux-x86_64-gpu' : 'linux-x86_64'
+            } else if (tfOs.contains('mac') && tfArm) {
+                tfPlatform = 'macosx-arm64'
+            } else {
+                throw new GradleException('TensorFlow Java 1.2 requires Linux/WSL or Apple Silicon macOS. Run JNeuro through Linux/WSL on Windows.')
+            }
+            "org.tensorflow:tensorflow-core-native:${tfVersion}:${tfPlatform}"
         }
-        def tfPlatform = tfOs.contains('windows') ? 'windows-x86_64' :
-                tfOs.contains('mac') ? 'macosx-arm64' : tfArm ? 'linux-arm64' :
-                tfGpu ? 'linux-x86_64-gpu' : 'linux-x86_64'
-        if (tfOs.contains('mac') && !tfArm) throw new GradleException('TensorFlow 1.1 requires Apple Silicon on macOS.')
-        runtimeOnly "org.tensorflow:tensorflow-core-native:1.1.0:${tfPlatform}"
+        runtimeOnly tfNative
         jmhImplementation 'org.openjdk.jmh:jmh-core:1.37'
         kaptJmh 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
         jmhAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
