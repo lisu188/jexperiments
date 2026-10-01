@@ -6,6 +6,9 @@ import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.imageio.ImageIO
 import javax.swing.*
 import javax.swing.text.JTextComponent
@@ -371,6 +374,7 @@ class NeuroGuiTest {
             it.deviceInfo?.backend == TrainingBackend.CUDA && it.deviceInfo.precision == "FP32"
         } })
         val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
+        val openedBeforeReplay = sessions.configurations.size
         click(button("Replay selected run"))
         await("CUBLAS batch replay installed") { current.replayNote.isNotEmpty() && field(ui, "searchRunning") == false }
         assertEquals(TrainingBackend.CUDA, edt { current.config.backend })
@@ -378,7 +382,13 @@ class NeuroGuiTest {
         assertEquals(3, edt { current.config.batchSize })
         assertEquals(trial.deviceInfo, edt { current.deviceInfo })
         assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
-        assertTrue(sessions.configurations.all { it == Triple(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32, 3) })
+        assertTrue(sessions.configurations.take(openedBeforeReplay).all {
+            it == Triple(TrainingBackend.CUBLAS, Neuro.TrainingPrecision.FP32, 3)
+        })
+        assertTrue(sessions.configurations.size > openedBeforeReplay)
+        assertTrue(sessions.configurations.drop(openedBeforeReplay).all {
+            it == Triple(TrainingBackend.CUDA, Neuro.TrainingPrecision.FP32, 3)
+        })
         assertTrue(sessions.miniBatches.all { it == 3 })
         assertEquals(sessions.opened.get(), sessions.closed.get())
     }
@@ -742,6 +752,13 @@ class NeuroGuiTest {
         searchSettings(25)
         number("Min width", "4", panel); number("Max width", "4", panel)
         number("Epochs per seed", "7", panel); number("Check every (epochs)", "3", panel)
+        val epochHelp = edt {
+            val spinner = descendants(panel).filterIsInstance<JSpinner>()
+                .first { it.accessibleContext?.accessibleName == "Epochs per seed" }
+            (spinner.editor as JSpinner.DefaultEditor).textField.toolTipText
+        }
+        assertTrue(epochHelp.contains("full epoch budget, even after meeting the target"))
+        assertTrue(epochHelp.contains("every seed of the first architecture"))
         text(input("Seeds", panel), "1,42"); number("Required successes", "2", panel)
         number("Parallel seed trials", "2", panel); number("Trial budget", "2", panel)
         choose(combo("Scoring mode", panel), ArchitectureEvaluation.VALIDATION.ordinal)
@@ -774,7 +791,7 @@ class NeuroGuiTest {
         number("Check every (epochs)", "25", panel)
         click(button("Start search"))
         await("optimized Spiral makes progress") {
-            (field(panel, "summary") as JLabel).text.matches(Regex(".*epoch [1-9][0-9]*.*"))
+            (field(panel, "summary") as JLabel).text.matches(Regex(".*epoch [1-9][0-9]*/${Int.MAX_VALUE}"))
         }
         click(button("Cancel search"))
         await("optimized Spiral cancelled") { (field(panel, "result") as ArchitectureSearchResult?)?.termination == ArchitectureTermination.CANCELLED }
@@ -835,6 +852,8 @@ class NeuroGuiTest {
 
     @Test fun parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization() {
         configure("4,5,6,7,8", 1, 0.0)
+        val sessions = ControlledSearchSessions()
+        edt { ui.trainingSessionFactory = sessions::open }
         tab("Architecture search"); searchSettings(100_000)
         number("Max layers", "6", panel); number("Max width", "16", panel)
         number("Max parameters", "2048", panel)
@@ -843,23 +862,66 @@ class NeuroGuiTest {
         text(input("Seeds", panel), "42")
         number("Check every (epochs)", "100", panel)
         choose(combo("Search strategy", panel), ArchitectureSearchStrategy.ADAPTIVE.ordinal)
-        click(button("Start search"))
-        await("32 concurrent search trials") {
-            val text = (field(panel, "summary") as JLabel).text
-            val active = Regex("Active trials: (\\d+)/32").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            active == 32
+        try {
+            click(button("Start search"))
+            await("32 concurrent search trials") {
+                val text = (field(panel, "summary") as JLabel).text
+                val active = Regex("Active trials: (\\d+)/32").find(text)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                active == 32 && sessions.waiting.count == 0L
+            }
+            val summary = edt { (field(panel, "summary") as JLabel).text }
+            assertTrue((Regex("(\\d+) architectures").find(summary)?.groupValues?.get(1)?.toInt() ?: 0) > 1)
+            assertTrue(summary.contains("CPU workers 32/32"))
+            assertEquals(100_000, sessions.firstEpochs.get(), "The initial seed must finish its full requested budget.")
+            assertEquals(32, edt { (field(panel, "config") as ArchitectureSearchConfig).parallelism })
+            assertEquals(listOf(42L), edt { (field(panel, "config") as ArchitectureSearchConfig).seeds })
+            screenshot("parallel-trials")
+            click(button("Cancel search"))
+            sessions.release.countDown()
+            await("parallel cancellation") { field(panel, "result") != null }
+            val report = edt { field(panel, "result") as ArchitectureSearchResult }
+            assertEquals(ArchitectureTermination.CANCELLED, report.termination)
+            assertEquals(32, report.peakParallelTrials)
+            assertEquals(32, report.peakWorkers)
+            assertEquals(sessions.opened.get(), sessions.closed.get())
+            assertTrue(edt { (field(panel, "progressBar") as JProgressBar).string.contains("peak ${report.peakParallelTrials}/32") })
+        } finally {
+            sessions.release.countDown()
         }
-        val summary = edt { (field(panel, "summary") as JLabel).text }
-        assertTrue((Regex("(\\d+) architectures").find(summary)?.groupValues?.get(1)?.toInt() ?: 0) > 1)
-        assertEquals(32, edt { (field(panel, "config") as ArchitectureSearchConfig).parallelism })
-        assertEquals(listOf(42L), edt { (field(panel, "config") as ArchitectureSearchConfig).seeds })
-        screenshot("parallel-trials")
-        click(button("Cancel search"))
-        await("parallel cancellation") { field(panel, "result") != null }
-        val report = edt { field(panel, "result") as ArchitectureSearchResult }
-        assertEquals(ArchitectureTermination.CANCELLED, report.termination)
-        assertEquals(32, report.peakParallelTrials)
-        assertTrue(edt { (field(panel, "progressBar") as JProgressBar).string.contains("peak ${report.peakParallelTrials}/32") })
+    }
+
+    /** Scheduling fixture: every epoch is counted; numerical training is covered by separate real TensorFlow paths. */
+    private class ControlledSearchSessions {
+        val opened = AtomicInteger()
+        val closed = AtomicInteger()
+        val firstEpochs = AtomicInteger()
+        val waiting = CountDownLatch(32)
+        val release = CountDownLatch(1)
+
+        fun open(model: Neuro, backend: TrainingBackend, precision: Neuro.TrainingPrecision,
+                 batchSize: Int, engine: TrainingEngine): NeuroTrainingSession {
+            require(backend == TrainingBackend.CPU && batchSize == 1 && engine == TrainingEngine.REFERENCE)
+            val first = opened.incrementAndGet() == 1
+            return object : NeuroTrainingSession {
+                override val info = TrainingDeviceInfo(backend, "GUI scheduler fixture", "gui-scheduler-fixture",
+                    precision.name, kernelVersion = "fixture", engine = engine)
+                override val currentRmse = model.trainingError()
+                override fun trainEpoch(): Double {
+                    if (first) firstEpochs.incrementAndGet()
+                    else {
+                        waiting.countDown()
+                        check(release.await(30, TimeUnit.SECONDS)) { "GUI scheduler fixture was not released" }
+                    }
+                    return currentRmse
+                }
+                override fun train(epochs: Int): Unit = error("Fixture expects single-epoch calls")
+                override fun trainUntil(targetError: Double, maxEpochs: Int, checkEvery: Int): Neuro.TrainingResult =
+                    error("Fixture expects the full search budget")
+                override fun trainMiniBatch(epochs: Int, batchSize: Int, parallelism: Int): Unit =
+                    error("Fixture expects online training")
+                override fun close() { closed.incrementAndGet() }
+            }
+        }
     }
 
     private fun assertRankingCacheContains(report: ArchitectureSearchResult) = edt {
