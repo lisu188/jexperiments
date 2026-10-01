@@ -1,0 +1,16 @@
+{
+  "fixedMeasurementStarted": "2026-10-01T03:11:13Z",
+  "deadline": "2026-10-01T05:11:13Z",
+  "localQualityLimitSeconds": 3713,
+  "completed": {
+    "stage": "complete",
+    "at": "2026-10-01T05:11:03.076367+00:00",
+    "revision": "7a0a1ab61c848500316367cb12720662b9f96ff0",
+    "exitCodes": [
+      0,
+      0
+    ],
+    "deadline": "2026-10-01T05:11:13+00:00"
+  },
+  "note": "The two-hour wall window included fixed-work measurements, final validation/smoke, and concurrent local quality searches. Separate CI quality used 3,500 seconds within this window. CPU/GPU quality elapsed times are not paired speed measurements."
+}

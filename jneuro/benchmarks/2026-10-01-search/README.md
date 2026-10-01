@@ -64,35 +64,17 @@ Summarize only the intended compatible reports:
 python3 jneuro/tools/summarize_search_benchmark.py search-cpu-small-0.jsonl search-cpu-small-1.jsonl search-cpu-small-2.jsonl --output search-cpu-small-summary.json
 ```
 
-The full local command schedule, incremental raw reports and process metadata are retained under `/tmp/jneuro-search-evidence` during validation. Compact final evidence and its source hashes should be published here after validation. Large runtime files and temporary build products are not required to read this protocol.
+The full local command schedule and process metadata were retained under `/tmp/jneuro-search-evidence` during validation. Compact final evidence and source hashes are published here. Verified duplicate raw throughput files were removed after their complete parsed contents were reconstructed from the committed artifacts; the commands below show how to generate new measurements. Large runtime files and temporary build products are not required to read this protocol.
 
 ## Compact final evidence format
 
-The final report should retain every measured duration without repeating the full parameter arrays in every row. A suitable JSON layout is:
+The version-2 compact artifacts retain every parsed search-call record and every checkpoint parameter. `protocols` holds the compatible environment settings; `runs` records process identity, raw hashes and exits; `devices` describes actual execution. Each round stores candidate summaries and trial timing rows referring to deduplicated `uniqueOutcomes`. `reconstruct_round` restores the complete parsed original, and `verify` checks its canonical SHA-256.
 
-```json
-{
-  "schemaVersion": 1,
-  "status": "validated-or-incomplete",
-  "computeRevision": "529e7a9",
-  "analysis": {"sourceRevision": "analysis-revision", "scriptSha256": "sha256"},
-  "protocols": {"protocol-id": {"datasetFingerprint": "sha256", "manifest": [], "seeds": [], "runtime": {}, "hardware": {}}},
-  "runs": [{"id": "fork-id", "protocol": "protocol-id", "sourceFile": "report.jsonl", "sha256": "sha256", "started": "timestamp", "pid": 1, "exitCode": 0}],
-  "rounds": [{"run": "fork-id", "case": "engine/backend/execution/workers/search-seed", "round": 0, "totalNanos": 1, "allocatedBytes": 1, "completeTrials": 40, "committedEpochs": 80000, "sampleUpdates": 14080000}],
-  "comparisons": [],
-  "quality": {"status": "pending", "uniqueCandidateSeedScores": [], "independentTest": null},
-  "exclusions": [],
-  "limitations": []
-}
-```
-
-The example is a schema sketch, not measurement data. `protocols` should contain the complete environment records with dynamic fork identity removed. `rounds` retains warmup rows using negative round indices, but summary distributions use only measured rows. It may include summed allocation counts and diagnostic phase totals if their scopes remain explicit.
-
-Each comparison should retain both median/p95 distributions, fork and round counts, speedup, median time reduction, work checks, numerical tolerances, maximum scaled error, best-epoch agreement, actual execution-route counts and the qualification verdict. Failed or incomplete observations belong in `exclusions`, with their original reason and process identity. Compact artifacts retain every parsed round and deduplicated full checkpoint parameters, so parameter comparisons can be reconstructed independently without the raw JSONL files. Original byte hashes preserve input provenance; canonical round hashes verify reconstruction.
+The retained comparisons include median/p95 distributions, fork and round counts, work checks, numerical tolerances, maximum scaled error, best-epoch agreement, route counts and qualification verdicts. Warmups remain present but are excluded from measured distributions. Failed or incomplete observations retain their process identity and reason. Original byte hashes preserve input provenance; the raw JSONL files are not needed to reconstruct parameter comparisons.
 
 Record quality scores once per unique architecture/seed and arithmetic engine when repeated runs agree. Repeated timing rounds are not independent quality seeds. Keep within-engine parity separate from cross-engine arithmetic comparisons: the general CPU engine's AUTO vector path uses horizontal dot reductions and some separate multiply/add updates, while SMALL preserves ordered FMA accumulation. Equal FP64 precision and EXACT sigmoid therefore do not guarantee identical long-horizon optimization trajectories.
 
-After all nine JVM jobs finish, this Bash command validates and summarizes the three groups independently in one output:
+For a new measurement series, this Bash command validates and summarizes the three groups independently after all nine JVM jobs finish:
 
 ```bash
 python3 jneuro/tools/summarize_search_benchmark.py \
@@ -130,7 +112,7 @@ PY
 
 Verification checks reconstructed round contents against their retained canonical SHA-256 hashes. The raw-file byte hashes and process/host metadata remain separate provenance checks. The artifact records the SHA-256 of both the compactor and summarizer used to produce it.
 
-After all nine local jobs finish, build the final compact local record using their retained successful process sidecars:
+For a new measurement series, build the compact local record using the successful process sidecars after all nine local jobs finish:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 jneuro/benchmarks/2026-10-01-search/compact_evidence.py \
@@ -152,3 +134,11 @@ Nine sequential JVMs completed the fixed-work matrix with successful exits. All 
 The strongest observed prior CPU baseline and fastest optimized CPU configuration are both REFERENCE/CPU with 32 workers: **6.053 → 4.024 seconds** per complete search, **1.504x** faster. The CUDA queue improves its GPU baseline **53.335 → 12.462 seconds**, **4.280x**, while remaining **2.56x slower** than optimized CPU at the same four-worker setting. These figures describe the fixed 2,000-epoch manifest, not time to reach the quality target.
 
 [LOCAL.md](LOCAL.md) contains every configuration's median/p95, the one-worker regression, third-fork variability, allocation tradeoffs and cross-arithmetic caveats. [Compact local evidence](local-results.json) reconstructs all original parsed round/trial data; the [qualification summary](local-qualification-summary.json) retains all verdicts. The later `7a0a1ab` Java/API/progress refinements and final-head smoke checks remain separate from the measured `529e7a9` matrix.
+
+## Completed quality and validation
+
+The [final quality report](QUALITY.md) records the bounded million-epoch experiment. Local CPU completed 42 full-budget trials and eight complete five-seed candidate groups; local CUDA completed five trials and one group; separate CI CPU completed 46 trials and eight groups. There were no failed trials, but every search ended partially at its deadline, and search seed 123 never started. **No completed candidate met validation RMSE ≤0.01 in four of five seeds.** No reliable winner or independent-test result was produced.
+
+The GPU candidate `2→8→8→4→1` (137 parameters) crossed the target on two unfinished seeds, reaching best validation RMSE 0.00295294 and 0.00931634. All five of its trials were cancelled before one million epochs; this is a promising partial observation, not a reliable or smallest solution. The three inputs remain separate in [strict per-trial analysis](quality-analysis.json), with the original reports, process exits and source/runtime hashes retained alongside it.
+
+[Validation](VALIDATION.md) records 304 passing CI unit tests, 96.92% line coverage, 26 passing native-control GUI tests and 131/131 documented GUI paths. Final Windows checks passed 303 tests with one optional native-BLAS skip. All 18 hardware GPU tests passed at the separately identified training-kernel revision. The [post-fix smoke](SMOKE.md) proves matching measured numerical outcomes without substituting its single fork for the warmed performance matrix.

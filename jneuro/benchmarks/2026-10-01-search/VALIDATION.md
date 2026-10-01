@@ -33,3 +33,7 @@ bd4a4eb1def4fa85990efc1c6c6e26b59b21d5b027d7f5fda461b2ae4f257493
 ```
 
 The [compact CI audit](validation-ci.json) retains the archive byte sizes, all 48 unit-class counts and member hashes, aggregate HTML and JaCoCo hashes, current GUI XML/path-coverage hashes, source/run metadata, and the [earlier local validation metadata](validation-local.json) hash. No bulk report copies were extracted during this audit.
+
+## Final local check after quality jobs closed
+
+At checkout `d89d0e552ccb9ff4881c7d245731f47e6155341a`, `:jneuro:check :jneuro:jacocoTestReport` completed successfully after both quality JVMs exited. All 303 executable Windows unit tests passed, with one optional native-BLAS skip. Line coverage was 7,987/8,240 (96.9296%). The [post-quality audit](validation-post-quality.json) retains the exact command, source, timings, JUnit hashes and coverage counters. This validates the final logging changes locally without rebuilding files during a measurement. Hardware CUDA acceptance remains separately scoped to the unchanged training kernels at `7a0a1ab`.

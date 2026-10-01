@@ -71,3 +71,5 @@ PY
 ```
 
 No runtime, native execution, recompilation, or network access is required for these checks. The timing qualification flags remain false because the smoke lacks independent repeated forks.
+
+After verifying the committed compact artifact against all three inactive raw reports, their duplicate JSONL files were removed: 1,732,501 logical bytes. Full parsed evidence, including divergent warmup parameters, process exits and original byte hashes, remains retained.
