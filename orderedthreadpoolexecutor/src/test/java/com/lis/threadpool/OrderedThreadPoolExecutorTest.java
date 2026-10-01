@@ -144,6 +144,14 @@ class OrderedThreadPoolExecutorTest {
             assertEquals(11, output.poll(5, TimeUnit.SECONDS));
             assertEquals(22, output.poll(5, TimeUnit.SECONDS));
 
+            executor.shutdown();
+            executor.shutdown();
+            assertTrue(executor.isShutdown());
+            assertThrows(RejectedExecutionException.class, () -> executor.process(() -> 33));
+            // Queue visibility precedes the publisher's final counter updates.
+            assertTrue(executor.awaitTermination(Duration.ofSeconds(5)));
+            assertTrue(executor.isTerminated());
+
             var stats = executor.statistics();
             assertEquals(4, stats.submitted());
             assertEquals(4, stats.completed());
@@ -151,13 +159,6 @@ class OrderedThreadPoolExecutorTest {
             assertEquals(2, stats.failed());
             assertEquals(0, stats.buffered());
             assertEquals(4, stats.nextSequence());
-
-            executor.shutdown();
-            executor.shutdown();
-            assertTrue(executor.isShutdown());
-            assertThrows(RejectedExecutionException.class, () -> executor.process(() -> 33));
-            assertTrue(executor.awaitTermination(Duration.ofSeconds(5)));
-            assertTrue(executor.isTerminated());
         }
     }
 

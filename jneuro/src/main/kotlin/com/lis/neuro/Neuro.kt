@@ -362,7 +362,7 @@ class Neuro @JvmOverloads constructor(
         epochsTrained++
     }
 
-    internal fun exportTrainingState(shareDataset: Boolean = false): NeuroTrainingState {
+    @JvmOverloads internal fun exportTrainingState(shareDataset: Boolean = false): NeuroTrainingState {
         val data = trainingData()
         return NeuroTrainingState(topology.copyOf(), Array(layers.size) { layers[it].weights.copyOf() },
             Array(layers.size) { layers[it].biases.copyOf() }, Array(layers.size) { layers[it].weightVelocity.copyOf() },
@@ -440,7 +440,7 @@ class Neuro @JvmOverloads constructor(
 
     internal fun commitDeviceEpoch(state: NeuroTrainingState): Double = commitTrainingChunk(state, 1)
 
-    internal fun commitTrainingChunk(state: NeuroTrainingState, epochs: Int, evaluateError: Boolean = true): Double {
+    @JvmOverloads internal fun commitTrainingChunk(state: NeuroTrainingState, epochs: Int, evaluateError: Boolean = true): Double {
         checkTrainingAccess()
         require(epochs in 1..64)
         validateTrainingState(state)
