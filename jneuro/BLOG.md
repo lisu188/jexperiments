@@ -921,6 +921,8 @@ Architecture search now has an independent **Execution** choice. `REFERENCE` ret
 
 The CPU bottleneck was larger than the arithmetic kernel. A search scores every 25 epochs by default, but calling the ordinary public epoch API also calculated training RMSE after every intervening epoch. A SMALL cohort additionally occupied one admission slot per seed while its CPU evaluator used one worker. Five admitted seeds could therefore leave most of a four-worker pool idle. Optimized CPU execution schedules each model independently. The existing cohort implementation remains available through reference execution; model-lane SIMD is not automatically selected without a demonstrated end-to-end advantage.
 
+Progress snapshots iterate the concurrent activity map into a private list before sorting by submission index. Sorting the live entry collection directly was unsafe: Kotlin's single-element collection-copy shortcut could observe size one, then call `next()` after a worker removed that final entry. Copying through iteration avoids that race while retaining a weakly consistent view of running trials; final trial results still come from the completion queue.
+
 The search-only advance interface makes the scoring contract explicit:
 
 ~~~kotlin

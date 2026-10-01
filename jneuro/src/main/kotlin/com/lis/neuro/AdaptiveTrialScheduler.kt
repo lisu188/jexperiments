@@ -13,7 +13,7 @@ internal class TrialActivity {
     private val count = AtomicInteger()
     private val maximum = AtomicInteger()
     val peak: Int get() = maximum.get()
-    fun snapshot(): List<ArchitectureRunningTrial> = active.entries.sortedBy { it.key }.map { it.value }
+    fun snapshot(): List<ArchitectureRunningTrial> = snapshotTrialActivity(active.entries)
     fun begin(index: Int, architecture: NetworkArchitecture, seeds: List<Long>): () -> Unit {
         maximum.accumulateAndGet(count.addAndGet(seeds.size), ::maxOf)
         seeds.forEachIndexed { lane, seed -> update(index + lane, architecture, seed, 0, Double.POSITIVE_INFINITY) }
@@ -37,6 +37,14 @@ internal class TrialActivity {
         }
     }
 
+}
+
+internal fun snapshotTrialActivity(entries: Iterable<Map.Entry<Int, ArchitectureRunningTrial>>): List<ArchitectureRunningTrial> {
+    // A concurrent collection can shrink after size == 1; Kotlin's toList fast path then calls next without hasNext.
+    val copy = ArrayList<Pair<Int, ArchitectureRunningTrial>>()
+    for (entry in entries) copy.add(entry.key to entry.value)
+    copy.sortBy { it.first }
+    return copy.map { it.second }
 }
 
 internal class AdaptiveTrialScheduler(
