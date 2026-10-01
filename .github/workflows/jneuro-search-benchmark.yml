@@ -10,18 +10,14 @@ permissions:
 jobs:
   cpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        fork: [0, 1, 2]
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '27'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
       - name: Record host
         run: |
           mkdir -p jneuro/build/reports/search-benchmark
@@ -30,17 +26,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for engine in REFERENCE SMALL; do
+          for fork in 0 1 2; do
+            for engine in REFERENCE SMALL; do
+              ./gradlew --no-daemon :jneuro:architectureSearchBenchmark -PneuroBenchmarkRevision="$GITHUB_SHA" \
+                --args="--epochs 2000 --engine $engine --workers 1,4,8,16,32 --warmups 1 --repeats 3 --order-offset $fork --output build/reports/search-benchmark/$engine-$fork.jsonl"
+            done
             ./gradlew --no-daemon :jneuro:architectureSearchBenchmark -PneuroBenchmarkRevision="$GITHUB_SHA" \
-              --args="--epochs 2000 --engine $engine --workers 1,4,8,16,32 --warmups 1 --repeats 3 --order-offset ${{ matrix.fork }} --output build/reports/search-benchmark/$engine-${{ matrix.fork }}.jsonl"
+              --args="--manifest general --epochs 2000 --workers 1,4,8,16,32 --warmups 1 --repeats 3 --order-offset $fork --output build/reports/search-benchmark/general-$fork.jsonl"
           done
-          ./gradlew --no-daemon :jneuro:architectureSearchBenchmark -PneuroBenchmarkRevision="$GITHUB_SHA" \
-            --args="--manifest general --epochs 2000 --workers 1,4,8,16,32 --warmups 1 --repeats 3 --order-offset ${{ matrix.fork }} --output build/reports/search-benchmark/general-${{ matrix.fork }}.jsonl"
       - name: Upload compact benchmark evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: jneuro-search-fork-${{ matrix.fork }}
+          name: jneuro-search-cpu
           path: jneuro/build/reports/search-benchmark/**
           if-no-files-found: error
           retention-days: 14

@@ -1,0 +1,45 @@
+name: JNeuro Spiral search quality
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '27'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Record host
+        run: |
+          mkdir -p jneuro/build/reports/search-quality
+          lscpu | tee jneuro/build/reports/search-quality/host.txt
+          java -version 2>&1 | tee -a jneuro/build/reports/search-quality/host.txt
+
+      - name: Run bounded full-budget Spiral quality experiment
+        run: |
+          ./gradlew --no-daemon :jneuro:architectureSearchBenchmark -PneuroBenchmarkRevision="$GITHUB_SHA" \
+            --args="--mode quality --engine SMALL --backends CPU --executions OPTIMIZED --workers 4 --epochs 1000000 --trials 60 --search-seeds 42,123 --limit-seconds 3500 --output build/reports/search-quality/quality.jsonl"
+
+      - name: Upload compact quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jneuro-search-quality-cpu
+          path: jneuro/build/reports/search-quality/**
+          if-no-files-found: error
+          retention-days: 14
