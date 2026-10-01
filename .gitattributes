@@ -3,3 +3,6 @@ jneuro/src/main/cuda/*.cu text eol=lf
 jneuro/src/main/resources/com/lis/neuro/cuda/* text eol=lf
 jneuro/src/main/resources/cuda/*.cu text eol=lf
 jneuro/tools/build_cuda.py text eol=lf
+
+# Retained raw benchmark bytes are hashed evidence, including Windows CRLF.
+jneuro/benchmarks/2026-10-01-search/*.jsonl -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
