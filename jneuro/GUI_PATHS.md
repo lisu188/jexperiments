@@ -104,7 +104,7 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-094 | Replay keeps validation samples held out | `validationSearchReplaysHeldOutPartition` |
 | GUI-095 | Reset validation replay restores the full Studio dataset | `validationSearchReplaysHeldOutPartition` |
 | GUI-096 | Adaptive result ancestry names an eligible, fully evaluated elite for each descendant | `searchResultsSupportNativeSelectionInspectionReplayAndApply` |
-| GUI-097 | Parallel trials set to 32 starts 32 concurrent elite offspring with one seed and exposes actual utilization | `parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization` |
+| GUI-097 | Parallel trials set to 32 completes the initial seed's full budget, starts 32 concurrent elite offspring with controlled training, exposes 32 actual workers, and releases all sessions on cancellation | `parallelSettingUsesMultipleArchitecturesWithOneSeedAndReportsUtilization` |
 | GUI-098 | CPU is the default; editing the backend selection alone does not change the active run | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
 | GUI-099 | Applying an unavailable CUDA backend shows a failure and never falls back to CPU | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
 | GUI-100 | Select CPU after CUDA failure and complete a training epoch | `backendSelectionRequiresApplyAndUnavailableCudaRecovers` |
@@ -124,7 +124,7 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-114 | Changing from AUTO to the TensorFlow GPU backend preserves the enabled FP32 editor without changing the active run before apply | `automaticBatchBackendAppliesPrecisionAndStepsOnce` |
 | GUI-115 | Select CUBLAS with FP32 and train a configured mini-batch epoch | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
 | GUI-116 | Architecture search inherits CUBLAS, FP32 and batch size and records its resolved device | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
-| GUI-117 | Replay preserves the scored CUBLAS precision and batch size | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
+| GUI-117 | Replay reopens the CUBLAS alias's recorded CUDA device while preserving its scored FP32 precision and batch size | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
 | GUI-118 | Reject zero batch size without changing the active model | `cublasBatchSettingsReachSearchAndReplayAndRejectInvalidBatchSize` |
 | GUI-119 | Applying settings and stepping through native controls writes correlated configuration, run and effective-device events | `detailedLogsFollowNativeControlsExportAndShutdown` |
 | GUI-120 | Native tab navigation and PNG file-dialog export log the selected view, destination and completed artifact | `detailedLogsFollowNativeControlsExportAndShutdown` |
@@ -136,9 +136,22 @@ GUI tests use `AWT Robot` on a real Swing window (Xvfb + a window manager on CI)
 | GUI-126 | SMALL rejects unsupported hidden widths and search bounds before altering the run or starting trials | `smallEnginePrecisionSigmoidStepsSearchReplayAndValidationUseNativeControls` |
 | GUI-127 | Resize to a small window, reach lower advanced numeric editors, scroll them out of view and back with the mouse wheel, and apply their values | `lowerAdvancedEditorsRemainReachableAndEditableInASmallWindow` |
 | GUI-128 | Select optimized search execution independently of strategy and training engine, and return to reference execution | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
-| GUI-129 | Complete an optimized Spiral validation search, preserving full seed budgets, scoring checkpoints and the paused main model | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
+| GUI-129 | Read the epoch control's full-budget and initial-seed explanation, then complete an optimized Spiral validation search preserving full seed budgets, scoring checkpoints and the paused main model | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
 | GUI-130 | Replay the optimized Spiral checkpoint and reset from its held-out partition to the full 220-point dataset | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
-| GUI-131 | Cancel optimized Spiral training after observed progress and retain partial results without enabling incomplete-candidate application or replay | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
+| GUI-131 | Observe current epoch / requested epoch budget, cancel optimized Spiral training after progress and retain partial results without enabling incomplete-candidate application or replay | `optimizedSpiralSearchCompletesReplaysAndCancelsThroughNativeControls` |
 | GUI-132 | Reset a completed search through native controls and release its scored-result ranking caches; successful replay and architecture application also clear those caches and disable stale result actions | `searchResultsSupportNativeSelectionInspectionReplayAndApply` |
 
+| GUI-133 | Default to batched search and pruning; reach model-batch, initial-epoch and reduction controls in a small window without changing samples per mini-batch | `batchedControlsExposeBudgetTradeoffsAndValidateModelBatchingInSmallWindow` |
+| GUI-134 | Reject invalid model-batch capacity, initial budget and reduction factor through native controls without changing the active model | `batchedControlsExposeBudgetTradeoffsAndValidateModelBatchingInSmallWindow` |
+| GUI-135 | Choose Full budget explicitly, disable pruning-only controls, keep ignored legacy workers/plateau/restarts disabled for batched execution, and switch to reference full-budget controls with accurate proposal guidance | `batchedControlsExposeBudgetTradeoffsAndValidateModelBatchingInSmallWindow` |
+| GUI-136 | Run an actual TensorFlow CPU Spiral population across three architectures and two seeds, admit all six models, prune two groups and show real native calls, batch capacity and aggregate epoch throughput | `batchedSpiralPopulationPrunesHonestlyAndReplaysCompletedCheckpoint` |
+| GUI-137 | Select and inspect a PRUNED checkpoint while application and replay remain disabled; select a completed survivor to enable those actions | `batchedSpiralPopulationPrunesHonestlyAndReplaysCompletedCheckpoint` |
+| GUI-138 | Replay the completed batched Spiral checkpoint exactly, release stale search results and reset from the held-out training partition to the full dataset | `batchedSpiralPopulationPrunesHonestlyAndReplaysCompletedCheckpoint` |
+| GUI-139 | Select batched Full budget and complete every seed's requested epochs and scoring checkpoints despite already meeting the target | `batchedFullBudgetKeepsEverySeedAndCancellationRetainsPartialResults` |
+| GUI-140 | Cancel batched training after committed progress, retain partial results, disable incomplete-candidate actions and re-enable search controls | `batchedFullBudgetKeepsEverySeedAndCancellationRetainsPartialResults` |
+
 The CUDA/CUBLAS compatibility-backend GUI scenarios use an injected session provider with TensorFlow CPU execution and explicit fixture device metadata. They verify native controls, error recovery and resource lifecycle deterministically on CPU-only CI. The SMALL controls exercise actual TensorFlow CPU FP32 training, cohort search and replay. Actual GPU execution and numerical parity require a GPU-enabled TensorFlow runtime and separate hardware checks; a passing fixture scenario is not GPU acceptance. The stable path IDs above retain precision selection and configuration validation coverage while reflecting that TensorFlow supports FP32 for CPU and the GPU compatibility aliases.
+
+GUI-097 uses a controlled training session to count all 100,000 initial-seed epochs without numerical updates, then holds 32 offspring on distinct production search workers until native-control cancellation. This isolates worker admission and utilization from hardware training speed; numerical training remains exercised by the other TensorFlow GUI scenarios and unit tests.
+
+GUI-133–140 exercise the new batched controls and actual TensorFlow CPU population training. Earlier search scenarios explicitly select REFERENCE/FULL unless their path calls for OPTIMIZED; their original full-budget and replay assertions remain intact. These CPU paths make no GPU runtime or speed claim.

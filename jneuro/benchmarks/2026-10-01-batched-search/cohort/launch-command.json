@@ -1,0 +1,10 @@
+[
+  "/run/shm/jneuro-studio-main/jdk/jdk-27+35/bin/java",
+  "-Xmx512m",
+  "--enable-native-access=ALL-UNNAMED",
+  "-Djava.io.tmpdir=/run/shm/jneuro-studio-main/tmp",
+  "-cp",
+  "/run/shm/jneuro-batched-search/main-classes:/run/shm/jneuro-tensorflow-perf/cohort-classes:/run/shm/jneuro-studio-main/classes-fast:/run/shm/jneuro-studio-main/lib/javacpp-1.5.12-linux-x86_64.jar:/run/shm/jneuro-studio-main/lib/javacpp-1.5.12.jar:/run/shm/jneuro-studio-main/lib/protobuf-java-4.31.1.jar:/run/shm/jneuro-studio-main/lib/tensorflow-core-api-1.2.0.jar:/run/shm/jneuro-studio-main/lib/tensorflow-core-native-1.2.0-linux-x86_64.jar:/run/shm/jneuro-studio-main/lib/tensorflow-core-native-1.2.0.jar:/run/shm/jneuro-studio-main/lib/tensorflow-ndarray-1.2.0.jar:/run/shm/jneuro-studio-main/lib/kotlin-stdlib-2.4.20.jar:/run/shm/jneuro-studio-main/lib/annotations-13.0.jar:/run/shm/jneuro-studio-main/lib/flatlaf-3.7.2.jar",
+  "com.lis.neuro.CohortBenchmark",
+  "2"
+]

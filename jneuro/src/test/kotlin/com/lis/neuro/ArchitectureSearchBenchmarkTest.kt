@@ -12,6 +12,9 @@ class ArchitectureSearchBenchmarkTest {
     @Test fun optionsPreserveQualityBudgetAndRejectAmbiguousCases() {
         val defaults = SearchBenchmarkOptions.parse(emptyArray())
         assertEquals(2000, defaults.epochs)
+        assertEquals(listOf(ArchitectureExecution.REFERENCE, ArchitectureExecution.OPTIMIZED), defaults.executions)
+        assertEquals(listOf(ArchitectureExecution.BATCHED),
+            SearchBenchmarkOptions.parse(arrayOf("--executions", "BATCHED")).executions)
         assertEquals(1_000_000, SearchBenchmarkOptions.parse(arrayOf("--mode", "quality")).epochs)
         val options = SearchBenchmarkOptions.parse(arrayOf("--mode", "fixed", "--manifest", "small", "--epochs", "25",
             "--workers", "1,4,8", "--backends", "CPU,CUDA", "--executions", "OPTIMIZED", "--warmups", "0",
@@ -48,6 +51,8 @@ class ArchitectureSearchBenchmarkTest {
             assertEquals(false, round["targetMet"])
             assertNull(round["independentTest"])
             assertEquals(0, round["partialCandidates"])
+            assertEquals("FULL", round["budgetPolicy"])
+            assertTrue(round.containsKey("nativeTrainingCalls") && round.containsKey("modelsPerBatch"))
             assertTrue((round["totalNanos"] as Long) > 0)
             assertFalse(NeuroCudaBenchmarkReports.encode(round).contains("Infinity"))
         }

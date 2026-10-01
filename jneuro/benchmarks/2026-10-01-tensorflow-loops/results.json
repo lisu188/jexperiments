@@ -1,0 +1,516 @@
+{
+  "training": [
+    {
+      "shape": "2x6x1",
+      "api": "epoch",
+      "batch": 1,
+      "beforeEpochMs": 30.0372932,
+      "afterEpochMs": 5.8810823,
+      "speedup": 5.107443097676086,
+      "beforeRangeMs": [
+        24.009831,
+        41.52876675
+      ],
+      "afterRangeMs": [
+        5.5842683,
+        7.03236155
+      ]
+    },
+    {
+      "shape": "2x6x1",
+      "api": "epoch",
+      "batch": 16,
+      "beforeEpochMs": 2.2822614999999997,
+      "afterEpochMs": 1.184199725,
+      "speedup": 1.9272606232027285,
+      "beforeRangeMs": [
+        1.8965028,
+        2.4142369500000003
+      ],
+      "afterRangeMs": [
+        0.82960085,
+        1.71044075
+      ]
+    },
+    {
+      "shape": "2x6x1",
+      "api": "epoch",
+      "batch": 32,
+      "beforeEpochMs": 1.19772385,
+      "afterEpochMs": 0.961229075,
+      "speedup": 1.2460337303051305,
+      "beforeRangeMs": [
+        1.0700079,
+        1.40271525
+      ],
+      "afterRangeMs": [
+        0.7731583,
+        1.063385
+      ]
+    },
+    {
+      "shape": "2x6x1",
+      "api": "chunk",
+      "batch": 1,
+      "beforeEpochMs": 30.0278344,
+      "afterEpochMs": 4.68065245,
+      "speedup": 6.4153095579655774,
+      "beforeRangeMs": [
+        24.11424505,
+        34.76790325
+      ],
+      "afterRangeMs": [
+        4.270639,
+        7.11200625
+      ]
+    },
+    {
+      "shape": "2x6x1",
+      "api": "chunk",
+      "batch": 16,
+      "beforeEpochMs": 1.726226875,
+      "afterEpochMs": 0.34354094999999996,
+      "speedup": 5.024806722459143,
+      "beforeRangeMs": [
+        1.52651345,
+        1.92326155
+      ],
+      "afterRangeMs": [
+        0.3189287,
+        0.6271276
+      ]
+    },
+    {
+      "shape": "2x6x1",
+      "api": "chunk",
+      "batch": 32,
+      "beforeEpochMs": 0.877944425,
+      "afterEpochMs": 0.255392175,
+      "speedup": 3.4376324372506715,
+      "beforeRangeMs": [
+        0.7762829499999999,
+        1.0855204
+      ],
+      "afterRangeMs": [
+        0.19545030000000002,
+        0.43438725
+      ]
+    },
+    {
+      "shape": "2x8x8x8x1",
+      "api": "epoch",
+      "batch": 1,
+      "beforeEpochMs": 29.1488775,
+      "afterEpochMs": 8.944881500000001,
+      "speedup": 3.258721482224219,
+      "beforeRangeMs": [
+        22.46817665,
+        45.731748700000004
+      ],
+      "afterRangeMs": [
+        7.9671317,
+        9.7760149
+      ]
+    },
+    {
+      "shape": "2x8x8x8x1",
+      "api": "epoch",
+      "batch": 16,
+      "beforeEpochMs": 2.933156625,
+      "afterEpochMs": 1.185824325,
+      "speedup": 2.4735169983968746,
+      "beforeRangeMs": [
+        2.5856616,
+        3.21623705
+      ],
+      "afterRangeMs": [
+        0.90907015,
+        1.85631675
+      ]
+    },
+    {
+      "shape": "2x8x8x8x1",
+      "api": "epoch",
+      "batch": 32,
+      "beforeEpochMs": 1.5834709999999999,
+      "afterEpochMs": 0.84919165,
+      "speedup": 1.8646803698552616,
+      "beforeRangeMs": [
+        1.3524378499999998,
+        1.84991385
+      ],
+      "afterRangeMs": [
+        0.63141385,
+        1.100916
+      ]
+    },
+    {
+      "shape": "2x8x8x8x1",
+      "api": "chunk",
+      "batch": 1,
+      "beforeEpochMs": 26.250384075,
+      "afterEpochMs": 7.253613775,
+      "speedup": 3.6189387647676345,
+      "beforeRangeMs": [
+        21.63233825,
+        31.942550899999997
+      ],
+      "afterRangeMs": [
+        6.46263675,
+        8.66788135
+      ]
+    },
+    {
+      "shape": "2x8x8x8x1",
+      "api": "chunk",
+      "batch": 16,
+      "beforeEpochMs": 2.3137529,
+      "afterEpochMs": 0.568935525,
+      "speedup": 4.066810382424265,
+      "beforeRangeMs": [
+        1.8639581,
+        2.6345185
+      ],
+      "afterRangeMs": [
+        0.5087985500000001,
+        0.9942781999999999
+      ]
+    },
+    {
+      "shape": "2x8x8x8x1",
+      "api": "chunk",
+      "batch": 32,
+      "beforeEpochMs": 1.154481175,
+      "afterEpochMs": 0.35176209999999997,
+      "speedup": 3.2819942085858598,
+      "beforeRangeMs": [
+        1.0237016,
+        1.299417
+      ],
+      "afterRangeMs": [
+        0.30272285,
+        0.5690453
+      ]
+    }
+  ],
+  "checkpoints": 102,
+  "parameterAndMomentumValues": 16044,
+  "differences": [],
+  "concurrentBeforeEpochsPerSecond": 117.8873616179192,
+  "concurrentAfterEpochsPerSecond": 264.4616146040456,
+  "concurrentSpeedup": 2.2433415336003817,
+  "provenance": {
+    "baselineRevision": "8d9c0438aa002c1c376eb5beff98b7c1c66ed0a3",
+    "candidateTensorFlowMathSha256": "b8cb1e89f7566bcae92a10876bb7b2cc0bdc37a4b03a864888bca7e15a72a043",
+    "harnessSha256": "0d5b3f7c32fd0a3fa2b5a878b1807d18c3ee6342fabef02d3d975142a8648a0c",
+    "java": "OpenJDK27+35",
+    "tensorflowJava": "1.2.0",
+    "tensorflowRuntime": "2.21.0",
+    "device": "CPU",
+    "precision": "FP64",
+    "sigmoid": "EXACT",
+    "learningRate": 0.6,
+    "momentum": 0.2,
+    "beta": 1.0,
+    "seed": 42,
+    "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "forksPerVersion": 2,
+    "repetitionsPerCase": 3,
+    "warmupEpochsPerRepetition": 5,
+    "measuredEpochsPerRepetition": 20,
+    "searchSeeds": [
+      1,
+      42,
+      123,
+      999,
+      2026
+    ],
+    "searchSplitSeed": 42,
+    "searchTrainingSamples": 176,
+    "searchValidationSamples": 44,
+    "quietWindow": "Other task agents paused compilation and tests; workstation not isolated from unrelated processes.",
+    "processOrder": [
+      "baseline",
+      "optimized",
+      "optimized",
+      "baseline"
+    ]
+  },
+  "validation": {
+    "TensorFlowMathTest": 13,
+    "NeuroTest": 10,
+    "runner": "Direct invocation of each real @Test on a fresh instance using JUnit6.1.2 assertions; not the Gradle/JUnit engine or a coverage run.",
+    "passed": 23,
+    "failed": 0
+  },
+  "concurrentBeforeRange": [
+    98.83080870312521,
+    130.17061114447174
+  ],
+  "concurrentAfterRange": [
+    161.2996118773253,
+    344.3095025111938
+  ],
+  "sessionOpening": {
+    "baseline": {
+      "medianMs": 13.4340495,
+      "firstPerForkMs": [
+        35.476376,
+        63.674764
+      ]
+    },
+    "optimized": {
+      "medianMs": 21.949042,
+      "firstPerForkMs": [
+        116.575377,
+        120.598013
+      ]
+    }
+  },
+  "diagnostics": {
+    "baseline": [
+      {
+        "kind": "diagnostics",
+        "shape": "2x6x1",
+        "snapshotMs": 0.0031538029999999997,
+        "freshFrameMedianMs": 4.748984,
+        "freshFrameTimesMs": [
+          5.026124,
+          4.711916,
+          5.30988,
+          3.388032,
+          5.473711,
+          4.123876,
+          4.864534,
+          3.178003,
+          4.767591,
+          3.219337,
+          5.213086,
+          3.8934,
+          5.846719,
+          3.487682,
+          4.748984,
+          4.207648,
+          5.501086,
+          3.715043,
+          5.937715,
+          3.659585
+        ],
+        "cachedFrameMs": 0.000990329,
+        "fork": 0
+      },
+      {
+        "kind": "diagnostics",
+        "shape": "2x8x8x8x1",
+        "snapshotMs": 0.00032390600000000005,
+        "freshFrameMedianMs": 3.56343,
+        "freshFrameTimesMs": [
+          3.755764,
+          4.561722,
+          3.14666,
+          3.336094,
+          4.949912,
+          3.198068,
+          3.362569,
+          3.622492,
+          3.136311,
+          4.489587,
+          3.388273,
+          3.450928,
+          3.493614,
+          3.432158,
+          4.571624,
+          3.05417,
+          3.56343,
+          4.187218,
+          4.027207,
+          4.731517
+        ],
+        "cachedFrameMs": 0.000179091,
+        "fork": 0
+      },
+      {
+        "kind": "diagnostics",
+        "shape": "2x6x1",
+        "snapshotMs": 0.0032507670000000003,
+        "freshFrameMedianMs": 4.222548,
+        "freshFrameTimesMs": [
+          5.331075,
+          4.678076,
+          4.896666,
+          4.480001,
+          7.232765,
+          3.678523,
+          4.222548,
+          3.892553,
+          4.787926,
+          4.1192,
+          3.99847,
+          3.821049,
+          4.075046,
+          5.135135,
+          4.726913,
+          3.754414,
+          3.416936,
+          5.364363,
+          3.493679,
+          3.040074
+        ],
+        "cachedFrameMs": 0.000761746,
+        "fork": 1
+      },
+      {
+        "kind": "diagnostics",
+        "shape": "2x8x8x8x1",
+        "snapshotMs": 0.00033172000000000003,
+        "freshFrameMedianMs": 3.545445,
+        "freshFrameTimesMs": [
+          3.105251,
+          3.873244,
+          3.059061,
+          3.54595,
+          3.760833,
+          3.545445,
+          3.302673,
+          4.613527,
+          5.054966,
+          3.629101,
+          3.759826,
+          3.389613,
+          3.612174,
+          3.468631,
+          3.31896,
+          3.386131,
+          3.421708,
+          4.079394,
+          3.36281,
+          3.284975
+        ],
+        "cachedFrameMs": 0.00013786699999999999,
+        "fork": 1
+      }
+    ],
+    "optimized": [
+      {
+        "kind": "diagnostics",
+        "shape": "2x6x1",
+        "snapshotMs": 0.002821978,
+        "freshFrameMedianMs": 5.421327,
+        "freshFrameTimesMs": [
+          5.421327,
+          4.557866,
+          6.870247,
+          4.020726,
+          5.179278,
+          6.091699,
+          3.703479,
+          5.014063,
+          5.984472,
+          4.698704,
+          3.597711,
+          7.728183,
+          4.034757,
+          5.002858,
+          6.628263,
+          5.528889,
+          4.551585,
+          6.445648,
+          10.5398,
+          7.003546
+        ],
+        "cachedFrameMs": 0.001200442,
+        "fork": 0
+      },
+      {
+        "kind": "diagnostics",
+        "shape": "2x8x8x8x1",
+        "snapshotMs": 0.00033005800000000004,
+        "freshFrameMedianMs": 2.954872,
+        "freshFrameTimesMs": [
+          2.954872,
+          2.951832,
+          3.210664,
+          2.928338,
+          3.197168,
+          3.354999,
+          2.777764,
+          3.80821,
+          3.40189,
+          2.62789,
+          3.062986,
+          2.600726,
+          2.813871,
+          3.242713,
+          2.752454,
+          2.96864,
+          2.857978,
+          3.955189,
+          2.86328,
+          2.683582
+        ],
+        "cachedFrameMs": 0.00017344599999999998,
+        "fork": 0
+      },
+      {
+        "kind": "diagnostics",
+        "shape": "2x6x1",
+        "snapshotMs": 0.002200183,
+        "freshFrameMedianMs": 4.166357,
+        "freshFrameTimesMs": [
+          3.850832,
+          4.313798,
+          4.530367,
+          4.544942,
+          4.970251,
+          3.93836,
+          4.854929,
+          4.40687,
+          4.666465,
+          4.345232,
+          8.104073,
+          3.779926,
+          4.166357,
+          3.263954,
+          3.538577,
+          3.837482,
+          3.818384,
+          3.567091,
+          4.010836,
+          3.186642
+        ],
+        "cachedFrameMs": 0.000855841,
+        "fork": 1
+      },
+      {
+        "kind": "diagnostics",
+        "shape": "2x8x8x8x1",
+        "snapshotMs": 0.000680341,
+        "freshFrameMedianMs": 8.965288,
+        "freshFrameTimesMs": [
+          5.808966,
+          4.983401,
+          4.888843,
+          5.663196,
+          5.721287,
+          35.804891,
+          15.465033,
+          19.477478,
+          16.4102,
+          22.999977,
+          5.026351,
+          20.508486,
+          20.392944,
+          8.730417,
+          9.543895,
+          8.481355,
+          8.965288,
+          5.980253,
+          5.057765,
+          9.104257
+        ],
+        "cachedFrameMs": 0.000409036,
+        "fork": 1
+      }
+    ]
+  }
+}

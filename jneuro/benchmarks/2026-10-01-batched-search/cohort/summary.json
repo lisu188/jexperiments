@@ -1,0 +1,463 @@
+{
+  "runtime": "TensorFlow Java 1.2.0 / TensorFlow 2.21.0 CPU FP64 EXACT; online batch 1; 176 training / 44 validation Spiral samples",
+  "jvmProcesses": 1,
+  "repeatsPerCase": 2,
+  "warmupEpochs": 2,
+  "measuredEpochs": 5,
+  "includes": [
+    "permutation validation and flattening",
+    "native training",
+    "vector training and validation RMSE",
+    "native best snapshot selection"
+  ],
+  "excludes": [
+    "initial parameter creation",
+    "cohort open",
+    "whole-search scheduling and regrouping"
+  ],
+  "harnessSha256": "f35014cb59667efea3067b3b6c51dd4351b3fc96646c6102afbaff2abb6c080d",
+  "sources": {
+    "TensorFlowMath.kt": "3963c34fcc63e69ffe15737f35fc0eff8fd3cbfb05ecc3b730d2e859f4fc4e45",
+    "TensorFlowCohortGraph.kt": "333d2bfe03928d5256de98f60bf914d009dd20004dd5d81bfeea9526276ce65d",
+    "TensorFlowSearchCohort.kt": "e4f543a585f32053a7298ef391e7c7e726957c096b35d376a6077c17c21df382"
+  },
+  "classHashes": {
+    "TensorFlowMath.class": "96c73138ad070bda8c12ba13f7a95397828e6abf72592433f8633b42f48916b9",
+    "TensorFlowCohortGraph.class": "79b2be3b57bef90f7eba58f960f218f1f833ed9bb6d107463de0a47323bceea5",
+    "TensorFlowSearchCohort.class": "51c490993c8246c654a50c4cf0b1ed565997f4c81a6fadc410e96ccd8a427d1f"
+  },
+  "rows": [
+    {
+      "family": "shallow",
+      "models": 5,
+      "threads": 1,
+      "epochsPerSecondMedian": 295.3753995776534,
+      "epochsPerSecondRange": [
+        290.32428363121727,
+        300.42651552408955
+      ],
+      "nativeOpenMsMedian": 187.8805215,
+      "modelInitializationMs": 1850.872522
+    },
+    {
+      "family": "shallow",
+      "models": 5,
+      "threads": 2,
+      "epochsPerSecondMedian": 270.067340013643,
+      "epochsPerSecondRange": [
+        266.541572665006,
+        273.59310736227997
+      ],
+      "nativeOpenMsMedian": 71.406914,
+      "modelInitializationMs": 1850.872522
+    },
+    {
+      "family": "shallow",
+      "models": 5,
+      "threads": 4,
+      "epochsPerSecondMedian": 204.45488825529523,
+      "epochsPerSecondRange": [
+        199.51899004189548,
+        209.39078646869498
+      ],
+      "nativeOpenMsMedian": 82.1432465,
+      "modelInitializationMs": 1850.872522
+    },
+    {
+      "family": "shallow",
+      "models": 32,
+      "threads": 1,
+      "epochsPerSecondMedian": 1333.1152804411056,
+      "epochsPerSecondRange": [
+        1313.1611427804544,
+        1353.0694181017568
+      ],
+      "nativeOpenMsMedian": 82.86761999999999,
+      "modelInitializationMs": 24.418443
+    },
+    {
+      "family": "shallow",
+      "models": 32,
+      "threads": 2,
+      "epochsPerSecondMedian": 1100.3965140508035,
+      "epochsPerSecondRange": [
+        954.8272026235882,
+        1245.9658254780186
+      ],
+      "nativeOpenMsMedian": 67.8498045,
+      "modelInitializationMs": 24.418443
+    },
+    {
+      "family": "shallow",
+      "models": 32,
+      "threads": 4,
+      "epochsPerSecondMedian": 877.1958527902947,
+      "epochsPerSecondRange": [
+        821.8827684295062,
+        932.5089371510832
+      ],
+      "nativeOpenMsMedian": 72.004077,
+      "modelInitializationMs": 24.418443
+    },
+    {
+      "family": "shallow",
+      "models": 128,
+      "threads": 1,
+      "epochsPerSecondMedian": 2764.103897964702,
+      "epochsPerSecondRange": [
+        2694.354368576075,
+        2833.8534273533282
+      ],
+      "nativeOpenMsMedian": 67.73539600000001,
+      "modelInitializationMs": 73.355315
+    },
+    {
+      "family": "shallow",
+      "models": 128,
+      "threads": 2,
+      "epochsPerSecondMedian": 4470.646469667968,
+      "epochsPerSecondRange": [
+        4061.516412971765,
+        4879.77652636417
+      ],
+      "nativeOpenMsMedian": 57.052934,
+      "modelInitializationMs": 73.355315
+    },
+    {
+      "family": "shallow",
+      "models": 128,
+      "threads": 4,
+      "epochsPerSecondMedian": 3098.505371709064,
+      "epochsPerSecondRange": [
+        3058.188291984159,
+        3138.8224514339686
+      ],
+      "nativeOpenMsMedian": 47.362318,
+      "modelInitializationMs": 73.355315
+    },
+    {
+      "family": "shallow",
+      "models": 512,
+      "threads": 1,
+      "epochsPerSecondMedian": 6222.666387455507,
+      "epochsPerSecondRange": [
+        5055.58636961779,
+        7389.746405293223
+      ],
+      "nativeOpenMsMedian": 54.364818,
+      "modelInitializationMs": 316.976255
+    },
+    {
+      "family": "shallow",
+      "models": 512,
+      "threads": 2,
+      "epochsPerSecondMedian": 4830.233286788231,
+      "epochsPerSecondRange": [
+        4679.507350605791,
+        4980.959222970672
+      ],
+      "nativeOpenMsMedian": 51.1389935,
+      "modelInitializationMs": 316.976255
+    },
+    {
+      "family": "shallow",
+      "models": 512,
+      "threads": 4,
+      "epochsPerSecondMedian": 8542.354191748731,
+      "epochsPerSecondRange": [
+        8207.891133866457,
+        8876.817249631007
+      ],
+      "nativeOpenMsMedian": 45.1695155,
+      "modelInitializationMs": 316.976255
+    },
+    {
+      "family": "deep",
+      "models": 5,
+      "threads": 1,
+      "epochsPerSecondMedian": 205.5128439104555,
+      "epochsPerSecondRange": [
+        179.99783167412053,
+        231.02785614679044
+      ],
+      "nativeOpenMsMedian": 51.945803999999995,
+      "modelInitializationMs": 3.78235
+    },
+    {
+      "family": "deep",
+      "models": 5,
+      "threads": 2,
+      "epochsPerSecondMedian": 335.05419596942875,
+      "epochsPerSecondRange": [
+        333.9969496459385,
+        336.1114422929189
+      ],
+      "nativeOpenMsMedian": 55.959827000000004,
+      "modelInitializationMs": 3.78235
+    },
+    {
+      "family": "deep",
+      "models": 5,
+      "threads": 4,
+      "epochsPerSecondMedian": 336.3097982747489,
+      "epochsPerSecondRange": [
+        315.16270331287814,
+        357.45689323661963
+      ],
+      "nativeOpenMsMedian": 40.349506,
+      "modelInitializationMs": 3.78235
+    },
+    {
+      "family": "deep",
+      "models": 32,
+      "threads": 1,
+      "epochsPerSecondMedian": 741.3804667131349,
+      "epochsPerSecondRange": [
+        560.7194487513831,
+        922.0414846748868
+      ],
+      "nativeOpenMsMedian": 81.4349,
+      "modelInitializationMs": 19.100751
+    },
+    {
+      "family": "deep",
+      "models": 32,
+      "threads": 2,
+      "epochsPerSecondMedian": 480.2418690342155,
+      "epochsPerSecondRange": [
+        472.10298466310013,
+        488.3807534053309
+      ],
+      "nativeOpenMsMedian": 72.4382595,
+      "modelInitializationMs": 19.100751
+    },
+    {
+      "family": "deep",
+      "models": 32,
+      "threads": 4,
+      "epochsPerSecondMedian": 446.7674962917835,
+      "epochsPerSecondRange": [
+        368.3331648247472,
+        525.2018277588198
+      ],
+      "nativeOpenMsMedian": 118.30044699999999,
+      "modelInitializationMs": 19.100751
+    },
+    {
+      "family": "deep",
+      "models": 128,
+      "threads": 1,
+      "epochsPerSecondMedian": 821.1011368604943,
+      "epochsPerSecondRange": [
+        804.0212934034516,
+        838.1809803175369
+      ],
+      "nativeOpenMsMedian": 99.153122,
+      "modelInitializationMs": 94.304198
+    },
+    {
+      "family": "deep",
+      "models": 128,
+      "threads": 2,
+      "epochsPerSecondMedian": 1176.3466206948747,
+      "epochsPerSecondRange": [
+        1005.5172906561588,
+        1347.1759507335903
+      ],
+      "nativeOpenMsMedian": 101.741345,
+      "modelInitializationMs": 94.304198
+    },
+    {
+      "family": "deep",
+      "models": 128,
+      "threads": 4,
+      "epochsPerSecondMedian": 1115.4461627282412,
+      "epochsPerSecondRange": [
+        752.0396552202287,
+        1478.8526702362535
+      ],
+      "nativeOpenMsMedian": 106.360846,
+      "modelInitializationMs": 94.304198
+    },
+    {
+      "family": "deep",
+      "models": 512,
+      "threads": 1,
+      "epochsPerSecondMedian": 1339.9831277084409,
+      "epochsPerSecondRange": [
+        1155.5272108742975,
+        1524.4390445425845
+      ],
+      "nativeOpenMsMedian": 98.768174,
+      "modelInitializationMs": 424.593523
+    },
+    {
+      "family": "deep",
+      "models": 512,
+      "threads": 2,
+      "epochsPerSecondMedian": 1209.815037310409,
+      "epochsPerSecondRange": [
+        1179.438530931872,
+        1240.1915436889462
+      ],
+      "nativeOpenMsMedian": 101.1164255,
+      "modelInitializationMs": 424.593523
+    },
+    {
+      "family": "deep",
+      "models": 512,
+      "threads": 4,
+      "epochsPerSecondMedian": 2056.2709681490373,
+      "epochsPerSecondRange": [
+        1901.7208168755897,
+        2210.821119422485
+      ],
+      "nativeOpenMsMedian": 74.242968,
+      "modelInitializationMs": 424.593523
+    },
+    {
+      "family": "padded",
+      "models": 5,
+      "threads": 1,
+      "epochsPerSecondMedian": 300.67224661714374,
+      "epochsPerSecondRange": [
+        289.23297843675596,
+        312.1115147975315
+      ],
+      "nativeOpenMsMedian": 49.188373,
+      "modelInitializationMs": 3.053339
+    },
+    {
+      "family": "padded",
+      "models": 5,
+      "threads": 2,
+      "epochsPerSecondMedian": 321.4547837720846,
+      "epochsPerSecondRange": [
+        301.111191835676,
+        341.7983757084933
+      ],
+      "nativeOpenMsMedian": 46.793647,
+      "modelInitializationMs": 3.053339
+    },
+    {
+      "family": "padded",
+      "models": 5,
+      "threads": 4,
+      "epochsPerSecondMedian": 312.4626586681819,
+      "epochsPerSecondRange": [
+        304.74801800422034,
+        320.17729933214343
+      ],
+      "nativeOpenMsMedian": 44.618666,
+      "modelInitializationMs": 3.053339
+    },
+    {
+      "family": "padded",
+      "models": 32,
+      "threads": 1,
+      "epochsPerSecondMedian": 717.4561885462674,
+      "epochsPerSecondRange": [
+        516.8786563713484,
+        918.0337207211863
+      ],
+      "nativeOpenMsMedian": 51.821464000000006,
+      "modelInitializationMs": 12.805891
+    },
+    {
+      "family": "padded",
+      "models": 32,
+      "threads": 2,
+      "epochsPerSecondMedian": 702.8925422327939,
+      "epochsPerSecondRange": [
+        645.9688295008474,
+        759.8162549647403
+      ],
+      "nativeOpenMsMedian": 73.8996625,
+      "modelInitializationMs": 12.805891
+    },
+    {
+      "family": "padded",
+      "models": 32,
+      "threads": 4,
+      "epochsPerSecondMedian": 822.9738730759722,
+      "epochsPerSecondRange": [
+        719.3376838546757,
+        926.6100622972687
+      ],
+      "nativeOpenMsMedian": 58.967326,
+      "modelInitializationMs": 12.805891
+    },
+    {
+      "family": "padded",
+      "models": 128,
+      "threads": 1,
+      "epochsPerSecondMedian": 991.0409699598293,
+      "epochsPerSecondRange": [
+        877.9852413918493,
+        1104.0966985278094
+      ],
+      "nativeOpenMsMedian": 74.37841449999999,
+      "modelInitializationMs": 45.627711
+    },
+    {
+      "family": "padded",
+      "models": 128,
+      "threads": 2,
+      "epochsPerSecondMedian": 997.1255480634524,
+      "epochsPerSecondRange": [
+        995.4367995029585,
+        998.8142966239462
+      ],
+      "nativeOpenMsMedian": 93.8914705,
+      "modelInitializationMs": 45.627711
+    },
+    {
+      "family": "padded",
+      "models": 128,
+      "threads": 4,
+      "epochsPerSecondMedian": 1403.1235490558781,
+      "epochsPerSecondRange": [
+        1130.5056938855473,
+        1675.741404226209
+      ],
+      "nativeOpenMsMedian": 85.79099099999999,
+      "modelInitializationMs": 45.627711
+    },
+    {
+      "family": "padded",
+      "models": 512,
+      "threads": 1,
+      "epochsPerSecondMedian": 2202.918600595408,
+      "epochsPerSecondRange": [
+        2135.256254367626,
+        2270.5809468231905
+      ],
+      "nativeOpenMsMedian": 73.5245315,
+      "modelInitializationMs": 290.209554
+    },
+    {
+      "family": "padded",
+      "models": 512,
+      "threads": 2,
+      "epochsPerSecondMedian": 1544.0355032915727,
+      "epochsPerSecondRange": [
+        1261.3033205958566,
+        1826.767685987289
+      ],
+      "nativeOpenMsMedian": 73.149227,
+      "modelInitializationMs": 290.209554
+    },
+    {
+      "family": "padded",
+      "models": 512,
+      "threads": 4,
+      "epochsPerSecondMedian": 1740.5042192368633,
+      "epochsPerSecondRange": [
+        1394.3621278949533,
+        2086.646310578773
+      ],
+      "nativeOpenMsMedian": 76.16067,
+      "modelInitializationMs": 290.209554
+    }
+  ]
+}

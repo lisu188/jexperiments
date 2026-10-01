@@ -50,7 +50,7 @@ internal data class SearchBenchmarkOptions(
         fun usage() = """
             architectureSearchBenchmark --mode fixed|quality --manifest small|general
               --epochs N (fixed default 2000; quality default 1000000) --engine SMALL|REFERENCE
-              --workers 1,4,8,16,32 --backends CPU,CUDA --executions REFERENCE,OPTIMIZED
+              --workers 1,4,8,16,32 --backends CPU,CUDA --executions REFERENCE,OPTIMIZED,BATCHED
               --warmups 1 --repeats 3 --order-offset 0 --limit-seconds 0
               --search-seeds 42,123 --trials 60 --output PATH.jsonl
             Each process is one JVM fork; run three forks with rotated order offsets.
@@ -70,7 +70,8 @@ internal data class SearchBenchmarkOptions(
                 values["--epochs"]?.toInt() ?: if (mode == "quality") 1_000_000 else 2_000,
                 values["--workers"]?.split(',')?.map(String::toInt) ?: listOf(4),
                 values["--backends"]?.split(',')?.map { TrainingBackend.valueOf(it) } ?: listOf(TrainingBackend.CPU),
-                values["--executions"]?.split(',')?.map { ArchitectureExecution.valueOf(it) } ?: ArchitectureExecution.entries,
+                values["--executions"]?.split(',')?.map { ArchitectureExecution.valueOf(it) }
+                    ?: listOf(ArchitectureExecution.REFERENCE, ArchitectureExecution.OPTIMIZED),
                 values["--warmups"]?.toInt() ?: 1, values["--repeats"]?.toInt() ?: 3,
                 values["--order-offset"]?.toInt() ?: 0, values["--limit-seconds"]?.toLong() ?: 0,
                 values["--search-seeds"]?.split(',')?.map(String::toLong) ?: listOf(42, 123),
@@ -189,6 +190,8 @@ internal object SearchBenchmarkHarness {
             "trialsPerSecond" to trials.count { it.state == ArchitectureTrialState.COMPLETED } * 1e9 / elapsed.coerceAtLeast(1),
             "peakModels" to result.peakParallelTrials, "peakWorkers" to result.peakWorkers,
             "peakResidentModels" to result.peakResidentModels, "gpuBatches" to result.gpuBatches,
+            "nativeTrainingCalls" to result.nativeTrainingCalls, "modelsPerBatch" to result.modelsPerBatch,
+            "aggregateEpochsPerSecond" to result.aggregateEpochsPerSecond, "budgetPolicy" to result.config.budgetPolicy.name,
             "targetMet" to (winner != null), "winner" to winner?.architecture?.hidden,
             "independentTest" to winner?.representative?.snapshot?.let(::independentScore),
             "candidates" to result.candidates.map { candidate -> mapOf("hidden" to candidate.architecture.hidden,
