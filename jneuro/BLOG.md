@@ -152,13 +152,107 @@ The comparison used two JVM processes per implementation, reversing baseline/opt
 
 Session construction costs more because it now exports the two function definitions before opening the retained runtime: the median across measured openings rose from 13.43 to 21.95 ms. The benefit belongs to repeated training through that session; the report also records the slower first opening in each process separately. These measurements use CPU execution. GPU operation placement remains explicit, but a faster JVM call pattern does not establish GPU throughput or imply that TensorFlow fuses an entire epoch into one GPU kernel. Default batch size, precision, activation and search budgets are unchanged by this optimization.
 
-## Architecture search and cohorts
+## Architecture search: a model dimension in TensorFlow
 
-Architecture generation, evaluation policies, seed ordering, bounded worker queues, scoring cadence and candidate ranking remain Kotlin. Each active model owns independent TensorFlow variables and optimizer state. Shared datasets are immutable; independent trials never share mutable parameters.
+`ArchitectureExecution.BATCHED` changes the numerical unit of work from a model session to a population tensor. `REFERENCE` and `OPTIMIZED` remain available for comparisons and preserve existing API defaults. Studio starts new searches with batched execution and an explicit **Prune weak trials** budget policy. Selecting **Full budget** retains each admitted trial's requested epoch budget. Neither choice silently changes precision, sigmoid, learning rate, momentum or samples per mini-batch.
 
-CPU search uses the existing bounded worker orchestration. TensorFlow sessions are configured with one intra-operation and one inter-operation worker so every search worker does not create another large numerical pool. The GPU-facing queue retains bounded ownership and asynchronous completion, but its computation now uses TensorFlow sessions rather than a heterogeneous custom CUDA kernel.
+The earlier cohort and GPU queue were orchestration mechanisms: they still called separate model sessions. A wide worker pool could therefore multiply scheduling overhead without combining the tiny matrix operations. The new `TensorFlowCohortGraph` uses one leading tensor dimension per independent model. For a layer with padded input width `I`, output width `O`, sample batch `S` and resident model count `M`, the important shapes are:
 
-Full-budget search still runs the requested epoch budget for each trial and records scores at configured boundaries. Convergence reporting, replay and application of selected architectures continue to use detached snapshots. Resetting results clears the ranking cache and references to old checkpoints as well as the visible table.
+| Tensor | Shape |
+| --- | --- |
+| Activations | `[M, S, I]` |
+| Weights and weight momentum | `[M, O, I]` |
+| Biases and bias momentum | `[M, 1, O]` |
+| Output and deltas | `[M, S, O]` |
+| Training or validation score | `[M]` |
+
+[TensorFlow's BatchMatMulV2 documentation](https://www.tensorflow.org/api_docs/cc/class/tensorflow/ops/batch-mat-mul-v2) defines products of matrix slices with broadcast batch dimensions. That directly fits independent model states and a shared dataset. The [TensorFlow authors' vectorization paper](https://arxiv.org/abs/1903.04243) motivates combining corresponding operations across independent invocations; JNeuro constructs the model axis explicitly through TensorFlow Java rather than relying on a Python vectorization wrapper.
+
+The gradient matrix multiplies over samples, while the bias reduction uses only the sample axis:
+
+```kotlin
+val gradient = graph.op("RealDiv",
+    graph.batchMatmul(deltas[layer], activations[layer], transposeA = true), count)
+val biasGradient = graph.reduce("Mean", deltas[layer], intArrayOf(1), keepDims = true)
+```
+
+There is no model-axis reduction. Seeds retain separate weights, biases, momentum, shuffle sequences, epoch counts and stopping state. Forward inference, sigmoid derivatives, gradient accumulation, momentum updates, finite-state checks and RMSE remain TensorFlow operations; Kotlin owns shapes, indices, scheduling and presentation.
+
+### Padding different widths without inventing neurons
+
+Models with the same hidden depth can share a cohort even when their widths differ. The scheduler pads each layer to the widest corresponding layer, splits batches when padding would exceed four times the actual parameter count, and estimates resident tensor storage separately from retained snapshot storage. The 128 MiB admission guard covers padded optimizer copies, activations, datasets and bounded shuffle workspaces; it is not a cap on total TensorFlow or process memory. Native runtime and allocator overhead remain additional costs. Different depths use separate graphs and advance in rounds, so the first admitted topology does not monopolize the search.
+
+Zero weights alone are insufficient padding: exact sigmoid at zero is one half. Forward propagation masks each layer's activations after the sigmoid:
+
+```kotlin
+val mask = DoubleArray(size * caps[layer + 1]) { index ->
+    if (index % caps[layer + 1] < source[index / caps[layer + 1]].topology[layer + 1]) 1.0 else 0.0
+}
+values += graph.op("Mul", output,
+    graph.constant(mask, longArrayOf(size.toLong(), 1, caps[layer + 1].toLong())))
+```
+
+Padded activations and their derivatives therefore contribute zero to following layers and gradients. Export removes padding and preserves the original topology. Tests compare every parameter and momentum buffer with independent TensorFlow sessions across mixed widths, both precisions, both sigmoid modes and ragged sample batches.
+
+### Native state between checkpoints
+
+A retained cohort graph contains current and best parameter/velocity tensors, immutable training and validation data, and best scores. It owns a private TensorFlow worker pool, with one intra-operation worker by default and one inter-operation worker. The recorded kernel version is `tensorflow-<runtime>-batched-v1-t<intraOpThreads>`, so replay can reject a changed numerical configuration. Increasing native threads is an explicit benchmark parameter; it is not coupled to the legacy search-worker spinner. One `advance` call supplies independent shuffle indices and an active-lane mask. Its functional `While` gathers each lane's mini-batch and updates all active models together. One JVM call is **not** a claim of one CUDA kernel launch: TensorFlow still schedules the operations inside that loop.
+
+The active mask selects the complete optimizer state, including momentum. Each mini-batch checks whether every parameter and velocity of a lane remains finite. If any update fails, that lane becomes inactive for the remaining chunk, and final publication selects its original chunk-start state:
+
+```kotlin
+val committed = definition.reshape("$loop:6", intArrayOf(size, 1, 1), DataType.DT_BOOL)
+val assigns = variables.take(4 * layers).indices.map { index ->
+    definition.assign(variables[index],
+        definition.select(committed, "$loop:${7 + index}", initial[7 + index]))
+}
+```
+
+Successful siblings can commit without inheriting a failed lane's state. Host shuffle reservations advance only for successful lanes. A native execution exception poisons that cohort instead of publishing uncertain progress.
+
+Scoring produces vectors of training and validation RMSE. A scoring mask restricts best-checkpoint updates to trials actually due for evaluation; another lane reaching a boundary must not give its siblings extra selection opportunities. Best states stay in TensorFlow until a cohort must be regrouped, a trial finishes, or a selected checkpoint is exported. Bulk export fetches selected lanes together. No per-model prediction session or parameter download is required for ordinary scoring.
+
+### Broad exploration and bounded successive halving
+
+`PopulationArchitectureProposals` starts with the current eligible architecture, the minimum topology, diverse depth/width combinations and seeded exploration. It can admit many proposals before any candidate has finished. Complete seed groups are funded together; `maxTrials` counts admitted architecture/seed pairs rather than only survivors.
+
+The optional pruning policy uses successive-halving stages inspired by [Hyperband](https://keras.io/keras_tuner/api/tuners/hyperband/). The initial budget is clamped to the configured maximum. At a stage boundary, groups compare median validation scores from the same epoch budget, retain approximately one in `reductionFactor` groups, and multiply the survivors' budget by that factor. Ties use stable architecture ordering. A group may finish early when its recorded median and required number of successful seeds meet the requested target.
+
+This implementation uses deterministic streaming brackets, not a claim to reproduce the full Hyperband or ASHA algorithms. Decisions occur after a stable round of numerical batches. Each round advances all live lanes by a deterministic common milestone delta; measured execution time only divides that fixed work into smaller native calls. Faster hardware therefore does not choose a different proposal order. Pruned and completed groups free capacity for new brackets while long-running survivors continue. Regrouping exports current and best state before reopening bounded cohorts, and the benchmark includes that cost. This avoids replacing the original first-candidate barrier with a barrier around an entire population.
+
+A pruned trial has a distinct `PRUNED` terminal state. Its candidate is not fully evaluated and cannot be recommended, applied or replayed as a completed result. Early pruning can discard a slow-starting architecture; **Full budget** remains the appropriate comparison when that tradeoff is undesirable. The policy is distinct from ordinary training convergence and never changes the single-epoch Studio controls.
+
+Native chunks stop at a scoring boundary, a stage boundary or 64 epochs, whichever comes first. An observed per-epoch duration reduces subsequent chunks toward a 50 ms execution budget. One epoch can itself exceed that budget, so it is a responsiveness target rather than a hard deadline. Cancellation is checked between native calls. Ordinary progress publications are throttled to 10 Hz; initial, final and membership-change updates publish immediately. They report actual training calls, active models per batch and aggregate model-epochs per elapsed second.
+
+### Replaying a regrouped population
+
+A replay needs more than the seed. Padding, capacity and lane position can affect a native kernel's arithmetic path. Each trial records consecutive `ArchitectureBatchSegment` entries with committed epoch bounds and the exact tensor geometry used during that interval. Replay recreates those geometries with one active recorded lane and inactive placeholders, carries parameters and momentum between segments, and advances the original shuffle sequence.
+
+```kotlin
+val active = BooleanArray(segment.capacity) { it == segment.lane }
+val order = model.reserveTrainingOrders(count)
+val failed = kernel.advance(
+    Array(segment.capacity) { if (active[it]) order else emptyArray() }, active)
+check(failed.size == segment.capacity && !failed[segment.lane])
+model.commitTrainingChunk(kernel.exportState(segment.lane), count, evaluateError = false)
+```
+
+At the best epoch, replay uses the same batched scoring graph. An FP32 best checkpoint at epoch zero explicitly publishes the native rounded parameters and momentum without advancing counters or shuffle; merely returning its native score would leave the original FP64 initialization installed. Recomputing an FP32 or padded checkpoint through ordinary FP64 inference would compare different arithmetic. Device, precision, activation and numerical-kernel provenance must still match exactly, and the reproduced score must pass the existing strict tolerance before Studio installs the model. Geometry is validated for continuity and bounded memory before native allocation.
+
+### Measured whole-search performance
+
+The [population search report](benchmarks/2026-10-01-batched-search/README.md) compares this implementation with the frozen epoch-loop implementation from commit `11ed5d8`, using the same Spiral split, five seeds, FP64, exact sigmoid, online updates and full 50-epoch budgets. Two warmed JVM forks per implementation reverse the execution order in the second pair. Each case has four observations; elapsed time includes initialization, graph opening, scoring, snapshots, regrouping and close.
+
+| Full-budget workload | Previous search median | Batched search median | Improvement |
+| --- | ---: | ---: | ---: |
+| Five seeds, `2→6→1` | 2,278.526 ms | 710.147 ms | 3.21× |
+| Six mixed architectures × five seeds | 13,366.273 ms | 2,605.592 ms | 5.13× |
+
+All 140 compared best checkpoints agreed: 4,220 parameter values differed by at most `7.11e-15`, RMSE differed by at most `1.11e-16`, and completed epochs and selected best epochs matched exactly. The focused numerical tests separately compare complete momentum state. These are local CPU results, not GPU measurements. The report retains ranges and startup observations: the slowest batched first-result observation in the mixed case was 3,962.600 ms versus 3,638.436 ms for the previous implementation, so the throughput improvement is not a guarantee that every first result arrives sooner.
+
+The pruning experiment is separate because it deliberately changes the training budget. Across two search seeds, a 150-epoch cap and 60 admitted trials, full-budget batched search committed 9,000 model-epochs in 15.056/17.349 seconds. Pruning committed 3,875 model-epochs in 8.544/4.060 seconds and pruned 45 of 60 trials. Its best median validation RMSE was slightly worse: `0.463514857` versus `0.463122755`. Neither policy reached the requested `0.05` target. This short experiment demonstrates reduced work and its quality tradeoff; it does not establish time to convergence or certify an optimal Spiral architecture.
+
+An [exploratory cohort matrix](benchmarks/2026-10-01-batched-search/cohort/README.md) separates retained training from graph startup and varies model count and native thread count. It has one JVM and two observations per setting, so it guides further experiments rather than supporting a universal thread recommendation. The default remains one intra-operation thread; actual bucket size and topology matter more than simply increasing the thread count.
 
 ## Studio diagnostics without a second network
 

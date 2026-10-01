@@ -59,7 +59,7 @@ internal object TensorFlowMath {
             engine, 0, sigmoid.name)
     }
 
-    private fun device(backend: TrainingBackend): String {
+    internal fun device(backend: TrainingBackend): String {
         if (backend == TrainingBackend.CPU || backend == TrainingBackend.AUTO) return CPU
         check(isGpuAvailable()) { "TensorFlow GPU unavailable: ${gpuFailure()}. Use a GPU-enabled Linux runtime or select CPU." }
         return GPU
@@ -108,6 +108,12 @@ internal object TensorFlowMath {
                        precision: Neuro.TrainingPrecision, backend: TrainingBackend,
                        engine: TrainingEngine = TrainingEngine.REFERENCE): SmallTrainingKernel =
         TrainingGraph(state, hp, precision, backend, engine)
+
+    fun searchCohort(states: Array<NeuroTrainingState>, hp: Neuro.HyperParameters,
+                     precision: Neuro.TrainingPrecision, backend: TrainingBackend,
+                     validationInputs: DoubleArray, validationTargets: DoubleArray,
+                     batchSize: Int = 1, paddedTopology: IntArray? = null, intraOpThreads: Int = 1): TensorFlowSearchCohort =
+        TensorFlowCohortGraph(states, hp, precision, backend, validationInputs, validationTargets, batchSize, paddedTopology, intraOpThreads)
 
     private fun <T> withInference(topology: IntArray, hp: Neuro.HyperParameters,
                                   precision: Neuro.TrainingPrecision, backend: TrainingBackend,
@@ -411,12 +417,12 @@ internal object TensorFlowMath {
             }
     }
 
-    private class RuntimeGraph(val graph: Graph, val session: Session) : AutoCloseable {
+    internal class RuntimeGraph(val graph: Graph, val session: Session) : AutoCloseable {
         override fun close() { try { session.close() } finally { graph.close() } }
     }
 
     /** Named TensorFlow operations keep dtype and device decisions inside the numerical boundary. */
-    private class Definition(val precision: Neuro.TrainingPrecision, private val device: String) {
+    internal class Definition(val precision: Neuro.TrainingPrecision, private val device: String) {
         val dtype = if (precision == Neuro.TrainingPrecision.FP64) DataType.DT_DOUBLE else DataType.DT_FLOAT
         private val graph = GraphDef.newBuilder()
         private var sequence = 0
@@ -456,8 +462,8 @@ internal object TensorFlowMath {
         }
         fun matmul(a: String, b: String, transposeA: Boolean = false, transposeB: Boolean = false) =
             node("MatMul", listOf(a, b), mapOf("T" to type(dtype), "transpose_a" to bool(transposeA), "transpose_b" to bool(transposeB)))
-        fun reduce(op: String, input: String, axes: IntArray) = node(op, listOf(input, ints(axes)),
-            mapOf("T" to type(dtype), "Tidx" to type(DataType.DT_INT32), "keep_dims" to bool(false)))
+        fun reduce(op: String, input: String, axes: IntArray, keepDims: Boolean = false) = node(op, listOf(input, ints(axes)),
+            mapOf("T" to type(dtype), "Tidx" to type(DataType.DT_INT32), "keep_dims" to bool(keepDims)))
         fun cast(input: String, destination: DataType, source: DataType = DataType.DT_INT32) = node("Cast", listOf(input),
             mapOf("SrcT" to type(source), "DstT" to type(destination), "Truncate" to bool(false)))
         fun gather(input: String, indices: String): String {
@@ -499,12 +505,13 @@ internal object TensorFlowMath {
             val positive = op("GreaterEqual", input, scalar(0.0))
             return node("SelectV2", listOf(positive, op("RealDiv", scalar(1.0), denominator), op("RealDiv", exp, denominator)), mapOf("T" to type(dtype)))
         }
-        fun open(): RuntimeGraph {
+        fun open(intraOpThreads: Int = 1, privateThreads: Boolean = false): RuntimeGraph {
+            require(intraOpThreads > 0)
             val native = Graph()
             try {
                 native.importGraphDef(graph.build())
                 val config = ConfigProto.newBuilder().setAllowSoftPlacement(false).setInterOpParallelismThreads(1)
-                    .setIntraOpParallelismThreads(1).setIsolateSessionState(true)
+                    .setIntraOpParallelismThreads(intraOpThreads).setUsePerSessionThreads(privateThreads).setIsolateSessionState(true)
                     .setGpuOptions(GPUOptions.newBuilder().setAllowGrowth(true)).build()
                 return RuntimeGraph(native, Session(native, false, config))
             } catch (failure: Throwable) { native.close(); throw failure }
@@ -517,11 +524,11 @@ internal object TensorFlowMath {
         }
     }
 
-    private fun tensor(values: DoubleArray, precision: Neuro.TrainingPrecision, vararg dims: Long): Tensor =
+    internal fun tensor(values: DoubleArray, precision: Neuro.TrainingPrecision, vararg dims: Long): Tensor =
         if (precision == Neuro.TrainingPrecision.FP64) TFloat64.tensorOf(Shape.of(*dims), DataBuffers.of(values, false, false))
         else TFloat32.tensorOf(Shape.of(*dims), DataBuffers.of(FloatArray(values.size) { values[it].toFloat() }, false, false))
 
-    private fun validate(state: NeuroTrainingState): NeuroTrainingState {
+    internal fun validate(state: NeuroTrainingState): NeuroTrainingState {
         require(state.topology.size >= 2 && state.topology.all { it > 0 }) { "Invalid training topology." }
         val layers = state.topology.size - 1
         val buffers = arrayOf(state.weights, state.biases, state.weightVelocity, state.biasVelocity)
@@ -540,7 +547,7 @@ internal object TensorFlowMath {
         return state
     }
 
-    private fun doubles(value: Tensor): DoubleArray {
+    internal fun doubles(value: Tensor): DoubleArray {
         val size = Math.toIntExact(value.shape().size())
         return when (value) {
             is TFloat64 -> DoubleArray(size).also { value.copyTo(DataBuffers.of(it, false, false)) }

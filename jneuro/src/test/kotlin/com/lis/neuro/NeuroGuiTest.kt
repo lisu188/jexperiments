@@ -451,6 +451,8 @@ class NeuroGuiTest {
     @Test fun searchInputsAcceptValuesBeyondOldCaps() {
         tab("Architecture search")
         click(button("Advanced search settings"))
+        choose(combo("Search execution", panel), ArchitectureExecution.REFERENCE.ordinal)
+        assertEquals(ArchitectureBudgetPolicy.FULL, edt { combo("Training budget policy", panel).selectedItem })
         for ((name, value) in listOf("Max layers" to "9", "Max width" to "129", "Max parameters" to "1000001",
             "Epochs per seed" to "1000001", "Check every (epochs)" to "1000001", "Parallel seed trials" to "33",
             "Trial budget" to "20001", "Seconds (0 = unlimited)" to "2147483648", "Validation fraction" to "0.05",
@@ -803,6 +805,157 @@ class NeuroGuiTest {
         assertEquals(ArchitectureExecution.REFERENCE, edt { panel.readConfig().execution })
     }
 
+    @Test fun batchedControlsExposeBudgetTradeoffsAndValidateModelBatchingInSmallWindow() {
+        tab("Architecture search")
+        assertEquals(ArchitectureExecution.BATCHED, edt { panel.readConfig().execution })
+        assertEquals(ArchitectureBudgetPolicy.SUCCESSIVE_HALVING, edt { panel.readConfig().budgetPolicy })
+        assertEquals(128, edt { panel.readConfig().modelsPerBatch })
+        assertFalse(edt { (field(panel, "threads") as JSpinner).isEnabled })
+        assertFalse(edt { (field(panel, "restartAfter") as JSpinner).isEnabled || (field(panel, "restarts") as JSpinner).isEnabled })
+        assertTrue(edt { (field(panel, "lineageStatus") as JLabel).text.contains("broad population") })
+        edt { window.setSize(1000, 720) }
+        click(button("Advanced search settings"))
+        number("Models per training batch", "6", panel)
+        number("Initial epochs", "2", panel)
+        number("Reduction factor", "2", panel)
+        assertEquals(6, edt { panel.readConfig().modelsPerBatch })
+        assertEquals(2, edt { panel.readConfig().initialEpochs })
+        assertEquals(2, edt { panel.readConfig().reductionFactor })
+        assertEquals(1, edt { panel.readConfig().batchSize })
+        assertTrue(edt { (field(panel, "budgetStatus") as JLabel).text.contains("never recommended") })
+        val original = edt { current.diagnostics.parameters() }
+        for ((name, value, error, restored) in listOf(
+            listOf("Models per training batch", "1025", "Models per training batch", "6"),
+            listOf("Initial epochs", "0", "Initial training epochs", "2"),
+            listOf("Reduction factor", "1", "Pruning factor", "3"))) {
+            number(name, value, panel)
+            click(button("Start search"))
+            await("batched $name rejected") { (field(panel, "summary") as JLabel).text.contains(error) }
+            assertFalse(edt { field(ui, "searchRunning") as Boolean })
+            assertArrayEquals(original, edt { current.diagnostics.parameters() }, 0.0)
+            number(name, restored, panel)
+        }
+        choose(combo("Training budget policy", panel), ArchitectureBudgetPolicy.FULL.ordinal)
+        assertFalse(edt { (field(panel, "initialEpochs") as JSpinner).isEnabled })
+        assertFalse(edt { (field(panel, "reductionFactor") as JSpinner).isEnabled })
+        assertTrue(edt { (field(panel, "epochs") as JSpinner).toolTipText.contains("full epoch budget") })
+        choose(combo("Search execution", panel), ArchitectureExecution.REFERENCE.ordinal)
+        assertTrue(edt { (field(panel, "threads") as JSpinner).isEnabled })
+        assertTrue(edt { (field(panel, "restartAfter") as JSpinner).isEnabled && (field(panel, "restarts") as JSpinner).isEnabled })
+        assertTrue(edt { (field(panel, "lineageStatus") as JLabel).text.contains("restarts") })
+        assertFalse(edt { combo("Training budget policy", panel).isEnabled })
+        assertFalse(edt { (field(panel, "modelsPerBatch") as JSpinner).isEnabled })
+        choose(combo("Search execution", panel), ArchitectureExecution.BATCHED.ordinal)
+        choose(combo("Training budget policy", panel), ArchitectureBudgetPolicy.SUCCESSIVE_HALVING.ordinal)
+        assertTrue(edt { (field(panel, "initialEpochs") as JSpinner).isEnabled })
+        screenshot("batched-search-controls-small-window")
+    }
+
+    @Test fun batchedSpiralPopulationPrunesHonestlyAndReplaysCompletedCheckpoint() {
+        choose(combo("Dataset"), NeuroLearningSets.Kind.SPIRAL.ordinal)
+        configure("2", 1, 0.0)
+        val original = edt { current.diagnostics.parameters() }
+        tab("Architecture search"); searchSettings(6)
+        choose(combo("Search execution", panel), ArchitectureExecution.BATCHED.ordinal)
+        choose(combo("Training budget policy", panel), ArchitectureBudgetPolicy.SUCCESSIVE_HALVING.ordinal)
+        choose(combo("Scoring mode", panel), ArchitectureEvaluation.VALIDATION.ordinal)
+        number("Initial epochs", "2", panel); number("Reduction factor", "3", panel)
+        number("Check every (epochs)", "2", panel); number("Models per training batch", "6", panel)
+        number("Target RMSE", "0.0", panel)
+        text(input("Seeds", panel), "1,42"); number("Required successes", "2", panel)
+        number("Trial budget", "6", panel)
+        click(button("Start search"))
+        await("batched Spiral population completed") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertEquals(ArchitectureExecution.BATCHED, report.config.execution)
+        assertEquals(ArchitectureBudgetPolicy.SUCCESSIVE_HALVING, report.config.budgetPolicy)
+        assertEquals(3, report.generated)
+        assertEquals(3, report.candidates.size)
+        assertEquals(6, report.peakParallelTrials, "The initial population must admit all architecture/seed pairs")
+        assertEquals(176, report.data.training.size); assertEquals(44, report.data.validation.size)
+        assertEquals(0, report.numericalFailures)
+        val completed = report.candidates.single { it.valid }
+        assertTrue(completed.trials.all { it.state == ArchitectureTrialState.COMPLETED && it.epochs == 6 })
+        val pruned = report.candidates.filter { it.trials.any { trial -> trial.state == ArchitectureTrialState.PRUNED } }
+        assertEquals(2, pruned.size)
+        assertTrue(pruned.all { !it.valid && it.trials.size == 2 && it.trials.all { trial -> trial.epochs == 2 } })
+        assertTrue(report.candidates.flatMap { it.trials }.all {
+            it.route == ArchitectureTrialRoute.TENSOR_BATCH && it.deviceInfo?.backend == TrainingBackend.CPU &&
+                it.deviceInfo.kernelVersion.contains("tensorflow", ignoreCase = true)
+        }, "This scenario must exercise actual TensorFlow CPU batched training")
+        assertTrue(report.nativeTrainingCalls > 0)
+        assertEquals(6, report.modelsPerBatch)
+        assertTrue(report.aggregateEpochsPerSecond.isFinite() && report.aggregateEpochsPerSecond > 0)
+        assertTrue(edt { (field(panel, "throughputStatus") as JLabel).text.contains("Training calls: ${report.nativeTrainingCalls}") })
+        assertTrue(edt { (field(panel, "progressBar") as JProgressBar).string.contains("2 pruned") })
+        assertArrayEquals(original, edt { current.diagnostics.parameters() }, 0.0)
+        val table = edt { field(panel, "table") as JTable }
+        fun select(candidate: ArchitectureCandidate) {
+            reveal(table)
+            val location = edt {
+                val row = table.convertRowIndexToView(report.candidates.indexOf(candidate))
+                Point(50, row * table.rowHeight + table.rowHeight / 2)
+            }
+            point(table, location.x, location.y)
+            await("batched candidate selected") { field(panel, "selected") == candidate.architecture }
+        }
+        select(pruned.first())
+        assertEquals("PRUNED", edt { table.getValueAt(table.selectedRow, 6) })
+        click(button("Inspect result"))
+        assertNotNull(edt { field(panel, "surface") })
+        assertTrue(edt { (field(panel, "details") as JLabel).text.contains("PRUNED") })
+        assertFalse(edt { button("Apply architecture").isEnabled || button("Replay selected run").isEnabled })
+        select(completed)
+        assertTrue(edt { button("Apply architecture").isEnabled && button("Replay selected run").isEnabled })
+        val trial = edt { field(panel, "chosenTrial") as ArchitectureTrial }
+        screenshot("batched-spiral-population-results")
+        click(button("Replay selected run"))
+        await("batched Spiral checkpoint replay") { current.replayNote.contains("Validation RMSE") && current.samples.size == 176 }
+        assertEquals(trial.bestEpoch, edt { current.diagnostics.epoch() })
+        assertArrayEquals(trial.snapshot!!.parameters(), edt { current.diagnostics.parameters() }, 1e-10)
+        assertSearchResultsReleased()
+        click(button("Reset"))
+        await("batched replay restores full Spiral data") { current.samples.size == 220 && current.diagnostics.epoch() == 0 && current.replayNote.isEmpty() }
+    }
+
+    @Test fun batchedFullBudgetKeepsEverySeedAndCancellationRetainsPartialResults() {
+        tab("Architecture search"); searchSettings(6)
+        choose(combo("Search execution", panel), ArchitectureExecution.BATCHED.ordinal)
+        assertEquals(ArchitectureBudgetPolicy.FULL, edt { combo("Training budget policy", panel).selectedItem })
+        number("Models per training batch", "6", panel); number("Check every (epochs)", "2", panel)
+        text(input("Seeds", panel), "1,42"); number("Required successes", "2", panel)
+        number("Trial budget", "6", panel)
+        click(button("Start search"))
+        await("batched full-budget completed") { field(panel, "result") != null }
+        val report = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertEquals(ArchitectureBudgetPolicy.FULL, report.config.budgetPolicy)
+        assertEquals(3, report.evaluated)
+        assertTrue(report.candidates.flatMap { it.trials }.all { it.history.first().score <= report.config.targetRmse })
+        assertTrue(report.candidates.all { it.valid && it.trials.size == 2 })
+        assertTrue(report.candidates.flatMap { it.trials }.all {
+            it.state == ArchitectureTrialState.COMPLETED && it.epochs == 6 && it.route == ArchitectureTrialRoute.TENSOR_BATCH &&
+                it.history.map { point -> point.epoch } == listOf(0, 2, 4, 6)
+        }, "A target already met at initialization must not shorten FULL training")
+        assertTrue(report.nativeTrainingCalls > 0)
+        number("Epochs per seed", Int.MAX_VALUE.toString(), panel)
+        number("Check every (epochs)", "25", panel)
+        click(button("Start search"))
+        await("batched training makes committed progress") {
+            (field(panel, "summary") as JLabel).text.matches(Regex(".*epoch [1-9][0-9]*/${Int.MAX_VALUE}")) &&
+                !(field(panel, "throughputStatus") as JLabel).text.contains("Training calls: 0 ")
+        }
+        click(button("Cancel search"))
+        await("batched cancellation settled") { (field(panel, "result") as ArchitectureSearchResult?)?.termination == ArchitectureTermination.CANCELLED }
+        val cancelled = edt { field(panel, "result") as ArchitectureSearchResult }
+        assertEquals(3, cancelled.generated)
+        assertTrue(cancelled.partial > 0)
+        assertTrue(cancelled.candidates.flatMap { it.trials }.any { it.epochs > 0 && it.state == ArchitectureTrialState.CANCELLED })
+        assertNull(cancelled.selection.recommended)
+        assertFalse(edt { button("Apply architecture").isEnabled || button("Replay selected run").isEnabled })
+        assertTrue(edt { combo("Search execution", panel).isEnabled && combo("Training budget policy", panel).isEnabled })
+        screenshot("batched-search-cancelled")
+    }
+
     @Test fun pngExportAndCancelUseTheRealFileDialog() {
         tab("Neurons")
         click(button("Save PNG"))
@@ -966,6 +1119,9 @@ class NeuroGuiTest {
         number("Target RMSE","0.9",panel)
         choose(combo("Search strategy",panel),ArchitectureSearchStrategy.EXHAUSTIVE.ordinal)
         choose(combo("Scoring mode",panel),ArchitectureEvaluation.TRAINING_FIT.ordinal)
+        choose(combo("Search execution", panel), ArchitectureExecution.REFERENCE.ordinal)
+        assertEquals(ArchitectureBudgetPolicy.FULL, edt { combo("Training budget policy", panel).selectedItem },
+            "Legacy scenarios explicitly retain full-budget reference execution")
     }
 
     private fun advanced() {

@@ -368,6 +368,20 @@ class Neuro @JvmOverloads constructor(
 
     internal fun commitDeviceEpoch(state: NeuroTrainingState): Double = commitTrainingChunk(state, 1)
 
+    /** Publishes native precision conversion for a scored, untrained checkpoint without consuming shuffle state. */
+    @Synchronized internal fun publishInitialTrainingState(state: NeuroTrainingState) {
+        checkTrainingAccess()
+        check(epochsTrained == 0L && samplesSeen == 0L) { "Initial state publication requires an untrained model." }
+        validateTrainingState(state)
+        for (index in layers.indices) {
+            state.weights[index].copyInto(layers[index].weights)
+            state.biases[index].copyInto(layers[index].biases)
+            state.weightVelocity[index].copyInto(layers[index].weightVelocity)
+            state.biasVelocity[index].copyInto(layers[index].biasVelocity)
+        }
+        lastTrainingError = Double.NaN
+    }
+
     @JvmOverloads internal fun commitTrainingChunk(state: NeuroTrainingState, epochs: Int, evaluateError: Boolean = true): Double {
         checkTrainingAccess()
         require(epochs in 1..64)
