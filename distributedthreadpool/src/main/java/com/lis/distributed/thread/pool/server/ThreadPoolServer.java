@@ -7,6 +7,7 @@ import com.lis.distributed.thread.pool.func.SerializableConsumer;
 import com.lis.distributed.thread.pool.func.SerializableSupplier;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.time.Duration;
 import java.util.Objects;
@@ -21,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ThreadPoolServer implements AutoCloseable {
     private final int configuredPort;
+    private final InetAddress bindAddress;
     private final ExecutorService invocationExecutor;
     private final boolean ownsInvocationExecutor;
     private final SocketAccessor.Options transportOptions;
@@ -33,18 +35,33 @@ public final class ThreadPoolServer implements AutoCloseable {
     private volatile Thread acceptThread;
 
     public ThreadPoolServer(int port) {
-        this(port, Executors.newVirtualThreadPerTaskExecutor(), true, SocketAccessor.Options.defaults());
+        this(port, InetAddress.getLoopbackAddress());
+    }
+
+    /** Non-loopback addresses require a network restricted to fully trusted peers. */
+    public ThreadPoolServer(int port, InetAddress bindAddress) {
+        this(port, bindAddress, Executors.newVirtualThreadPerTaskExecutor(), true, SocketAccessor.Options.defaults());
     }
 
     public ThreadPoolServer(
             int port,
             ExecutorService invocationExecutor,
             SocketAccessor.Options transportOptions) {
-        this(port, invocationExecutor, false, transportOptions);
+        this(port, InetAddress.getLoopbackAddress(), invocationExecutor, transportOptions);
+    }
+
+    /** Non-loopback addresses require a network restricted to fully trusted peers. */
+    public ThreadPoolServer(
+            int port,
+            InetAddress bindAddress,
+            ExecutorService invocationExecutor,
+            SocketAccessor.Options transportOptions) {
+        this(port, bindAddress, invocationExecutor, false, transportOptions);
     }
 
     private ThreadPoolServer(
             int port,
+            InetAddress bindAddress,
             ExecutorService invocationExecutor,
             boolean ownsInvocationExecutor,
             SocketAccessor.Options transportOptions) {
@@ -52,6 +69,7 @@ public final class ThreadPoolServer implements AutoCloseable {
             throw new IllegalArgumentException("invalid port: " + port);
         }
         configuredPort = port;
+        this.bindAddress = Objects.requireNonNull(bindAddress, "bindAddress");
         this.invocationExecutor = Objects.requireNonNull(invocationExecutor, "invocationExecutor");
         this.ownsInvocationExecutor = ownsInvocationExecutor;
         this.transportOptions = Objects.requireNonNull(transportOptions, "transportOptions");
@@ -64,7 +82,7 @@ public final class ThreadPoolServer implements AutoCloseable {
         if (closed.get()) {
             throw new IllegalStateException("server is closed");
         }
-        serverSocket = new ServerSocket(configuredPort);
+        serverSocket = new ServerSocket(configuredPort, 50, bindAddress);
         acceptThread = Thread.ofVirtual().name("distributed-accept-", 0).start(this::acceptLoop);
         return this;
     }
@@ -75,6 +93,14 @@ public final class ThreadPoolServer implements AutoCloseable {
             throw new IllegalStateException("server is not started");
         }
         return socket.getLocalPort();
+    }
+
+    public InetAddress address() {
+        var socket = serverSocket;
+        if (socket == null) {
+            throw new IllegalStateException("server is not started");
+        }
+        return socket.getInetAddress();
     }
 
     public int clientCount() {
@@ -184,7 +210,7 @@ public final class ThreadPoolServer implements AutoCloseable {
 
     public static void main(String[] args) throws Exception {
         try (var server = new ThreadPoolServer(55_555).start()) {
-            System.out.println("distributed thread pool listening on port " + server.port());
+            System.out.println("distributed thread pool listening on " + server.address() + ":" + server.port());
             Thread.currentThread().join();
         }
     }

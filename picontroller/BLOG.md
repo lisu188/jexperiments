@@ -12,8 +12,7 @@ The code is a hardware-bound sketch rather than a portable web application.
 That is what makes it worth documenting carefully. It touches several runtime
 surfaces that behave differently on a development laptop and on a Raspberry Pi:
 GPIO pin provisioning, Pi4J system calls, embedded servlet lifecycle, Tomcat
-WebSocket setup, static singleton state, and a `/kill` endpoint that stops the
-server.
+WebSocket setup, static singleton state, and process-owned server shutdown.
 
 For experienced Java developers, the module is a compact example of application
 lifecycle side effects. Starting the process does not merely bind an HTTP port;
@@ -46,8 +45,8 @@ Tomcat manager, monitor set, or Pi4J access points without editing source.
 Tomcat is configured programmatically. The manager creates `new Tomcat()`, sets
 port `8080`, creates a root `StandardContext`, and uses the system temp
 directory as the document base. Servlets are added directly rather than through
-a packaged WAR. The mappings are intentionally broad: `/kill` routes to
-`KillServlet`, while `/` routes to `DefaultServlet`.
+a packaged WAR. The `/` mapping routes to `DefaultServlet`; no HTTP route is
+registered for administrative shutdown.
 
 ```java
 // Embedded Tomcat is configured directly, not through a WAR descriptor.
@@ -60,10 +59,24 @@ rootCtx.setPath("");
 This setup makes startup self-contained, but it also hard-codes the port and
 context shape into application code.
 
-Requests to `/kill` stop the server, while all other root requests are handled
-by the default resource servlet. That makes the dashboard self-contained, but
-it also means routing, static resources, and administrative shutdown all live in
-one embedded container setup.
+The servlet registration only installs the static resource handler:
+
+```java
+Tomcat.addServlet(rootCtx, "Default", new DefaultServlet());
+rootCtx.addServletMapping("/", "Default");
+```
+
+The former `/kill` servlet has been removed. An unauthenticated HTTP request
+must not start a delayed thread that stops the embedded container, whether that
+request came directly from a remote host or from a link opened in a browser.
+Stop the process through its local service or process manager. A configuration
+regression test checks the actual embedded context without starting Pi hardware:
+
+```java
+assertNull(context.findServletMapping("/kill"));
+assertNull(context.findChild("Kill"));
+assertEquals("Default", context.findServletMapping("/"));
+```
 
 ## Core code walkthrough
 
@@ -179,8 +192,8 @@ are good enough for a dashboard demo, but they are not a time-series monitoring
 strategy with sampling metadata, error states, or retention policy.
 
 There are also operational caveats. The application binds port `8080` with no
-configuration option. `/kill` starts a thread that stops Tomcat after a short
-sleep and has no authentication. Static singletons hold sessions and monitor
+configuration option. There is no HTTP shutdown endpoint or authentication for
+the monitoring dashboard. Static singletons hold sessions and monitor
 history. `MonitorData` clears all history after 10000 samples. The default
 servlet returns silently when a resource is missing, so missing assets may look
 like empty responses rather than clear 404s.
@@ -199,7 +212,7 @@ standard static-file serving.
 
 Make the port, GPIO pins, and monitor set configurable. Replace manual JSON
 construction with a JSON library or a small encoder that handles escaping. Add
-authentication or remove the `/kill` servlet. Make monitor shutdown join the
+authentication for monitoring access. Make monitor shutdown join the
 threads and release GPIO resources. Finally, add a hardware abstraction layer so
 memory and temperature monitors can be tested on non-Pi systems while GPIO
 behavior is mocked.
