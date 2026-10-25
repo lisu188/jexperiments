@@ -13,6 +13,9 @@ on:
       - 'build.gradle'
       - '.github/workflows/evolution.yml'
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -34,3 +37,4 @@ jobs:
         run: ./gradlew --no-daemon :evolution:convergenceBenchmark -PevolutionConvergenceSeeds=3 -PevolutionConvergenceMaxGenerations=500
       - name: Run example
         run: ./gradlew --no-daemon :evolution:runExperiment
+
