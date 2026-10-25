@@ -15,9 +15,11 @@ public class TomcatManager {
     private static TomcatManager instance = new TomcatManager();
     private final Tomcat tomcat;
 
-    private TomcatManager() {
+    TomcatManager() {
         this.tomcat = new Tomcat();
         tomcat.setPort(8080);
+        // Tomcat 9 creates the default HTTP connector lazily.
+        tomcat.getConnector();
         File base = new File(System.getProperty("java.io.tmpdir"));
         final Context rootCtx = new StandardContext();
         rootCtx.setName("");
