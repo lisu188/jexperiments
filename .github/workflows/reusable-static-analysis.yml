@@ -1,0 +1,468 @@
+name: Shared static analyzers
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.inventory.outputs.python }}
+      cpp: ${{ steps.inventory.outputs.cpp }}
+      kotlin: ${{ steps.inventory.outputs.kotlin }}
+      java: ${{ steps.inventory.outputs.java }}
+      web: ${{ steps.inventory.outputs.web }}
+      csharp: ${{ steps.inventory.outputs.csharp }}
+      godot: ${{ steps.inventory.outputs.godot }}
+      shell: ${{ steps.inventory.outputs.shell }}
+      docs: ${{ steps.inventory.outputs.docs }}
+      codeql: ${{ steps.inventory.outputs.codeql }}
+      codeql_matrix: ${{ steps.inventory.outputs.codeql_matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - id: inventory
+        name: Detect source languages
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import PurePosixPath
+
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode("utf-8", "surrogateescape").split("\0")
+          ignored = ("third_party/", "vendor/", "node_modules/", "build/", "dist/", "venv/", ".venv/", "res/", "data/", "assets/", "references/", "source-boid3d/", "Python36/", "boost64/", "mingw/")
+          files = [p for p in tracked if p and not p.startswith(ignored) and not any("/" + part + "/" in "/" + p for part in ("node_modules", ".gradle", "build", "Library", "obj", "bin"))]
+          suffixes = {PurePosixPath(p).suffix.lower() for p in files}
+          flags = {
+              "python": ".py" in suffixes,
+              "cpp": bool(suffixes & {".c", ".cc", ".cpp", ".cxx", ".h", ".hpp"}),
+              "kotlin": ".kt" in suffixes,
+              "java": ".java" in suffixes,
+              "web": bool(suffixes & {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}),
+              "csharp": ".cs" in suffixes,
+              "godot": ".gd" in suffixes,
+              "shell": bool(suffixes & {".sh", ".bash", ".ps1"}),
+              "docs": bool(suffixes & {".tex", ".xml", ".cmake", ".json", ".md", ".baf", ".xlsx", ".toml"}) or "CMakeLists.txt" in files,
+          }
+          languages = []
+          for enabled, language, mode in [
+              (flags["cpp"], "c-cpp", "none"),
+              (flags["python"], "python", "none"),
+              (flags["web"], "javascript-typescript", "none"),
+              (flags["csharp"], "csharp", "none"),
+              (flags["java"] or flags["kotlin"], "java-kotlin", "autobuild" if flags["kotlin"] else "none"),
+          ]:
+              if enabled:
+                  languages.append({"language": language, "mode": mode})
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              for name, enabled in flags.items():
+                  out.write(f"{name}={str(enabled).lower()}\n")
+              out.write("codeql=" + str(bool(languages)).lower() + "\n")
+              out.write("codeql_matrix=" + json.dumps({"include": languages}, separators=(",", ":")) + "\n")
+          print("Detected:", flags, "CodeQL:", languages)
+          PY
+
+  actions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions workflows with actionlint
+        continue-on-error: true
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@latest
+          "$HOME/go/bin/actionlint"
+      - name: Audit GitHub Actions security with zizmor
+        continue-on-error: true
+        run: |
+          python3 -m venv /tmp/zizmor-env
+          /tmp/zizmor-env/bin/pip install --disable-pip-version-check zizmor
+          /tmp/zizmor-env/bin/zizmor --min-severity high --min-confidence high .
+
+  python:
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install Python analyzers
+        run: python -m pip install --disable-pip-version-check ruff bandit pyright
+      - name: Check Python parse and high-confidence errors
+        continue-on-error: true
+        run: ruff check . --select E4,E7,E9,F63,F7,F82 --output-format github
+      - name: Collect Python lint findings
+        continue-on-error: true
+        run: ruff check . --output-format concise --output-file ruff-report.txt
+      - name: Check Python security issues
+        continue-on-error: true
+        run: bandit -r . -ll -x ./third_party,./vendor,./.venv,./build,./dist -f json -o bandit-report.json
+      - name: Check Python types
+        continue-on-error: true
+        run: pyright --outputjson > pyright-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-static-analysis
+          path: |
+            ruff-report.txt
+            bandit-report.json
+            pyright-report.json
+          if-no-files-found: ignore
+
+  native:
+    needs: detect
+    if: needs.detect.outputs.cpp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install C and C++ analyzers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cppcheck clang-tidy cmake ninja-build pkg-config
+      - name: Scan maintained C and C++ sources with Cppcheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          mapfile -d '' sources < <(git ls-files -z -- '*.c' '*.cc' '*.cpp' '*.cxx')
+          maintained=()
+          for path in "${sources[@]}"; do
+            case "$path" in third_party/*|vendor/*|build/*|dependencies/*|vstd/*|source-boid3d/*) continue;; esac
+            maintained+=("$path")
+          done
+          if (( ${#maintained[@]} )); then
+            timeout 1200s cppcheck --enable=warning,performance,portability --inline-suppr --suppress=missingIncludeSystem --xml --xml-version=2 --output-file=cppcheck-report.xml "${maintained[@]}"
+          fi
+      - name: Build CMake compilation database and run Clang-Tidy
+        if: hashFiles('CMakeLists.txt') != ''
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          if cmake -S . -B /tmp/analysis-build -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON > artifacts/cmake.log 2>&1; then
+            python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          database = json.loads(Path("/tmp/analysis-build/compile_commands.json").read_text())
+          excluded = ("/third_party/", "/vendor/", "/dependencies/", "/build/")
+          checked = set()
+          with open("artifacts/clang-tidy.log", "w", encoding="utf-8") as report:
+              for unit in database:
+                  source = unit["file"]
+                  if source in checked or any(part in source for part in excluded):
+                      continue
+                  checked.add(source)
+                  result = subprocess.run(["clang-tidy", "-p", "/tmp/analysis-build", "--quiet", source], text=True, stdout=report, stderr=subprocess.STDOUT, timeout=180)
+                  if result.returncode:
+                      print(f"Clang-Tidy reported issues for {source}", file=report)
+          print(f"Analyzed {len(checked)} translation units")
+          PY
+          else
+            echo "CMake configure did not succeed; see artifacts/cmake.log" >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-static-analysis
+          path: |
+            cppcheck-report.xml
+            artifacts/cmake.log
+            artifacts/clang-tidy.log
+          if-no-files-found: ignore
+
+  kotlin:
+    needs: detect
+    if: needs.detect.outputs.kotlin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Run Detekt standalone analyzer
+        continue-on-error: true
+        run: |
+          curl -fsSL --retry 3 -o /tmp/detekt.jar https://github.com/detekt/detekt/releases/download/v2.0.0-alpha.6/detekt-cli-2.0.0-alpha.6-all.jar
+          java -jar /tmp/detekt.jar --input . --report sarif:detekt.sarif --report txt:detekt.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kotlin-static-analysis
+          path: |
+            detekt.sarif
+            detekt.txt
+          if-no-files-found: ignore
+
+  java:
+    needs: detect
+    if: needs.detect.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Run SpotBugs and PMD for Maven projects
+        if: hashFiles('pom.xml') != ''
+        continue-on-error: true
+        run: |
+          mvn -B -ntp -DskipTests compile com.github.spotbugs:spotbugs-maven-plugin:4.9.8.2:spotbugs org.apache.maven.plugins:maven-pmd-plugin:3.28.0:pmd
+      - name: Run PMD for Gradle Java modules
+        if: hashFiles('gradlew') != ''
+        continue-on-error: true
+        run: |
+          cat > /tmp/pmd-analysis.init.gradle <<'EOF'
+          gradle.beforeProject { project ->
+              project.pluginManager.withPlugin('java') {
+                  project.pluginManager.apply('pmd')
+                  project.extensions.getByName('pmd').ignoreFailures = true
+              }
+          }
+          EOF
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --init-script /tmp/pmd-analysis.init.gradle pmdMain
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: java-static-analysis
+          path: |
+            **/target/spotbugs*.xml
+            **/target/pmd.xml
+            **/build/reports/pmd/**
+          if-no-files-found: ignore
+
+  web:
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Run ESLint for JavaScript and TypeScript
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [[ -f package.json ]]; then
+            root=.
+          elif [[ -f frontend/package.json ]]; then
+            root=frontend
+          else
+            root=.
+          fi
+          cd "$root"
+          npm install --no-save --package-lock=false --ignore-scripts eslint@9 @eslint/js@9 typescript-eslint@8 globals@16
+          cat > eslint.config.mjs <<'EOF'
+          import js from '@eslint/js';
+          import tseslint from 'typescript-eslint';
+          import globals from 'globals';
+
+          export default tseslint.config(
+            { ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/third_party/**', '**/vendor/**', '**/three.min.js'] },
+            js.configs.recommended,
+            ...tseslint.configs.recommended,
+            { languageOptions: { globals: { ...globals.browser, ...globals.node } }, rules: { '@typescript-eslint/no-explicit-any': 'off', '@typescript-eslint/no-unused-vars': 'warn' } },
+          );
+          EOF
+          npx eslint . --ext .js,.mjs,.cjs,.ts,.tsx --format json --output-file "$GITHUB_WORKSPACE/eslint-report.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-static-analysis
+          path: eslint-report.json
+          if-no-files-found: ignore
+
+  csharp:
+    needs: detect
+    if: needs.detect.outputs.csharp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+      - name: Run Roslyn analyzers in .NET projects
+        continue-on-error: true
+        shell: bash
+        run: |
+          mapfile -d '' projects < <(git ls-files -z -- '*.csproj')
+          for project in "${projects[@]}"; do
+            dotnet build "$project" --nologo -p:EnableNETAnalyzers=true -p:AnalysisLevel=latest -p:EnforceCodeStyleInBuild=true > "roslyn-$(basename "$project").txt" 2>&1 || true
+          done
+          test ${#projects[@]} -gt 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: csharp-static-analysis
+          path: roslyn-*.txt
+          if-no-files-found: ignore
+
+  godot:
+    needs: detect
+    if: needs.detect.outputs.godot == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Lint GDScript with GDLint
+        continue-on-error: true
+        shell: bash
+        run: |
+          python -m pip install gdtoolkit
+          mapfile -d '' scripts < <(git ls-files -z -- '*.gd')
+          if (( ${#scripts[@]} )); then gdlint "${scripts[@]}"; fi
+
+  shell:
+    needs: detect
+    if: needs.detect.outputs.shell == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Check shell scripts with ShellCheck
+        continue-on-error: true
+        shell: bash
+        run: |
+          mapfile -d '' scripts < <(git ls-files -z -- '*.sh' '*.bash')
+          if (( ${#scripts[@]} )); then shellcheck --severity=warning "${scripts[@]}"; fi
+      - name: Analyze PowerShell scripts
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+          Get-ChildItem -Path . -Filter '*.ps1' -Recurse | Where-Object { $_.FullName -notmatch '/third_party/|/vendor/' } | ForEach-Object { Invoke-ScriptAnalyzer -Path $_.FullName -Severity Warning,Error }
+
+  docs:
+    needs: detect
+    if: needs.detect.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install documentation and configuration analyzers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends chktex libxml2-utils
+          python3 -m venv /tmp/doc-analyzers
+          /tmp/doc-analyzers/bin/pip install cmakelang openpyxl
+      - name: Check LaTeX and CMake source
+        continue-on-error: true
+        shell: bash
+        run: |
+          mapfile -d '' latex < <(git ls-files -z -- '*.tex')
+          mapfile -d '' cmakes < <(git ls-files -z -- 'CMakeLists.txt' '*.cmake')
+          for path in "${latex[@]}"; do chktex -q "$path" || true; done
+          if (( ${#cmakes[@]} )); then /tmp/doc-analyzers/bin/cmake-lint "${cmakes[@]}"; fi
+      - name: Check XML, JSON and Excel file integrity
+        continue-on-error: true
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          import zipfile
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          failures = []
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode("utf-8", "surrogateescape").split("\0")
+          for file in tracked:
+              path = Path(file)
+              if not path.is_file() or any(p in {"vendor", "third_party", "node_modules", "build"} for p in path.parts):
+                  continue
+              try:
+                  if path.suffix.lower() == ".json":
+                      json.loads(path.read_text(encoding="utf-8"))
+                  elif path.suffix.lower() == ".xml":
+                      ET.parse(path)
+                  elif path.suffix.lower() == ".xlsx":
+                      with zipfile.ZipFile(path) as archive:
+                          if archive.testzip():
+                              raise ValueError("corrupt ZIP member")
+              except Exception as exc:
+                  failures.append(f"{file}: {exc}")
+          Path("data-validation-report.txt").write_text("\n".join(failures) or "No parsing failures")
+          if failures:
+              raise SystemExit("\n".join(failures))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docs-static-analysis
+          path: data-validation-report.txt
+          if-no-files-found: ignore
+
+  codeql:
+    needs: detect
+    if: needs.detect.outputs.codeql == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.codeql_matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.mode }}
+      - name: Analyze code and export SARIF
+        uses: github/codeql-action/analyze@v4
+        with:
+          output: ${{ github.workspace }}/codeql-results
+          upload: ${{ (github.event.repository.private || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && 'never' || 'always' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: codeql-${{ matrix.language }}
+          path: codeql-results
+          if-no-files-found: ignore
