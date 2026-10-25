@@ -15,6 +15,9 @@ on:
       - ".github/workflows/tesseract-viewer-android.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -115,3 +118,4 @@ jobs:
           name: TesseractViewer-ux-diagnostics
           path: screenshots/*
           if-no-files-found: error
+

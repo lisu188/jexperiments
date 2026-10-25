@@ -13,6 +13,9 @@ on:
       - 'build.gradle'
       - '.github/workflows/distributed-thread-pool.yml'
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -32,3 +35,4 @@ jobs:
         run: ./gradlew --no-daemon :distributedthreadpool:jcstress -PdistributedJcstressMode=sanity
       - name: Performance matrix smoke
         run: ./gradlew --no-daemon :distributedthreadpool:performanceMatrix -PdistributedMatrixRequests=500 -PdistributedMatrixRepetitions=1
+
