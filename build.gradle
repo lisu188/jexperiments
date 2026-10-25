@@ -969,9 +969,9 @@ project(':bcel') {
 
 project(':picontroller') {
     dependencies {
-        implementation 'org.apache.tomcat.embed:tomcat-embed-core:8.0.23'
-        implementation 'org.apache.tomcat.embed:tomcat-embed-websocket:8.0.23'
-        implementation 'org.apache.logging.log4j:log4j-core:2.5'
+        implementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
+        implementation 'org.apache.tomcat.embed:tomcat-embed-websocket:9.0.123'
+        implementation 'org.apache.logging.log4j:log4j-core:2.26.1'
         implementation 'com.pi4j:pi4j-core:1.0'
     }
 }
@@ -984,7 +984,7 @@ project(':slickproject') {
 
 project(':soapserver') {
     dependencies {
-        implementation 'org.apache.tomcat.embed:tomcat-embed-core:8.0.23'
+        implementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
         implementation 'javax.xml.soap:javax.xml.soap-api:1.4.0'
         runtimeOnly 'com.sun.xml.messaging.saaj:saaj-impl:1.5.3'
     }
@@ -992,7 +992,7 @@ project(':soapserver') {
 
 project(':webaspect') {
     dependencies {
-        implementation 'org.apache.tomcat.embed:tomcat-embed-core:8.0.23'
+        implementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
     }
 }
 

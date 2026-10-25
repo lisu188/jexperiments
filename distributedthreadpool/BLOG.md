@@ -22,7 +22,7 @@ The original version from 2015 intentionally collapsed transport, dispatch, resu
 
 The modern implementation keeps the educational premise — serializable Java code crossing a socket — while separating the transport responsibilities explicitly.
 
-It is still a trusted-peer experiment. Native Java deserialization of arbitrary network input is unsafe for untrusted networks.
+It is still a trusted-peer experiment. Native Java deserialization of arbitrary network input is unsafe for untrusted networks. Both constructors that omit a bind address listen only on the local loopback interface; reaching the server from another machine requires an explicit address.
 
 ## Protocol model
 
@@ -526,7 +526,26 @@ The module-specific GitHub Actions workflow runs verification, JMH smoke, jcstre
 
 This experiment still deserializes Java objects from a network peer and then executes received serializable code.
 
-That is dangerous.
+The default listener now binds loopback rather than all network interfaces:
+
+~~~java
+public ThreadPoolServer(int port) {
+    this(port, InetAddress.getLoopbackAddress());
+}
+// start() binds this address when it creates the listening socket.
+serverSocket = new ServerSocket(configuredPort, 50, bindAddress);
+~~~
+
+The overload accepting an executor and transport options has the same loopback default. `address()` reports the actual socket's bound address, including when port zero selected an ephemeral port. Existing local examples and tests retain bidirectional remote execution without exposing that capability to every machine able to reach the host.
+
+For the distributed experiment, the address must be chosen deliberately:
+
+~~~java
+new ThreadPoolServer(port, trustedInterfaceAddress).start();
+new ThreadPoolServer(port, trustedInterfaceAddress, executor, options).start();
+~~~
+
+Passing a wildcard address explicitly restores listening on every interface; passing `null` is rejected instead of silently choosing a wildcard. An explicit address is an exposure decision, not authentication. Use an interface on a network restricted to fully trusted peers and do not forward the loopback listener through an untrusted proxy or tunnel. Other local processes can still connect to loopback and execute code with the server's privileges.
 
 Do not expose this transport to untrusted clients or an untrusted network.
 

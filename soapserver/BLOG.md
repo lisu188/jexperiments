@@ -1,5 +1,11 @@
 # A SOAP Weather Proxy around a JSON API
 
+The Gradle build uses Tomcat 9.0.123 for this module's existing `javax.servlet`
+API. The former Tomcat 8.0.23 dependency belonged to an unsupported release
+line; the current Java EE branch supplies maintained container fixes without
+changing these servlet imports. See [dependency security notes](../SECURITY_DEPENDENCIES.md)
+for the upstream sources and focused regression boundary.
+
 ## Why this experiment exists
 
 This experiment wraps a JSON weather API with a SOAP-facing servlet and a

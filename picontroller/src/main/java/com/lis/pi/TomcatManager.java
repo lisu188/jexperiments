@@ -1,7 +1,6 @@
 package com.lis.pi;
 
 import com.lis.pi.servlet.DefaultServlet;
-import com.lis.pi.servlet.KillServlet;
 import com.lis.pi.websocket.PiContextListener;
 import org.apache.catalina.Context;
 import org.apache.catalina.LifecycleEvent;
@@ -16,9 +15,11 @@ public class TomcatManager {
     private static TomcatManager instance = new TomcatManager();
     private final Tomcat tomcat;
 
-    private TomcatManager() {
+    TomcatManager() {
         this.tomcat = new Tomcat();
         tomcat.setPort(8080);
+        // Tomcat 9 creates the default HTTP connector lazily.
+        tomcat.getConnector();
         File base = new File(System.getProperty("java.io.tmpdir"));
         final Context rootCtx = new StandardContext();
         rootCtx.setName("");
@@ -44,8 +45,6 @@ public class TomcatManager {
 
         tomcat.getHost().addChild(rootCtx);
 
-        Tomcat.addServlet(rootCtx, "Kill", new KillServlet());
-        rootCtx.addServletMapping("/kill", "Kill");
         Tomcat.addServlet(rootCtx, "Default", new DefaultServlet());
         rootCtx.addServletMapping("/", "Default");
     }
