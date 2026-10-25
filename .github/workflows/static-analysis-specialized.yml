@@ -1,0 +1,49 @@
+name: Gradle SpotBugs
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spotbugs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: |
+            26
+            27
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run SpotBugs against every Java module
+        continue-on-error: true
+        run: |
+          cat > /tmp/spotbugs.init.gradle <<'EOF'
+          initscript {
+              repositories { gradlePluginPortal(); mavenCentral() }
+              dependencies { classpath 'com.github.spotbugs.snom:spotbugs-gradle-plugin:6.5.12' }
+          }
+          gradle.beforeProject { project ->
+              project.pluginManager.withPlugin('java') {
+                  project.pluginManager.apply('com.github.spotbugs')
+                  project.extensions.getByName('spotbugs').ignoreFailures = true
+                  project.extensions.getByName('spotbugs').toolVersion = '4.10.5'
+              }
+          }
+          EOF
+          ./gradlew --no-daemon --init-script /tmp/spotbugs.init.gradle spotbugsMain --continue
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spotbugs-java
+          path: '**/build/reports/spotbugs/**'
+          if-no-files-found: ignore
