@@ -31,12 +31,12 @@ public class DefaultServlet extends HttpServlet {
         String path = req.getRequestURI().substring(
                 req.getContextPath().length() + 1);
 
-        InputStream in = ResourcesManager.getInstance().getWebResourceAsStream(
-                path);
-        if (in == null) {
-            return;
+        try (InputStream in = ResourcesManager.getInstance().getWebResourceAsStream(path)) {
+            if (in == null) {
+                resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
+            copy(in, resp.getOutputStream());
         }
-        OutputStream out = resp.getOutputStream();
-        copy(in, out);
     }
 }

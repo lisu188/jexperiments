@@ -9,24 +9,24 @@ for the upstream sources and focused regression boundary.
 ## Why this experiment exists
 
 This experiment wraps a JSON weather API with a SOAP-facing servlet and a
-Java-object proxy. It is a useful snapshot of integration code where several
+data-only HTTP proxy. It is a useful snapshot of integration code where several
 wire formats meet: HTTP servlet requests, SAAJ `SOAPMessage` objects, JSON
 responses from OpenWeatherMap, domain objects such as `WeatherMessage`, and
-Java serialization over an HTTP proxy servlet.
+bounded form requests and JSON responses at the HTTP proxy servlet.
 
 The module is not a modern weather service template. That is why the mechanics
 are worth making explicit. The server parses a SOAP request, extracts a method
 name and location properties, calls an external JSON endpoint, translates the
 JSON payload back into SOAP elements, and writes the SOAP response to the
-servlet output stream. A separate client-side proxy accepts a serialized
-`WeatherQuery`, calls the SOAP client, and serializes a `WeatherMessage` back
-to the caller.
+servlet output stream. A separate proxy accepts URL-encoded `location` and
+`units` fields, builds an internal `WeatherQuery`, calls the SOAP client, and
+returns the `WeatherMessage` as JSON.
 
 For experienced Java developers, this code is a compact study in translation
 boundaries. Every boundary has a schema, even if the schema is implicit in
 string constants and element names. The experiment shows how quickly those
-implicit contracts accumulate when SOAP, JSON, servlet APIs, and Java object
-serialization are combined.
+implicit contracts accumulate when SOAP, JSON, servlet APIs, and domain objects
+are combined.
 
 ## Execution path
 
@@ -110,8 +110,8 @@ names. The JSON field `speed`, for example, becomes the SOAP element named by
 The domain object layer mirrors the same fields. `DayForecast` stores pressure,
 humidity, wind speed, wind direction, high and low temperatures, description,
 and weather id. `WeatherMessage` wraps the city name, coordinates, and list of
-days. The objects are serializable because `WeatherClientProxy` uses them as
-the Java-facing response format.
+days. These legacy domain classes retain their serializable interfaces, but
+the HTTP proxy never reads or writes Java object streams.
 
 ## Important implementation details
 
@@ -145,18 +145,26 @@ blocker outside the original environment.
 `WeatherClientProxy` adds another translation layer:
 
 ```java
-ObjectInputStream in = new ObjectInputStream(request.getInputStream());
-WeatherQuery query = null;
-try {
-    query = (WeatherQuery) in.readObject();
-} catch (ClassNotFoundException e) {
-    e.printStackTrace();
-}
+byte[] body = source.readNBytes(MAX_QUERY_BYTES + 1);
+if (body.length > MAX_QUERY_BYTES)
+    throw new InvalidObjectException("Query is too large");
+String key = URLDecoder.decode(pair.substring(0, equals), StandardCharsets.UTF_8);
+String value = URLDecoder.decode(pair.substring(equals + 1), StandardCharsets.UTF_8);
 ```
 
-The proxy reads a serialized `WeatherQuery`, calls `SoapWeatherClient`, and
-writes a serialized `WeatherMessage`. That gives Java callers a simple object
-boundary while hiding the SOAP call behind the servlet.
+The proxy accepts only flat form data: `location=Krak%C3%B3w&units=metric`.
+POST requires `application/x-www-form-urlencoded`; GET uses the same fields
+in its query string. The encoded body is bounded to 16 KiB before decoding,
+unknown or duplicate fields are rejected, and the two nonblank strings are
+limited to 256 and 32 Java characters. No request data selects classes or an
+object graph. The legacy serialized-object request format is deliberately
+unsupported; clients must migrate to these data fields. Responses use
+`application/json` and UTF-8, generated from the known weather domain object.
+Malformed forms return HTTP 400, incompatible media types return 415, and
+upstream failures return 502 before a response body is opened. Regressions
+exercise valid GET/POST translations with a synthetic weather provider,
+invalid encodings, duplicate/unknown fields, size limits and legacy binary
+input rejection without calling the original network endpoint.
 
 `SoapWeatherClient.saveData` performs the reverse mapping from SOAP elements
 back to Java objects. It finds the `WeatherResponse` body element, extracts
@@ -173,10 +181,10 @@ The SOAP client points to a private `192.168.43.95` address and an application
 path containing `SOAP_sever`, so it will not work unchanged outside the
 original network.
 
-Security caveats are significant. `WeatherClientProxy` accepts Java serialized
-objects from HTTP requests, which is unsafe for untrusted clients. The servlets
-have no authentication, no request validation beyond optimistic casts and
-element lookups, and no structured error responses. Missing SOAP elements can
+Security caveats remain significant. Removing Java object serialization from
+the proxy closes that input mechanism, but the servlets still lack
+authentication and the SOAP servlet retains optimistic element lookups.
+Missing SOAP elements can
 become `NoSuchElementException` or `NullPointerException` paths. External HTTP
 failures are mostly logged or printed rather than returned as SOAP faults.
 
@@ -195,8 +203,8 @@ testing and error reporting easier.
 
 ## Suggested next experiments
 
-Parameterize the SOAP endpoint URL and external weather API key. Replace Java
-serialization in `WeatherClientProxy` with JSON or a narrow DTO protocol. Add
+Parameterize the SOAP endpoint URL and external weather API key, then replace
+the remaining unauthenticated HTTP connections with authenticated TLS. Add
 SOAP fault responses for invalid requests and upstream failures. Extract the
 JSON-to-domain and domain-to-SOAP mapping into testable methods. Finally, add a
 small fixture JSON response so the translation can be validated without calling

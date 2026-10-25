@@ -202,11 +202,14 @@ The code is therefore best read as a hardware and lifecycle experiment, not as
 a secure dashboard template.
 
 One more subtlety is resource serving. `DefaultServlet` resolves paths with
-`ResourcesManager.getWebResourceAsStream(path)`, which delegates to
-`getClass().getResourceAsStream(path)`. That means request paths map to
-classpath resources relative to `com.lis.pi.web.ResourcesManager`, not to a
-normal servlet document root. The behavior is compact, but it is different from
-standard static-file serving.
+`ResourcesManager.getWebResourceAsStream(path)`. Request text selects a value
+from an explicit public-asset map; it is never passed to arbitrary classpath
+lookup. The values name the dashboard, CSS, JavaScript and font files under
+`com.lis.pi.web`. Absolute paths, traversal, encoded path tricks and compiled
+classes have no map entry and return 404. An empty path selects `index.html`.
+The servlet closes the resource stream after copying it. Automated tests verify
+real packaged assets remain readable and that classpath-code/traversal requests
+are refused without initializing Pi hardware.
 
 ## Suggested next experiments
 
