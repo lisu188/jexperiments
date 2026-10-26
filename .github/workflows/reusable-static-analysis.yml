@@ -2,6 +2,12 @@ name: Shared static analyzers
 
 on:
   workflow_call:
+    inputs:
+      run_codeql:
+        description: Run advanced CodeQL only when GitHub Code Scanning default setup is disabled
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -384,6 +390,9 @@ jobs:
           persist-credentials: false
       - name: Install documentation and configuration analyzers
         run: |
+          while IFS= read -r source; do
+            sudo mv "$source" "$source.disabled"
+          done < <(grep -rl 'packages.microsoft.com' /etc/apt/sources.list.d --include='*.list' --include='*.sources' || true)
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends chktex libxml2-utils
           python3 -m venv /tmp/doc-analyzers
@@ -436,7 +445,7 @@ jobs:
 
   codeql:
     needs: detect
-    if: needs.detect.outputs.codeql == 'true'
+    if: inputs.run_codeql && needs.detect.outputs.codeql == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     continue-on-error: true
