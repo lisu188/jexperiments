@@ -15,8 +15,6 @@ public class ResourcesManager {
             entry("index.html", ROOT + "index.html"),
             entry("js/servlet.js", ROOT + "js/servlet.js"),
             entry("js/dashboard-controls.js", ROOT + "js/dashboard-controls.js"),
-            entry("js/bootstrap.js", ROOT + "js/bootstrap.js"),
-            entry("js/bootstrap.min.js", ROOT + "js/bootstrap.min.js"),
             entry("css/bootstrap.css", ROOT + "css/bootstrap.css"),
             entry("css/bootstrap.min.css", ROOT + "css/bootstrap.min.css"),
             entry("css/bootstrap.css.map", ROOT + "css/bootstrap.css.map"),

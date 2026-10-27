@@ -170,6 +170,41 @@ This is the fan-out point between monitor threads and connected browsers.
 
 ## Runtime behavior and caveats
 
+### Browser controls and their trust boundary
+
+The dashboard HTML only uses two interactive theme components: three responsive
+navigation menus and dropdown menus. `dashboard-controls.js` implements those
+components with DOM operations and the existing Bootstrap CSS classes. Both old
+Bootstrap 3.1.1 JavaScript copies have been removed, along with the jQuery CDN
+dependency. Loading the whole historical plugin bundle exposed HTML parsing and
+selector entrypoints for tooltips, popovers, modals and other unused components.
+Keeping an unused unminified copy would still ship that vulnerable code.
+
+The replacement never resolves `href`, `data-target`, or the URL fragment as a
+selector or HTML. A navigation toggle locates its own enclosing `.navbar` and
+that navbar's `.navbar-collapse` using constant selectors. This also keeps the
+three navigation examples independent. Dropdown controls find their enclosing
+`.dropdown`, toggle its `open` class and update `aria-expanded`. Escape restores
+focus; arrow keys move among visible enabled items; choosing a link or moving
+focus outside closes the menu. Dropdown toggle clicks prevent the default link
+navigation. There is no generic plugin registration or dynamic HTML insertion.
+
+The monitor display remains in `servlet.js`: it parses the fixed enum-and-number
+WebSocket messages and sets each bar's CSS width. Browser regressions load the
+actual shipped HTML, CSS and scripts with a fixture WebSocket, use browser clicks,
+keyboard input and resizing, and check all paths listed in `GUI_PATHS.md`.
+Additional probes supply HTML-shaped `data-target`, a JavaScript toggle URL and
+an HTML-shaped URL fragment and assert that no node is injected or code runs.
+The path verifier rejects stale and non-GUI results and excludes failed,
+skipped, aborted and missing paths from its successful count; negative tests
+check those cases. CI runs Chromium in an Xvfb window and publishes path results
+and diagnostic screenshots separately from Gradle line coverage.
+
+These are browser resource tests with a fixture transport. They do not start
+Tomcat, provision GPIO, prove a live Raspberry Pi WebSocket connection, or supply
+physical input or owner visual acceptance. The hardware-bound limitations below
+still apply.
+
 This module is environment-bound. `LightMonitor` calls Pi4J GPIO APIs in its
 constructor:
 
@@ -195,8 +230,8 @@ There are also operational caveats. The application binds port `8080` with no
 configuration option. There is no HTTP shutdown endpoint or authentication for
 the monitoring dashboard. Static singletons hold sessions and monitor
 history. `MonitorData` clears all history after 10000 samples. The default
-servlet returns silently when a resource is missing, so missing assets may look
-like empty responses rather than clear 404s.
+servlet returns 404 when a requested path has no public-asset map entry or
+when its listed resource is missing.
 
 The code is therefore best read as a hardware and lifecycle experiment, not as
 a secure dashboard template.
