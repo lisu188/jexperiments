@@ -1,0 +1,15 @@
+{
+  "name": "picontroller-dashboard-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Browser regressions for the shipped Pi dashboard resources",
+  "scripts": {
+    "test": "node --test coverage.test.cjs && node dashboard.test.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.62.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
