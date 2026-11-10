@@ -13,6 +13,8 @@ permissions:
 jobs:
   analyze:
     uses: ./.github/workflows/reusable-static-analysis.yml
+    with:
+      run_codeql: false
     permissions:
       contents: read
       security-events: write

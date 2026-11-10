@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PublicResourcesTest {
     @Test void servesTheDashboardAndItsPublicAssets() throws Exception {
         ResourcesManager resources = ResourcesManager.getInstance();
-        for (String path : new String[]{"", "index.html", "js/servlet.js", "css/bootstrap.min.css", "fonts/glyphicons-halflings-regular.woff"}) {
+        for (String path : new String[]{"", "index.html", "js/servlet.js", "js/dashboard-controls.js", "css/bootstrap.min.css", "fonts/glyphicons-halflings-regular.woff"}) {
             assertNotNull(resources.getWebResource(path), path);
             try (InputStream input = resources.getWebResourceAsStream(path)) {
                 assertNotNull(input, path);
@@ -22,6 +22,10 @@ class PublicResourcesTest {
     @Test void cannotReadClasspathCodeOrTraverseOutsidePublicAssets() {
         ResourcesManager resources = ResourcesManager.getInstance();
         for (String path : new String[]{"../servlet/DefaultServlet.class", "ResourcesManager.class", "/hrab/WeatherQuery.class", "js/../ResourcesManager.class", "%2e%2e/secret", "js\\servlet.js", "unknown.js", "index.html?other", "./index.html"}) {
+            assertNull(resources.getWebResource(path), path);
+            assertNull(resources.getWebResourceAsStream(path), path);
+        }
+        for (String path : new String[]{"js/bootstrap.js", "js/bootstrap.min.js"}) {
             assertNull(resources.getWebResource(path), path);
             assertNull(resources.getWebResourceAsStream(path), path);
         }
