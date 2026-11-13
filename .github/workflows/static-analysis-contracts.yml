@@ -1,0 +1,29 @@
+name: Static analysis reporting contracts
+
+on:
+  push:
+    paths:
+      - '.github/workflows/reusable-static-analysis.yml'
+      - '.github/workflows/static-analysis-contracts.yml'
+      - '.github/tests/test_static_analysis_summary.py'
+  pull_request:
+    paths:
+      - '.github/workflows/reusable-static-analysis.yml'
+      - '.github/workflows/static-analysis-contracts.yml'
+      - '.github/tests/test_static_analysis_summary.py'
+
+permissions:
+  contents: read
+
+jobs:
+  reporting:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: python -m unittest discover -s .github/tests -v
