@@ -68,7 +68,7 @@ jobs:
         run: ./gradlew --no-daemon :jneuro:runExperiment
       - name: Upload validation reports and studio screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jneuro-kotlin-validation
           path: |
@@ -95,7 +95,7 @@ jobs:
           bash -c 'openbox --config-file jneuro/scripts/gui-openbox.xml >/tmp/jneuro-openbox.log 2>&1 & wm=$!; trap "kill $wm 2>/dev/null || true" EXIT; ./gradlew --no-daemon :jneuro:guiCheck'
       - name: Upload GUI reports and screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jneuro-gui-validation
           path: |

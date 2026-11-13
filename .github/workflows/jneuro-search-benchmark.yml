@@ -36,7 +36,7 @@ jobs:
           done
       - name: Upload compact benchmark evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jneuro-search-cpu
           path: jneuro/build/reports/search-benchmark/**

@@ -37,7 +37,7 @@ jobs:
 
       - name: Upload compact quality evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jneuro-search-quality-cpu
           path: jneuro/build/reports/search-quality/**
