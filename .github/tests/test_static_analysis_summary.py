@@ -55,7 +55,7 @@ class OutcomeTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(report["status"], "failed")
         self.assertEqual(report["mode"], "advisory")
-        self.assertIn("does not block merging", summary)
+        self.assertIn("report exits successfully in advisory mode", summary)
 
     def test_each_correctness_failure_blocks_enforced_mode(self):
         original = copy.deepcopy(self.needs)

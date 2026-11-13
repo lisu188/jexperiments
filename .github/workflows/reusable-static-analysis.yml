@@ -512,7 +512,7 @@ jobs:
           lines.extend('| ' + check['check'] + ' | ' + check['outcome'] + ' |' for check in checks)
           lines.extend(['', 'Style, broad type/portability checks, and CodeQL execution retain their separate job/report status.'])
           if not enforced:
-              lines.extend(['', 'Advisory mode does not block merging. Enable enforce_correctness only after validating this repository baseline.'])
+              lines.extend(['', 'This correctness report exits successfully in advisory mode; separate job results and repository protections still apply. Enable enforce_correctness only after validating this repository baseline.'])
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:
               output.write('\n'.join(lines) + '\n')
           print(json.dumps(report))
