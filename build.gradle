@@ -138,7 +138,7 @@ project(':observableconcurrenttree') {
     }
 
     dependencies {
-        implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
+        implementation 'com.fasterxml.jackson.core:jackson-databind:2.23.0'
 
         testImplementation platform('org.junit:junit-bom:6.1.2')
         testImplementation 'org.junit.jupiter:junit-jupiter'
