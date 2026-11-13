@@ -32,7 +32,7 @@ jobs:
           packages: "platform-tools"
       - name: Install Android SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "9.8.0"
       - name: Test, coverage, lint and build release APK
@@ -62,7 +62,7 @@ jobs:
         with:
           distribution: temurin
           java-version: "27"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "9.8.0"
       - name: Prepare main worktree
