@@ -3,6 +3,11 @@ name: Shared static analyzers
 on:
   workflow_call:
     inputs:
+      enforce_correctness:
+        description: Fail on correctness/security errors after this caller's baseline is validated
+        required: false
+        type: boolean
+        default: false
       run_codeql:
         description: Run advanced CodeQL only when GitHub Code Scanning default setup is disabled
         required: false
@@ -77,17 +82,23 @@ jobs:
   actions:
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    outputs:
+      syntax: ${{ steps.syntax.outcome }}
+      security: ${{ steps.security.outcome }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Validate GitHub Actions workflows with actionlint
-        continue-on-error: true
+        id: syntax
+        continue-on-error: ${{ !inputs.enforce_correctness }}
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@latest
           "$HOME/go/bin/actionlint"
       - name: Audit GitHub Actions security with zizmor
-        continue-on-error: true
+        id: security
+        if: ${{ !cancelled() }}
+        continue-on-error: ${{ !inputs.enforce_correctness }}
         run: |
           python3 -m venv /tmp/zizmor-env
           /tmp/zizmor-env/bin/pip install --disable-pip-version-check zizmor
@@ -98,6 +109,9 @@ jobs:
     if: needs.detect.outputs.python == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 18
+    outputs:
+      syntax: ${{ steps.syntax.outcome }}
+      security: ${{ steps.security.outcome }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -108,12 +122,19 @@ jobs:
       - name: Install Python analyzers
         run: python -m pip install --disable-pip-version-check ruff bandit pyright
       - name: Check Python parse and high-confidence errors
-        continue-on-error: true
+        id: syntax
+        continue-on-error: ${{ !inputs.enforce_correctness }}
         run: ruff check . --select E4,E7,E9,F63,F7,F82 --output-format github
       - name: Collect Python lint findings
         continue-on-error: true
         run: ruff check . --output-format concise --output-file ruff-report.txt
-      - name: Check Python security issues
+      - name: Check high-confidence Python security issues
+        id: security
+        if: ${{ !cancelled() }}
+        continue-on-error: ${{ !inputs.enforce_correctness }}
+        run: bandit -r . -ll -iii -x ./third_party,./vendor,./.venv,./build,./dist -f json -o bandit-correctness-report.json
+      - name: Collect Python security findings at all confidence levels
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: bandit -r . -ll -x ./third_party,./vendor,./.venv,./build,./dist -f json -o bandit-report.json
       - name: Check Python types
@@ -126,6 +147,7 @@ jobs:
           path: |
             ruff-report.txt
             bandit-report.json
+            bandit-correctness-report.json
             pyright-report.json
           if-no-files-found: ignore
 
@@ -384,6 +406,8 @@ jobs:
     if: needs.detect.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      integrity: ${{ steps.integrity.outcome }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -406,7 +430,8 @@ jobs:
           for path in "${latex[@]}"; do chktex -q "$path" || true; done
           if (( ${#cmakes[@]} )); then /tmp/doc-analyzers/bin/cmake-lint "${cmakes[@]}"; fi
       - name: Check XML, JSON and Excel file integrity
-        continue-on-error: true
+        id: integrity
+        continue-on-error: ${{ !inputs.enforce_correctness }}
         run: |
           python3 - <<'PY'
           import json
@@ -442,6 +467,64 @@ jobs:
           name: docs-static-analysis
           path: data-validation-report.txt
           if-no-files-found: ignore
+
+  correctness:
+    name: Correctness and security (${{ inputs.enforce_correctness && 'enforced' || 'advisory' }})
+    needs: [detect, actions, python, docs]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report actual analyzer outcomes
+        env:
+          ANALYSIS_NEEDS: ${{ toJSON(needs) }}
+          ANALYSIS_ENFORCED: ${{ inputs.enforce_correctness }}
+        run: |
+          python3 - <<'PY'
+          # STATIC_ANALYSIS_SUMMARY_BEGIN
+          import json
+          import os
+          from pathlib import Path
+
+          needs = json.loads(os.environ['ANALYSIS_NEEDS'])
+          enforced = os.environ['ANALYSIS_ENFORCED'] == 'true'
+          expected = {'actions': ('syntax', 'security'), 'python': ('syntax', 'security'), 'docs': ('integrity',)}
+          detection = needs.get('detect', {})
+          checks = [{'check': 'detect/execution', 'outcome': detection.get('result', 'unavailable')}]
+          for job, names in expected.items():
+              result = needs.get(job, {}).get('result', 'unavailable')
+              outputs = needs.get(job, {}).get('outputs', {})
+              if result == 'skipped' and detection.get('result') == 'success' and detection.get('outputs', {}).get(job) == 'false':
+                  checks.append({'check': job, 'outcome': 'skipped'})
+                  continue
+              for name in names:
+                  outcome = outputs.get(name) or 'unavailable'
+                  if outcome == 'skipped':
+                      outcome = 'unexpected_skip'
+                  checks.append({'check': job + '/' + name, 'outcome': outcome})
+              if result != 'success':
+                  checks.append({'check': job + '/execution', 'outcome': result})
+          failed = any(check['outcome'] not in ('success', 'skipped') for check in checks)
+          status = 'failed' if failed else 'passed'
+          report = {'schema_version': 1, 'mode': 'enforced' if enforced else 'advisory', 'status': status, 'checks': checks}
+          Path('static-analysis-outcomes.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+          lines = ['## Correctness and security: ' + status + ' (' + report['mode'] + ')', '', '| Check | Outcome |', '| --- | --- |']
+          lines.extend('| ' + check['check'] + ' | ' + check['outcome'] + ' |' for check in checks)
+          lines.extend(['', 'Style, broad type/portability checks, and CodeQL execution retain their separate job/report status.'])
+          if not enforced:
+              lines.extend(['', 'This correctness report exits successfully in advisory mode; separate job results and repository protections still apply. Enable enforce_correctness only after validating this repository baseline.'])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as output:
+              output.write('\n'.join(lines) + '\n')
+          print(json.dumps(report))
+          raise SystemExit(1 if enforced and failed else 0)
+          # STATIC_ANALYSIS_SUMMARY_END
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: static-analysis-outcomes
+          path: static-analysis-outcomes.json
+          if-no-files-found: error
 
   codeql:
     needs: detect
