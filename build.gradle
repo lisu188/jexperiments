@@ -963,7 +963,7 @@ project(':evolution') {
 
 project(':bcel') {
     dependencies {
-        implementation 'org.apache.bcel:bcel:5.2'
+        implementation 'org.apache.bcel:bcel:6.13.0'
     }
 }
 
