@@ -44,7 +44,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose tesseractviewer/app/build/outputs/apk/release/app-release.apk
           cp tesseractviewer/app/build/outputs/apk/release/app-release.apk TesseractViewer-1.1.1-release.apk
           sha256sum TesseractViewer-1.1.1-release.apk > TesseractViewer-1.1.1-release.apk.sha256
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: TesseractViewer-release-1.1.1
           path: |
@@ -112,7 +112,7 @@ jobs:
             adb shell input swipe 540 950 790 700 600
             sleep 1
             adb exec-out screencap -p > screenshots/after-rotated.png
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: TesseractViewer-ux-diagnostics
