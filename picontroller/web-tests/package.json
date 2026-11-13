@@ -7,7 +7,7 @@
     "test": "node --test coverage.test.cjs && node dashboard.test.cjs"
   },
   "devDependencies": {
-    "playwright-core": "1.62.1"
+    "playwright-core": "1.65.0"
   },
   "engines": {
     "node": ">=22"
