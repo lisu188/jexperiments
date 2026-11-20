@@ -970,7 +970,7 @@ project(':bcel') {
 project(':picontroller') {
     dependencies {
         implementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
-        implementation 'org.apache.tomcat.embed:tomcat-embed-websocket:9.0.123'
+        implementation 'org.apache.tomcat.embed:tomcat-embed-websocket:11.0.29'
         implementation 'org.apache.logging.log4j:log4j-core:2.26.1'
         implementation 'com.pi4j:pi4j-core:1.0'
     }
