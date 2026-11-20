@@ -1,10 +1,10 @@
-FROM eclipse-temurin:26-jdk AS build
+FROM eclipse-temurin:27-jdk AS build
 
 WORKDIR /workspace
 COPY . .
 RUN ./gradlew --no-daemon :blogsite:bootJar
 
-FROM eclipse-temurin:26-jre
+FROM eclipse-temurin:27-jre
 
 WORKDIR /app
 COPY --from=build /workspace/blogsite/build/libs/ExperimentBlogSite-*.jar /app/app.jar
